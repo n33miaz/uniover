@@ -172,7 +172,7 @@ describe('ControlPage', () => {
         'Menu',
         'Teclado',
         'Anterior',
-        'Reproduzir ou pausar',
+        'Reproduzir',
         'Próxima',
         'Mudo',
       ]);
@@ -221,13 +221,39 @@ describe('ControlPage', () => {
       ['Início da TV', 'HOME'],
       ['Menu', 'MENU'],
       ['Mudo', 'MUTE'],
-      ['Reproduzir ou pausar', 'PLAY_PAUSE'],
+      ['Reproduzir', 'PLAY_PAUSE'],
       ['Anterior', 'MEDIA_PREVIOUS'],
       ['Próxima', 'MEDIA_NEXT'],
     ])('%s sends %s', async (label, key) => {
       byLabel(label).click();
       await fixture.whenStable();
       expect(store.sendKey).toHaveBeenCalledWith(key);
+    });
+
+    it('play/pause has two states like YouTube: it swaps after the TV takes the key, and goes back on another app', async () => {
+      const playPause = () => root.querySelector<HTMLButtonElement>('.play-pause')!;
+      expect(playPause().getAttribute('aria-label')).toBe('Reproduzir');
+      expect(playPause().classList.contains('playing')).toBe(false);
+
+      store.sendKey.mockResolvedValue(true);
+      playPause().click();
+      await fixture.whenStable();
+      render();
+      expect(store.sendKey).toHaveBeenCalledWith('PLAY_PAUSE');
+      expect(playPause().getAttribute('aria-label')).toBe('Pausar');
+      expect(playPause().classList.contains('playing')).toBe(true);
+
+      // A TV recusou: o desenho fica como estava.
+      store.sendKey.mockResolvedValue(false);
+      playPause().click();
+      await fixture.whenStable();
+      render();
+      expect(playPause().getAttribute('aria-label')).toBe('Pausar');
+
+      // Outro app na TV: a mídia do anterior não vale mais, volta ao ▶.
+      store.state.set({ ...HOT, app: 'com.outro.app' });
+      render();
+      expect(playPause().getAttribute('aria-label')).toBe('Reproduzir');
     });
 
     it('shows the volume from the state, and never a bare dash when there is no reading', () => {
@@ -568,7 +594,7 @@ describe('ControlPage', () => {
       prefs().set({ showMedia: false });
       render();
       expect(roundLabels()).toEqual(['Voltar', 'Início da TV', 'Menu', 'Teclado']);
-      for (const label of ['Anterior', 'Reproduzir ou pausar', 'Próxima', 'Mudo']) {
+      for (const label of ['Anterior', 'Reproduzir', 'Próxima', 'Mudo']) {
         expect(byLabel(label)).toBeNull();
       }
 
@@ -769,7 +795,7 @@ describe('ControlPage', () => {
         'Início da TV',
         'Menu',
         'Anterior',
-        'Reproduzir ou pausar',
+        'Reproduzir',
         'Próxima',
         'Mudo',
         'Entradas',

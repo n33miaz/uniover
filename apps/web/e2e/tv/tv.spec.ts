@@ -306,7 +306,7 @@ test.describe('controle: tela única, sem abas', () => {
       'Início da TV',
       'Menu',
       'Mudo',
-      'Reproduzir ou pausar',
+      'Reproduzir',
       'Anterior',
       'Próxima',
       'Teclado',
@@ -369,7 +369,7 @@ test.describe('controle: tela única, sem abas', () => {
       ['Início da TV', 'HOME'],
       ['Menu', 'MENU'],
       ['Mudo', 'MUTE'],
-      ['Reproduzir ou pausar', 'PLAY_PAUSE'],
+      ['Reproduzir', 'PLAY_PAUSE'],
       ['Anterior', 'MEDIA_PREVIOUS'],
       ['Próxima', 'MEDIA_NEXT'],
       ['OK', 'OK'],
@@ -2130,6 +2130,45 @@ test.describe('painel Teclado', () => {
     expect(tv.keysSent()).toEqual([]);
   });
 
+  test('digitar no campo, com Enter, espaço, setas e apagar, nunca aperta tecla da TV', async ({
+    page,
+  }) => {
+    await openTv(page);
+    // Digita logo depois do toque no Teclado, sem esperar o painel: a corrida entre o toque e o foco no campo.
+    await button(page, 'Teclado').click();
+    await page.keyboard.type('ab c');
+    await expect(keyboardField(page)).toBeFocused();
+    for (const key of [
+      'Enter',
+      'Space',
+      'ArrowUp',
+      'ArrowDown',
+      'ArrowLeft',
+      'ArrowRight',
+      'Backspace',
+      'Home',
+      'End',
+      'Tab',
+      'Shift+Tab',
+    ]) {
+      await page.keyboard.press(key);
+    }
+    // O teclado virtual do celular chega como texto inserido (sem tecla): nada disso vira comando.
+    await keyboardField(page).focus();
+    await page.keyboard.insertText(' ok');
+    await page.keyboard.press('Enter');
+    await page.clock.runFor(2_000);
+    expect(tv.keysSent()).toEqual([]);
+    // Fechar devolve o foco ao botão do Teclado: Enter e setas ali não chegam ao direcional nem aos atalhos.
+    await button(keyboardDialog(page), 'Fechar').click();
+    await expect(keyboardDialog(page)).toHaveCount(0);
+    for (const key of ['ArrowUp', 'ArrowLeft', 'ArrowRight', 'ArrowDown']) {
+      await page.keyboard.press(key);
+    }
+    expect(tv.keysSent()).toEqual([]);
+    expect(texts().length).toBeGreaterThan(0);
+  });
+
   test('sem o agente o painel já diz o motivo, antes de digitar, e nada é enviado', async ({
     page,
   }, info) => {
@@ -2540,7 +2579,7 @@ for (const screen of SCREENS) {
         'Início da TV',
         'Menu',
         'Mudo',
-        'Reproduzir ou pausar',
+        'Reproduzir',
         'Anterior',
         'Próxima',
         'Teclado',

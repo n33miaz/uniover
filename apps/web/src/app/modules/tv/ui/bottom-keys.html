@@ -165,30 +165,33 @@
     @if (prefs.showMedia()) {
       <button
         type="button"
-        class="round"
+        class="round media"
         [appKey]="'MEDIA_PREVIOUS'"
         aria-label="Anterior"
         i18n-aria-label="@@tv.key.previous"
       >
-        <app-tv-icon name="previous" />
+        <app-tv-icon name="media-previous" />
       </button>
+      <!-- Dois estados, como no YouTube: ▶ parado, ❚❚ tocando; os dois desenhos se cruzam na troca. -->
       <button
         type="button"
-        class="round"
+        class="round media play-pause"
+        [class.playing]="playing()"
         [appKey]="'PLAY_PAUSE'"
-        aria-label="Reproduzir ou pausar"
-        i18n-aria-label="@@tv.key.play-pause"
+        [attr.aria-label]="playPauseLabel()"
+        (keySent)="playPauseSent($event)"
       >
-        <app-tv-icon name="play-pause" />
+        <app-tv-icon class="state play" name="media-play" />
+        <app-tv-icon class="state pause" name="media-pause" />
       </button>
       <button
         type="button"
-        class="round"
+        class="round media"
         [appKey]="'MEDIA_NEXT'"
         aria-label="Próxima"
         i18n-aria-label="@@tv.key.next"
       >
-        <app-tv-icon name="next" />
+        <app-tv-icon name="media-next" />
       </button>
       <button
         type="button"
