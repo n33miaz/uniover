@@ -150,6 +150,7 @@ class PcLane:
         # Quantos comandos executam agora (a passagem de versão espera a faixa ficar quieta).
         self._executing = 0
         self._tasks: set[asyncio.Task[None]] = set()
+        self._media_query: asyncio.Task[None] | None = None
         self._queue: deque[tuple[Command, float]] = deque()
         self._wakeup = asyncio.Event()
         self._consumer: asyncio.Task[None] | None = None
@@ -179,6 +180,17 @@ class PcLane:
             if decision is not DeviceDecision.APPROVED:
                 self._refuse_device(command, decision)
                 return
+        if command.type == "pc.media.query.v1":
+            if self._media_query is not None and not self._media_query.done():
+                self._reply_later(
+                    command,
+                    CommandResult(
+                        command.id, ResultStatus.REJECTED, "consulta de mídia já em andamento"
+                    ),
+                )
+            else:
+                self._media_query = self._start_detached(command)
+            return
         if self._on_cloud_pc_input is not None:
             seq = command.body.get("seq")
             epoch = command.body.get("epoch")
@@ -215,9 +227,13 @@ class PcLane:
     def run_detached(self, command: Command) -> None:
         """Um comando fora da fila (a sinalização do canal direto): roda em tarefa própria, porque a
         oferta espera a biblioteca carregar e não pode segurar o mouse nem ser segurada por ele."""
-        task = asyncio.ensure_future(self._detached(command))
+        self._start_detached(command)
+
+    def _start_detached(self, command: Command) -> asyncio.Task[None]:
+        task = asyncio.create_task(self._detached(command))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+        return task
 
     async def _detached(self, command: Command) -> None:
         # Ninguém espera esta tarefa: o que der errado no envio só pode ir para o registro.
@@ -274,6 +290,8 @@ class PcLane:
         # Resultado de uma conexão que caiu não serve a ninguém: não fica tentando sair pela nova.
         while self._result_tasks:
             self._result_tasks.popleft().cancel()
+        if self._media_query is not None:
+            self._media_query.cancel()
         if keep_direct:
             keep = [item for item in self._queue if item[0].id in self._direct_ids]
             self._queue.clear()
@@ -323,7 +341,10 @@ class PcLane:
         # O consumidor da fila vive esperando comando novo: o que importa é a faixa estar quieta
         # (nada na fila, nada executando, nenhum resultado por enviar).
         while loop.time() < deadline and (  # noqa: ASYNC110 - estado de várias fontes, com prazo
-            self._queue or self._executing or self._result_tasks
+            self._queue
+            or self._executing
+            or self._result_tasks
+            or (self._media_query is not None and not self._media_query.done())
         ):
             await asyncio.sleep(0.02)
 
