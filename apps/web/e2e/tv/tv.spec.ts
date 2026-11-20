@@ -1197,7 +1197,7 @@ test.describe('desligar', () => {
       sheet.getByText('Sem o emissor infravermelho, a TV só volta com o controle original.'),
     ).toBeVisible();
     await expect(sheet.getByRole('button', { name: /fechar|close/i })).toHaveCount(0);
-    await expect(sheet.getByRole('button')).toHaveText(['Desligar', 'Cancelar']);
+    await expect(sheet.getByRole('button')).toHaveText([/^Modo Dormir/, 'Desligar', 'Cancelar']);
     await settleMotion(page);
     await screenshot(page, `test-results/tv-power-sheet-${info.project.name}.png`);
     await expectNoSeriousViolations(page);

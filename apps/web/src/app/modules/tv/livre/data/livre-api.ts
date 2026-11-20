@@ -91,12 +91,6 @@ export class TvLivreApi {
     );
   }
 
-  /** Se o Modo Dormir está ao alcance (TV Livre instalado e agente online); quem controla a TV pode perguntar. */
-  async sleepAvailable(): Promise<boolean> {
-    const dto = await firstValueFrom(this.http.get<unknown>(`${BASE}/sleep`, this.target()));
-    return (dto as { available?: unknown } | null)?.available === true;
-  }
-
   /** Envia o JPEG já reduzido (a API recusa mais de 400 KiB e o que não começa como JPEG). */
   async putPhoto(jpeg: Blob): Promise<void> {
     await firstValueFrom(

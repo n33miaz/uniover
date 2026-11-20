@@ -134,10 +134,8 @@ test.describe('a entrada no menu da TV', () => {
     await page.goto('/tv/livre');
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator('article[data-module="tv"]')).toBeVisible();
-    // A única pergunta que o convidado faz é se o Modo Dormir está ao alcance (a folha de energia o oferece).
-    expect(
-      livre.requests.filter((request) => !(request.method === 'GET' && request.path === '/sleep')),
-    ).toEqual([]);
+    // O convidado não pergunta nada ao TV Livre: o Modo Dormir da folha de energia não depende de pergunta.
+    expect(livre.requests).toEqual([]);
   });
 
   test('quem só controla a TV apaga a tela pela folha de energia, sem Desligar nem agendar', async ({
@@ -152,6 +150,30 @@ test.describe('a entrada no menu da TV', () => {
     await expect(sheet.getByText('Agendar')).toHaveCount(0);
     await button(sheet, 'Modo Dormir').click();
     await expect.poll(() => livre.to('POST', '/sleep').length).toBe(1);
+  });
+
+  test('o Modo Dormir nunca some: sem o TV Livre na TV ele continua na folha e o pedido sai', async ({
+    page,
+  }) => {
+    // Um PC reinstalado não sabe que o launcher está na TV; quem instala, se faltar, é o próprio pedido de dormir.
+    livre.view = livreView({ installed: false });
+    await page.goto('/tv');
+    await button(page, 'Desligar a TV').click();
+    const sheet = page.getByRole('dialog', { name: 'Desligar a TV?' });
+    await expect(button(sheet, 'Modo Dormir')).toBeEnabled();
+    await button(sheet, 'Modo Dormir').click();
+    await expect(sheet).toHaveCount(0);
+    await expect.poll(() => livre.to('POST', '/sleep').length).toBe(1);
+    expect(livre.requests.filter((request) => request.method === 'GET' && request.path === '/sleep')).toEqual([]);
+  });
+
+  test('a Samsung, que não roda o TV Livre, não mostra o Modo Dormir', async ({ page }) => {
+    tv.tvs = [{ ...SAMSUNG }];
+    await page.goto('/tv');
+    await button(page, 'Desligar a TV').click();
+    const sheet = page.getByRole('dialog', { name: 'Desligar a TV?' });
+    await expect(button(sheet, 'Desligar')).toBeVisible();
+    await expect(button(sheet, 'Modo Dormir')).toHaveCount(0);
   });
 });
 

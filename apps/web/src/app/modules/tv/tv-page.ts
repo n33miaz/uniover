@@ -7,7 +7,6 @@ import {
   effect,
   inject,
   signal,
-  untracked,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -18,7 +17,6 @@ import { SlowCommandNotice } from '../../core/connectivity/slow-command-notice';
 import { SessionState } from '../../core/session/session-state';
 import { TvAccess } from './data/tv-access';
 import { TvHelpGuides } from './data/tv-help-guides';
-import { TvLivreApi } from './livre/data/livre-api';
 import { TvPrefs } from './data/tv-prefs';
 import { TvRoundKeys } from './data/tv-round-keys';
 import { TvStore } from './data/tv-store';
@@ -33,7 +31,7 @@ import { SuggestionSheet } from './ui/suggestion-sheet';
 import { TvHelp } from './ui/tv-help';
 import { TvMenu, TvMenuChoice } from './ui/tv-menu';
 import { TvSwitcher } from './ui/tv-switcher';
-import { PowerSheet } from './ui/power-sheet';
+import { PowerSheet, showsSleep } from './ui/power-sheet';
 import { PairSheet } from './ui/pair-sheet';
 import { TvPickRequest, TvSuggestionRequest } from './ui/shortcut-row';
 import { AppPicker } from './ui/app-picker';
@@ -176,12 +174,14 @@ export class TvPage {
     const active = this.store.powerSchedule();
     return active !== null && (active.status === 'pending' || active.status === 'dispatching');
   });
-  private readonly livre = inject(TvLivreApi);
   /**
-   * Quem só controla a TV (sem a permissão de desligar) também vê o botão de energia, para chegar ao "Apagar a Tela", mas só
-   * se o TV Livre está na TV e o agente ao alcance; sem isso o botão abriria uma folha vazia.
+   * Quem só controla a TV (sem a permissão de desligar) também vê o botão de energia, para chegar ao "Apagar a Tela", em
+   * toda TV que tem o Modo Dormir (não a Samsung): sem isso o botão abriria uma folha vazia.
    */
-  protected readonly sleepOnly = signal(false);
+  protected readonly sleepOnly = computed(
+    () =>
+      this.access.control() && !this.access.power() && showsSleep(this.store.selectedTv()?.kind),
+  );
   protected readonly powerLabel = computed(() =>
     !this.access.power()
       ? $localize`:@@tv.power.label-sleep:Apagar a tela da TV`
@@ -256,21 +256,6 @@ export class TvPage {
         queryParams: { [TV_PANEL_PARAM]: null },
         queryParamsHandling: 'merge',
         replaceUrl: true,
-      });
-    });
-
-    effect(() => {
-      const wanted = this.access.control() && !this.access.power();
-      this.store.selectedTv(); // outra TV: pergunta de novo
-      untracked(() => {
-        if (!wanted) {
-          this.sleepOnly.set(false);
-          return;
-        }
-        void this.livre.sleepAvailable().then(
-          (available) => this.sleepOnly.set(available),
-          () => this.sleepOnly.set(false),
-        );
       });
     });
 
