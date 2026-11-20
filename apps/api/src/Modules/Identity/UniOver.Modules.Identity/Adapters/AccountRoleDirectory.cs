@@ -24,6 +24,9 @@ internal sealed class AccountRoleDirectory(IdentityDbContext db) : IAccountRoleD
             .ToListAsync(cancellationToken);
     }
 
-    public Task<bool> PredatesModuleInvitesAsync(Guid userId, CancellationToken cancellationToken = default) =>
-        db.Users.AsNoTracking().AnyAsync(u => u.Id == userId && u.PredatesModuleInvites, cancellationToken);
+    public Task<bool> PredatesInvitesOrHoldsModuleAsync(Guid userId, string modulePermission, CancellationToken cancellationToken = default) =>
+        db.Users.AsNoTracking().AnyAsync(
+            u => u.Id == userId
+                && (u.PredatesModuleInvites || db.UserGrants.Any(g => g.UserId == userId && g.Permission == modulePermission)),
+            cancellationToken);
 }

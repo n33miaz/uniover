@@ -54,7 +54,8 @@ internal enum MemberScope
 /// Quem tem filiação vê as TVs das quais é membro. Quem já teve e foi retirado (marca <see cref="TvMemberOptOut"/>) não vê TV
 /// nenhuma: perder a última TV não pode entregar a TV do dono. Quem NUNCA teve filiação só segue a TV padrão se a conta é de
 /// antes dos convites por módulo (marca do Identity, gravada uma única vez pela migration) ou se ganhou o módulo da TV depois
-/// disso (<see cref="TvDefaultFollower"/>, gravada pelo aviso do aceite do convite). Sem nenhuma das duas, nada. O
+/// disso (a concessão vigente de <c>module:tv</c> no Identity, que o aviso da outbox também grava aqui como
+/// <see cref="TvDefaultFollower"/>). Sem nenhuma das duas, nada. O
 /// administrador vê todas.
 /// </summary>
 internal sealed class TvSelectionService(TvDbContext db, ITvAgentResolver defaultAgent, IAccountRoleDirectory accounts)
@@ -152,8 +153,12 @@ internal sealed class TvSelectionService(TvDbContext db, ITvAgentResolver defaul
             .ToListAsync(cancellationToken);
         var hasMembership = evidence.Contains(1);
         var hasOptOut = evidence.Contains(2);
+        // Sem a marca, vale a concessão VIGENTE do módulo da TV, lida no Identity: o aviso da outbox pode ainda não ter chegado
+        // (a primeira requisição logo depois do aceite) ou ter ido para dead letter, e nenhum dos dois pode tirar a TV de quem a
+        // recebeu. A marca só poupa essa leitura.
         var followsDefault = !hasMembership && !hasOptOut
-            && (evidence.Contains(3) || await accounts.PredatesModuleInvitesAsync(userId, cancellationToken));
+            && (evidence.Contains(3)
+                || await accounts.PredatesInvitesOrHoldsModuleAsync(userId, AccessPermissions.TvModule, cancellationToken));
         return Decide(hasMembership, hasOptOut, followsDefault);
     }
 
