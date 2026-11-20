@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import io
 import logging
+import sys
 import zipfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -538,7 +539,11 @@ async def test_the_adb_capability_arrives_when_the_tool_shows_up_after_start(
         await step()
     assert "tv.adb" not in setup.capabilities
 
+    # O pacote baixado é o do Windows (`adb.exe`); fora dele a procura acha o `adb` sem extensão
+    # na mesma pasta, como um `platform-tools` posto ali à mão.
     exe = provisioned_adb(installation_base())
+    if sys.platform != "win32":
+        exe = exe.with_name("adb")
     exe.parent.mkdir(parents=True)
     exe.write_bytes(b"x")
     assert adb_tool.refresh() == exe
