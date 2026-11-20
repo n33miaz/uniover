@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
@@ -11,10 +12,12 @@ import {
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
+import { QUEUE_RUNTIME } from '../../../core/offline-queue/queue-ports';
 import { CatalogRepository } from '../data/catalog/catalog-repository';
 import { RoutineRepository } from '../data/routines/routine-repository';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { TrainingSync } from '../data/sync/training-sync';
+import { addDays, civilDateOf, deviceTimeZone, startOfDay } from '../domain/progress/calendar';
 import {
   IllustrationPrefetcher,
   illustrationFiles,
@@ -56,7 +59,8 @@ import { WeekCalendar } from './week-calendar';
   templateUrl: './today-home.html',
   styleUrl: './today-home.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  // O app instalado volta do segundo plano sem recarregar: ao voltar, a ficha do dia é calculada de novo.
+  // O app instalado volta do segundo plano sem recarregar: ao voltar, a ficha do dia é calculada de novo. Com a tela aberta
+  // e visível na virada, quem relê é o temporizador da meia-noite (ver `scheduleDayTurn`).
   host: {
     '(document:visibilitychange)': 'refreshDay()',
     '(window:focus)': 'refreshDay()',
@@ -72,6 +76,10 @@ export class TodayHome {
   private readonly prefetcher = inject(IllustrationPrefetcher);
   private readonly router = inject(Router);
   protected readonly online = inject(ConnectivityService).online;
+  private readonly runtime = inject(QUEUE_RUNTIME);
+  private readonly zone = deviceTimeZone();
+  /** O temporizador da próxima meia-noite local; um só por vez, e some com a tela. */
+  private dayTimer: unknown;
 
   /** O treino abriu (ou já estava aberto): a página mostra o treino ao vivo. */
   readonly started = output<void>();
@@ -176,6 +184,8 @@ export class TodayHome {
   });
 
   constructor() {
+    this.scheduleDayTurn();
+    inject(DestroyRef).onDestroy(() => this.runtime.clearTimeout(this.dayTimer));
     // Relê ao abrir e a cada gravação (o fim de um treino muda a rotina do dia e o resumo da semana).
     effect(() => {
       this.sessions.revision();
@@ -191,10 +201,28 @@ export class TodayHome {
     });
   }
 
-  /** Relê as rotinas e a ficha do dia; barato, e só age quando a tela está visível. */
+  /**
+   * Relê as rotinas e a ficha do dia; barato, e só age quando a tela está visível. Antes, rearma a meia-noite: a volta ao
+   * app, a troca do dia e o próprio disparo contam a partir de agora (o relógio pode ter mudado com o app no fundo).
+   */
   protected refreshDay(): void {
+    this.scheduleDayTurn();
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     void this.store.loadHome();
+  }
+
+  /**
+   * Agenda a releitura para a próxima meia-noite no fuso do aparelho. Sem isto, com Hoje aberta e visível na virada, a
+   * ficha de ontem ficaria na tela até um foco, uma gravação ou o primeiro toque em Iniciar.
+   */
+  private scheduleDayTurn(): void {
+    this.runtime.clearTimeout(this.dayTimer);
+    const now = this.runtime.now();
+    const tomorrow = addDays(civilDateOf(now, this.zone), 1);
+    this.dayTimer = this.runtime.setTimeout(
+      () => this.refreshDay(),
+      Math.max(1, startOfDay(tomorrow, this.zone) - now),
+    );
   }
 
   protected async start(routineId: string | null): Promise<void> {
