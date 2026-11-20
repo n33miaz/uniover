@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.74.1](https://github.com/n33miaz/uniover/compare/v0.74.0...v0.74.1) (2026-11-20)
+
+
+### Identity 0.46.3
+
+#### Bug Fixes
+
+* **tv:** no default tv for new accounts
+* **tv:** honor current tv grant before event
+
+
+### TV 0.53.3
+
+#### Bug Fixes
+
+* **tv:** no default tv for new accounts
+* **tv:** honor current tv grant before event
+
+
+### Agent 0.62.1
+
+#### Bug Fixes
+
+* **agent:** skip dev deps on installed pcs
+
 ## [0.74.0](https://github.com/n33miaz/uniover/compare/v0.73.1...v0.74.0) (2026-11-20)
 
 
