@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.73.1](https://github.com/n33miaz/uniover/compare/v0.73.0...v0.73.1) (2026-11-20)
+
+
+### Identity 0.46.2
+
+#### Bug Fixes
+
+* **web:** apply global ui rules
+
+
+### Devices 0.66.1
+
+#### Bug Fixes
+
+* **web:** apply global ui rules
+
+
+### TV 0.53.2
+
+#### Bug Fixes
+
+* **web:** apply global ui rules
+
+
+### Training 0.46.1
+
+#### Bug Fixes
+
+* **web:** apply global ui rules
+
+
+### Web 0.70.1
+
+#### Bug Fixes
+
+* **web:** apply global ui rules
+
 ## [0.73.0](https://github.com/n33miaz/uniover/compare/v0.72.0...v0.73.0) (2026-11-20)
 
 
