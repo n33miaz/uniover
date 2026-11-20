@@ -3,12 +3,14 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Features.ListGuests;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
+using UniOver.SharedKernel;
 
 namespace UniOver.Modules.Identity.Features.SetGuestPermissions;
 
@@ -33,7 +35,7 @@ internal sealed record SetGuestPermissionsResult(SetGuestPermissionsStatus Statu
 
 internal sealed class SetGuestPermissionsHandler(
     IdentityDbContext db, LoginAuditWriter audit, AccessGrantsService grants, TimeProvider time,
-    UserAccessNotifier? access = null)
+    IEventBus events, UserAccessNotifier? access = null)
 {
     /// <param name="permissions">Já conferidas por <see cref="PermissionRules.Validate"/> (catálogo, módulo, dependência).</param>
     public async Task<SetGuestPermissionsResult> HandleAsync(
@@ -77,6 +79,15 @@ internal sealed class SetGuestPermissionsHandler(
 
             // O que entrou e o que saiu, sem nome nem e-mail da pessoa: só o id da conta e os identificadores do catálogo.
             audit.Add(ownerId, AuditEvents.PermissionsChanged, client, ChangeAuditDetail(guestId, added, removed.Select(g => g.Permission)));
+
+            // Módulo que entrou agora vai na outbox, na mesma transação da concessão: é o mesmo aviso do aceite do convite, e
+            // cada módulo decide o vínculo (a TV passa a seguir a TV padrão).
+            var modulesAdded = added.Where(p => p.StartsWith("module:", StringComparison.Ordinal)).Order(StringComparer.Ordinal).ToList();
+            if (modulesAdded.Count > 0)
+            {
+                await events.PublishAsync(new GuestModulesGranted(IdGenerator.NewId(), now, guestId, modulesAdded), cancellationToken);
+            }
+
             try
             {
                 await db.SaveChangesAsync(cancellationToken);

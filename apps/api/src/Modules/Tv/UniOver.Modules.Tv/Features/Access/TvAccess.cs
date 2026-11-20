@@ -13,8 +13,8 @@ internal sealed record TvAccessPerson(Guid UserId, IReadOnlyList<Guid> TvIds);
 internal sealed record TvAccessResponse(IReadOnlyList<TvAccessPerson> Items);
 
 /// <summary>
-/// "TVs por pessoa": para cada conta pedida, quais TVs ela vê. A regra de visibilidade (filiação, a TV padrão de quem nunca
-/// teve filiação, a retirada que não devolve a padrão) mora em <see cref="TvSelectionService"/>; esta leitura só a repete
+/// "TVs por pessoa": para cada conta pedida, quais TVs ela vê. A regra de visibilidade (filiação, a TV padrão de quem a segue sem
+/// filiação, a retirada que não devolve a padrão) mora em <see cref="TvSelectionService"/>; esta leitura só a repete
 /// por conta, para a tela do administrador nunca ter uma segunda cópia dela. É uma visão do administrador: a rota é dele.
 /// </summary>
 internal sealed class TvAccessHandler(TvSelectionService selection)

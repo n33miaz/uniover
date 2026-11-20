@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
 using UniOver.Modules.Tv.Persistence;
@@ -40,20 +41,34 @@ internal sealed class TvCurrentSelection : ITvCurrentSelection
     public void Set(TvTarget target) => _target = target ?? throw new ArgumentNullException(nameof(target));
 }
 
+/// <summary>O que uma conta que não é administradora enxerga.</summary>
+internal enum MemberScope
+{
+    Memberships,
+    DefaultTv,
+    Nothing,
+}
+
 /// <summary>
 /// Centraliza a regra de visibilidade para que uma rota nova não consiga, por esquecimento, operar uma TV de outra conta.
-/// Quem tem filiação vê as TVs das quais é membro. Quem NUNCA teve filiação é a conta de antes das várias TVs e continua na
-/// TV padrão. Quem já teve e foi retirado (marca <see cref="TvMemberOptOut"/>) não vê TV nenhuma: perder a última TV não
-/// pode entregar a TV do dono. O administrador vê todas.
+/// Quem tem filiação vê as TVs das quais é membro. Quem já teve e foi retirado (marca <see cref="TvMemberOptOut"/>) não vê TV
+/// nenhuma: perder a última TV não pode entregar a TV do dono. Quem NUNCA teve filiação só segue a TV padrão se a conta é de
+/// antes dos convites por módulo (marca do Identity, gravada uma única vez pela migration) ou se ganhou o módulo da TV depois
+/// disso (<see cref="TvDefaultFollower"/>, gravada pelo aviso do aceite do convite). Sem nenhuma das duas, nada. O
+/// administrador vê todas.
 /// </summary>
-internal sealed class TvSelectionService(TvDbContext db, ITvAgentResolver defaultAgent)
+internal sealed class TvSelectionService(TvDbContext db, ITvAgentResolver defaultAgent, IAccountRoleDirectory accounts)
 {
-    private enum MemberScope
-    {
-        Memberships,
-        DefaultTv,
-        Nothing,
-    }
+    /// <summary>
+    /// A regra pura. Filiação primeiro (vence a marca de retirada, que pode sobrar de antes de a conta voltar a uma TV),
+    /// depois a retirada, e só então quem segue a TV padrão (conta antiga ou que ganhou o módulo da TV). Na falta de tudo,
+    /// nada: a TV do dono nunca é o padrão de uma conta nova.
+    /// </summary>
+    internal static MemberScope Decide(bool hasMembership, bool hasOptOut, bool followsDefault) =>
+        hasMembership ? MemberScope.Memberships
+        : hasOptOut ? MemberScope.Nothing
+        : followsDefault ? MemberScope.DefaultTv
+        : MemberScope.Nothing;
 
     public async Task<IReadOnlyList<TvTarget>> ListVisibleAsync(Guid userId, bool isOwner, CancellationToken cancellationToken)
     {
@@ -123,19 +138,23 @@ internal sealed class TvSelectionService(TvDbContext db, ITvAgentResolver defaul
         db.Tvs.SingleOrDefaultAsync(t => t.AgentSlug == agentSlug, cancellationToken);
 
     /// <summary>
-    /// Filiação primeiro (vence a marca, que pode sobrar de antes de a conta voltar a uma TV), depois a marca, depois a
-    /// compatibilidade. As duas leituras vão numa só consulta para virem do mesmo instante: separadas, uma conta que entra
-    /// ou sai de uma TV bem no meio poderia aparecer, por um instante, como "nunca teve filiação".
+    /// Ver <see cref="Decide"/>. Filiação, retirada e a marca de quem segue a TV padrão vão numa só consulta para virem do
+    /// mesmo instante: separadas, uma conta que entra ou sai de uma TV bem no meio poderia aparecer, por um instante, como
+    /// "nunca teve filiação". A marca de conta antiga (do Identity) só é lida quando falta o resto, e pode vir numa leitura à
+    /// parte: ela nunca muda depois de gravada.
     /// </summary>
     private async Task<MemberScope> ScopeOfMemberAsync(Guid userId, CancellationToken cancellationToken)
     {
         var evidence = await db.TvMembers.AsNoTracking().Where(m => m.UserId == userId).Select(m => 1)
             .Concat(db.TvMemberOptOuts.AsNoTracking().Where(o => o.UserId == userId).Select(o => 2))
+            .Concat(db.TvDefaultFollowers.AsNoTracking().Where(f => f.UserId == userId).Select(f => 3))
             .Distinct()
             .ToListAsync(cancellationToken);
-        return evidence.Contains(1) ? MemberScope.Memberships
-            : evidence.Contains(2) ? MemberScope.Nothing
-            : MemberScope.DefaultTv;
+        var hasMembership = evidence.Contains(1);
+        var hasOptOut = evidence.Contains(2);
+        var followsDefault = !hasMembership && !hasOptOut
+            && (evidence.Contains(3) || await accounts.PredatesModuleInvitesAsync(userId, cancellationToken));
+        return Decide(hasMembership, hasOptOut, followsDefault);
     }
 
     private IQueryable<ConfiguredTv> VisibleFor(MemberScope scope, Guid userId) => scope == MemberScope.Memberships

@@ -263,58 +263,6 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                     b.ToTable("command_audit", "tv");
                 });
 
-            modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvRemovalAuditEntry", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<string>("AgentId")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
-                        .HasColumnName("agent_id");
-
-                    b.Property<string>("Ip")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("ip");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("kind");
-
-                    b.Property<DateTimeOffset>("OccurredAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("occurred_at");
-
-                    b.Property<Guid>("TvId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("tv_id");
-
-                    b.Property<string>("UserAgent")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)")
-                        .HasColumnName("user_agent");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("user_id");
-
-                    b.HasKey("Id")
-                        .HasName("pk_tv_removal_audit");
-
-                    b.HasIndex("OccurredAt")
-                        .HasDatabaseName("ix_tv_removal_audit_occurred_at");
-
-                    b.HasIndex("UserId", "OccurredAt")
-                        .HasDatabaseName("ix_tv_removal_audit_user_id_occurred_at");
-
-                    b.ToTable("tv_removal_audit", "tv");
-                });
-
             modelBuilder.Entity("UniOver.Modules.Tv.Domain.ConfiguredTv", b =>
                 {
                     b.Property<Guid>("Id")
@@ -626,6 +574,22 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                     b.ToTable("siri_tokens", "tv");
                 });
 
+            modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvDefaultFollower", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.HasKey("UserId")
+                        .HasName("pk_default_tv_followers");
+
+                    b.ToTable("default_tv_followers", "tv");
+                });
+
             modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvLayout", b =>
                 {
                     b.Property<Guid>("TvId")
@@ -731,6 +695,58 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                         .HasName("pk_tv_member_optouts");
 
                     b.ToTable("tv_member_optouts", "tv");
+                });
+
+            modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvRemovalAuditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AgentId")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("Ip")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("ip");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<Guid>("TvId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tv_id");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("user_agent");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_tv_removal_audit");
+
+                    b.HasIndex("OccurredAt")
+                        .HasDatabaseName("ix_tv_removal_audit_occurred_at");
+
+                    b.HasIndex("UserId", "OccurredAt")
+                        .HasDatabaseName("ix_tv_removal_audit_user_id_occurred_at");
+
+                    b.ToTable("tv_removal_audit", "tv");
                 });
 
             modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvStateRecord", b =>
