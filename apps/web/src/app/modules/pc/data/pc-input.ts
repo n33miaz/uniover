@@ -1,4 +1,5 @@
 import { Injectable, computed, effect, inject, untracked } from '@angular/core';
+import { PcAvailability } from '../../../core/modules/pc-availability';
 import { SessionState } from '../../../core/session/session-state';
 import { tick } from '../input/haptics';
 import { LiveTyper, type TextDiff } from '../input/live-typing';
@@ -6,7 +7,14 @@ import { PcArmed } from './pc-armed';
 import { CANCELLED, type PcFailure } from './pc-failure';
 import { slideKeys } from './pc-slides';
 import { PcStore } from './pc-store';
-import type { PcHoldableKey, PcKey, PcKeyOptions, PcModifier } from './pc-types';
+import {
+  PC_CLIPBOARD_CAPABILITY,
+  clipboardTextFits,
+  type PcHoldableKey,
+  type PcKey,
+  type PcKeyOptions,
+  type PcModifier,
+} from './pc-types';
 
 /** O que falhou: `edit` foi o texto do teclado do celular (apagar e digitar), `key` uma tecla da tela. */
 export type InputKind = 'edit' | 'key';
@@ -34,6 +42,7 @@ export class PcInput {
   private readonly store = inject(PcStore);
   private readonly session = inject(SessionState);
   private readonly armed = inject(PcArmed);
+  private readonly availability = inject(PcAvailability);
   /** A conta de quem é o que está na fila. */
   private account = this.session.accountId();
   private readonly failureListeners = new Set<
@@ -54,6 +63,10 @@ export class PcInput {
       edit: (edit) => this.sameAccount(() => this.store.sendTextEdit(edit)),
       canEdit: () => this.store.supportsTextV2(),
       canEditLines: () => this.store.supportsTextV3(),
+      clipboard: (text) =>
+        this.sameAccount(() => this.store.writeClipboard(this.clipboardText(text))),
+      canPaste: (text) => this.canPaste(text),
+      pasteModifiers: () => (this.availability.status()?.system === 'macos' ? ['WIN'] : ['CTRL']),
     },
     {
       failed: (failure, kind, droppedEdits) =>
@@ -86,6 +99,28 @@ export class PcInput {
   /** O campo do teclado do celular mudou: apagar `erase` e digitar o resto. */
   edit(diff: TextDiff): void {
     this.typer.edit(diff);
+  }
+
+  /**
+   * Um texto colado no campo: vai pela área de transferência do PC e um colar, inteiro de uma vez (só com `canPaste`; quem
+   * chama confere). Na fila, na ordem do que veio antes.
+   */
+  paste(diff: TextDiff): void {
+    this.typer.paste(diff);
+  }
+
+  /** O PC declarou a área de transferência e este texto (como chegará nela) cabe ali. */
+  canPaste(text: string): boolean {
+    return (
+      this.store.capabilities().includes(PC_CLIPBOARD_CAPABILITY) &&
+      clipboardTextFits(this.clipboardText(text))
+    );
+  }
+
+  /** O texto como vai à área de transferência: no Windows a quebra de linha é CRLF (o que os programas dele esperam ao colar). */
+  private clipboardText(text: string): string {
+    const system = this.availability.status()?.system;
+    return system === 'macos' || system === 'linux' ? text : text.replace(/\r?\n/g, '\r\n');
   }
 
   /** Uma tecla com estes modificadores (os armados não entram: quem chama já os gastou). */
