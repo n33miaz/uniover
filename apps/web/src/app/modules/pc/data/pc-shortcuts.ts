@@ -1,3 +1,5 @@
+import type { PcSystem } from '../../../core/modules/pc-availability';
+import { modifierLabel, systemKeyLabel } from './pc-key-label';
 import type { PcKey, PcKeyV1, PcKeyV2Only, PcModifier } from './pc-types';
 
 /** Os grupos da folha de atalhos, na ordem em que aparecem (depois dos fixados). */
@@ -189,16 +191,10 @@ const KEY_NAME: Readonly<Partial<Record<PcKey, string>>> = {
   D9: '9',
 };
 
-const MODIFIER_NAME: Readonly<Record<PcModifier, string>> = {
-  CTRL: 'Ctrl',
-  SHIFT: 'Shift',
-  ALT: 'Alt',
-  WIN: 'Win',
-};
-
 /** As teclas do atalho escritas como no teclado ("Ctrl+Shift+Esc"); vazio para o que não é tecla (bloquear). */
-export function keysText(shortcut: PcShortcut): string {
+export function keysText(shortcut: PcShortcut, system?: PcSystem): string {
   if (shortcut.action.kind !== 'keys') return '';
   const { key, modifiers } = shortcut.action;
-  return [...modifiers.map((modifier) => MODIFIER_NAME[modifier]), KEY_NAME[key] ?? key].join('+');
+  const label = key === 'WIN' ? systemKeyLabel(system) : (KEY_NAME[key] ?? key);
+  return [...modifiers.map((modifier) => modifierLabel(modifier, system)), label].join('+');
 }

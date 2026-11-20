@@ -1,3 +1,5 @@
+import { PcAvailability } from '../../../core/modules/pc-availability';
+import { modifierLabel } from '../data/pc-key-label';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -11,14 +13,6 @@ import {
 import { PcArmed } from '../data/pc-armed';
 import { PC_MODIFIERS, type PcModifier } from '../data/pc-types';
 import { tick } from '../input/haptics';
-
-/** Os nomes das teclas modificadoras não se traduzem: são as que estão no teclado do PC. */
-const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
-  CTRL: 'Ctrl',
-  SHIFT: 'Shift',
-  ALT: 'Alt',
-  WIN: 'Win',
-};
 
 /**
  * As teclas armadas à vista, onde quer que um atalho possa ser tocado (a aba Atalhos e a folha do raio): quem armou Win na
@@ -88,12 +82,14 @@ export class PcArmedPills {
     PC_MODIFIERS.filter((modifier) => this.armed.armed().has(modifier)),
   );
 
+  private readonly pcStatus = inject(PcAvailability).status;
+
   protected label(modifier: PcModifier): string {
-    return MODIFIER_LABEL[modifier];
+    return modifierLabel(modifier, this.pcStatus()?.system);
   }
 
   protected releaseLabel(modifier: PcModifier): string {
-    const name = MODIFIER_LABEL[modifier];
+    const name = this.label(modifier);
     return $localize`:@@pc.armed.release:Soltar ${name}:name:`;
   }
 

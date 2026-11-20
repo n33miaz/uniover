@@ -1,3 +1,4 @@
+import { PcAvailability } from '../../../core/modules/pc-availability';
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import { PcInput } from '../data/pc-input';
 import { keysText, shortcutById, type PcShortcut } from '../data/pc-shortcuts';
@@ -33,6 +34,7 @@ import { shortcutLabel } from './shortcut-labels';
   styleUrl: './shortcut-cells.css',
 })
 export class PcShortcutCells {
+  private readonly pcStatus = inject(PcAvailability).status;
   protected readonly store = inject(PcStore);
   protected readonly input = inject(PcInput);
 
@@ -59,7 +61,7 @@ export class PcShortcutCells {
   }
 
   protected keys(item: PcShortcut): string {
-    return keysText(item);
+    return keysText(item, this.pcStatus()?.system);
   }
 
   protected send(item: PcShortcut): void {
