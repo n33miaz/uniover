@@ -12,10 +12,6 @@
   padding-bottom: 96px;
 }
 
-.live:has(.resting) {
-  padding-bottom: var(--space-4);
-}
-
 /* O interruptor da tela acesa fica numa fileira logo abaixo do topo da casca, no canto de quem treina com a mão direita. */
 .tools {
   display: flex;
@@ -150,54 +146,41 @@
   flex: none;
 }
 
-/*
- * A ilustração: tudo o que sobra de altura na primeira parte. O componente limita a largura a 320 px e mantém a proporção do
- * desenho, então a caixa tem teto de 328 px de altura; no descanso ela recolhe (o cronômetro é o foco) com a mesma transição
- * da entrada do cartão.
- */
-.art {
-  display: flex;
+/* O cronômetro ocupa o espaço da ilustração e mantém os campos na mesma área da tela. */
+.media {
+  display: grid;
   flex: 1 1 0;
-  align-items: center;
-  justify-content: center;
+  min-height: 8.5rem;
+}
+
+.media > * {
+  grid-area: 1 / 1;
+}
+
+.art {
+  position: relative;
   min-height: 8.5rem;
   max-height: 20.5rem;
   overflow: hidden;
 }
 
 .art app-exercise-illustration {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 50%;
   width: auto;
   max-width: 100%;
   height: 100%;
   aspect-ratio: 268 / 275;
+  transform: translateX(-50%);
 }
 
 .body.resting .art {
-  flex-grow: 0;
-  min-height: 0;
-  max-height: 0;
-  opacity: 0;
   visibility: hidden;
 }
 
-.body.resting .first {
-  min-height: 0;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .art {
-    transition:
-      flex-grow 220ms var(--ease-out),
-      min-height 220ms var(--ease-out),
-      max-height 220ms var(--ease-out),
-      opacity 160ms var(--ease-out),
-      visibility 0s 220ms;
-  }
-
-  /* Ao voltar do descanso a ilustração fica visível já no começo da transição. */
-  .body:not(.resting) .art {
-    transition-delay: 0s;
-  }
+.media:has(app-rest-card) {
+  min-height: min-content;
 }
 
 /* A segunda parte: referência, esforço, anotação, aquecimento e as séries já feitas. */

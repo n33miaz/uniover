@@ -60,19 +60,6 @@
           @if (exercise(); as ex) {
             <div class="top">
               <h2 class="name" [attr.title]="ex.name">{{ ex.name }}</h2>
-              <p class="sub">
-                <span class="routine">{{ heading() }}</span>
-                @if (positionText()) {
-                  <span class="position">{{ positionText() }}</span>
-                }
-              </p>
-              @if (tags().length > 0) {
-                <ul class="chips ui-plain">
-                  @for (tag of tags(); track tag) {
-                    <li class="ui-chip accent">{{ tag }}</li>
-                  }
-                </ul>
-              }
             </div>
           }
 
@@ -87,24 +74,29 @@
             }
           </div>
 
-          @if (timer.active()) {
-            <app-rest-card
-              [canVibrate]="canVibrate"
-              [record]="recordText()"
-              [last]="lastText()"
-              [nextSet]="setTitle()"
-              (finishExercise)="finishExerciseFromRest()"
-              (finishWorkout)="finish()"
-            />
+          @if (thumb() !== null || timer.active()) {
+            <div class="media">
+              @if (exercise(); as ex) {
+                @if (thumb() !== null) {
+                  <div class="art" [attr.inert]="timer.active() ? '' : null">
+                    <app-exercise-illustration [slug]="ex.slug" [name]="ex.name" />
+                  </div>
+                }
+              }
+              @if (timer.active()) {
+                <app-rest-card
+                  [canVibrate]="canVibrate"
+                  [record]="recordText()"
+                  [last]="lastText()"
+                  [nextSet]="setTitle()"
+                  (finishExercise)="finishExerciseFromRest()"
+                  (finishWorkout)="finish()"
+                />
+              }
+            </div>
           }
 
           @if (exercise(); as ex) {
-            @if (thumb() !== null) {
-              <!-- Recolhida no descanso: fora da ordem de foco e da leitura, para o botão dela não ficar preso numa caixa de 2 px. -->
-              <div class="art" [attr.inert]="timer.active() ? '' : null">
-                <app-exercise-illustration [slug]="ex.slug" [name]="ex.name" />
-              </div>
-            }
             <section class="setcard ui-card" aria-labelledby="set-title">
               <app-live-set-fields
                 [exercise]="ex"
@@ -117,6 +109,19 @@
         </div>
 
         <div class="more">
+          <p class="sub">
+            <span class="routine">{{ heading() }}</span>
+            @if (positionText()) {
+              <span class="position">{{ positionText() }}</span>
+            }
+          </p>
+          @if (tags().length > 0) {
+            <ul class="chips ui-plain">
+              @for (tag of tags(); track tag) {
+                <li class="ui-chip accent">{{ tag }}</li>
+              }
+            </ul>
+          }
           @if (bannerLines().length > 0 && !timer.active()) {
             <app-live-record-banner [lines]="bannerLines()" (dismissed)="live.dismissBanner()" />
           }
@@ -259,6 +264,7 @@
       [names]="names()"
       [focusKey]="focus()?.key ?? null"
       (chosen)="chooseEntry($event)"
+      (finishedFocus)="returnAfterExercise()"
       (add)="sheet.set('add')"
       (closed)="sheet.set(null)"
     />

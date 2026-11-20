@@ -28,6 +28,46 @@ async function box(page: Page, selector: string) {
   return page.locator(selector).first().boundingBox();
 }
 
+test('registra uma série extra depois da meta e volta à lista', async ({ page, context }) => {
+  await launch(context, page);
+  await openToday(page);
+  await beginWorkout(page);
+  for (let index = 0; index < 4; index++) await concludeSet(page);
+  const completed = page
+    .locator('app-workout-day .exercise')
+    .filter({ hasText: 'Supino reto com barra' });
+  await expect(completed).toContainText('Fazer série extra');
+  await completed.click();
+  await expect(page.locator('.set-title')).toHaveText('Série extra');
+  await concludeSet(page);
+  await expect(completed).toBeVisible();
+});
+
+test('mostra o tour uma vez e calcula o tempo máximo da sessão', async ({ page, context }) => {
+  await launch(context, page);
+  await openToday(page);
+  await page.getByRole('button', { name: 'Iniciar Treino', exact: true }).click();
+  const skip = page.getByRole('button', { name: 'Seguir sem Programa' });
+  await expect(skip).toBeVisible();
+  await skip.click();
+  const tour = page.getByRole('complementary', { name: 'Novidades no treino' });
+  await expect(tour).toContainText('série extra');
+  await tour.getByRole('button', { name: 'Próximo' }).click();
+  await expect(tour).toContainText('escolha um similar');
+  await tour.getByRole('button', { name: 'Fechar' }).click();
+  await page.getByText('Tempo máximo', { exact: true }).click();
+  await page.getByLabel('Minutos', { exact: true }).fill('5');
+  await page.getByRole('button', { name: 'Salvar', exact: true }).click();
+  await expect(page.getByText('5 min restantes')).toBeVisible();
+  await page.reload();
+  await expect(tour).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Novidades no treino' })).toBeVisible();
+  await expect(page.getByText('5 min restantes')).toBeVisible();
+  await page.clock.fastForward(5 * 60_000);
+  await expect(page.getByText('Tempo atingido')).toBeVisible();
+  await expect(page.locator('app-workout-day .exercise.suggested')).toHaveCount(0);
+});
+
 test.describe('primeira parte do exercício', () => {
   test.beforeEach(async ({ page }) => {
     // Sem movimento: a medida da ilustração e do cartão não depende de transição em curso.
@@ -59,7 +99,7 @@ test.describe('primeira parte do exercício', () => {
     expect(Math.abs(title.x + title.width / 2 - viewport.width / 2)).toBeLessThan(2);
   });
 
-  test('o nome é o título de largura total, com a rotina e a posição na lista abaixo', async ({
+  test('o nome ocupa a largura toda e os detalhes da rotina ficam abaixo dos campos', async ({
     page,
     context,
   }) => {
@@ -225,7 +265,7 @@ test.describe('primeira parte do exercício', () => {
     const rest = page.locator('.rest');
     await expect(rest).toContainText('carga máxima 42,5 kg');
     await expect(rest).toContainText('1RM estimado');
-    await expect.poll(async () => (await box(page, '.art'))?.height ?? 0).toBeLessThan(2);
+    await expect(page.locator('.art')).toBeHidden();
     const viewport = page.viewportSize()!;
     for (const name of ['Pular Descanso', '+15 s', 'Encerrar Exercício', 'Encerrar Treino']) {
       const target = (await rest.getByRole('button', { name, exact: true }).boundingBox())!;
@@ -248,7 +288,7 @@ test.describe('primeira parte do exercício', () => {
     await expect(menu.getByText(/iOS 18/)).toHaveCount(0);
   });
 
-  test('no descanso a ilustração recolhe, o recorde aparece uma vez só e o cartão traz o relógio', async ({
+  test('no descanso o relógio ocupa a região da ilustração e o recorde aparece uma vez', async ({
     page,
     context,
   }) => {
@@ -261,7 +301,7 @@ test.describe('primeira parte do exercício', () => {
     await concludeSet(page);
 
     await expect(page.locator('.rest .time')).toBeVisible();
-    await expect.poll(async () => (await box(page, '.art'))?.height ?? 0).toBeLessThan(2);
+    await expect(page.locator('.art')).toBeHidden();
     // O recorde fica no cartão do descanso; o aviso próprio não repete a informação na mesma tela.
     await expect(page.locator('.rest')).toContainText('carga máxima 42,5 kg');
     await expect(page.getByRole('status').filter({ hasText: 'Recorde!' })).toHaveCount(0);
@@ -270,7 +310,7 @@ test.describe('primeira parte do exercício', () => {
     await expect(fieldValue(page, 'Carga')).toHaveValue('42,5');
     await expectNoHorizontalScroll(page);
 
-    // Ao pular o descanso, a ilustração volta a ocupar o espaço.
+    // Ao pular o descanso, a ilustração volta à mesma região.
     await page.getByRole('button', { name: 'Pular Descanso', exact: true }).click();
     await expect(page.locator('.rest')).toHaveCount(0);
     await expect.poll(async () => (await box(page, '.art'))?.height ?? 0).toBeGreaterThan(180);

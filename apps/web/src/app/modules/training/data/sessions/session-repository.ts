@@ -110,6 +110,7 @@ const META_ACTIVE_SESSION = 'activeSessionId';
 /** Fim do descanso (ms); quem lê e escreve é o timer, o repositório só o apaga ao encerrar o treino. */
 export const META_REST_ENDS_AT = 'restEndsAt';
 const META_SKIPPED = 'skippedExercises';
+const META_SESSION_LIMIT = 'sessionLimitMinutes';
 /** Bloqueio entre abas do "Iniciar" (o nome leva o do banco da conta: cada conta tem o seu). */
 const START_LOCK = 'uniover-training-start';
 /** Fim do intervalo de busca do histórico (o maior inteiro seguro: limite explícito, nunca `Dexie.maxKey`). */
@@ -219,7 +220,7 @@ export class SessionRepository {
       [{ table: 'sessions', written: session, previous: undefined, enqueue: true }],
       {
         put: { [META_ACTIVE_SESSION]: session.id },
-        remove: [META_REST_ENDS_AT, META_SKIPPED],
+        remove: [META_REST_ENDS_AT, META_SKIPPED, META_SESSION_LIMIT],
       },
       // O estado é relido DENTRO da transação que grava: nenhuma outra escrita se encaixa entre a conferência e o treino novo.
       async () => {
@@ -320,7 +321,7 @@ export class SessionRepository {
     const active = await this.activeSession();
     if (!active) return { status: 'no-active-session' };
     return this.close(active, options, {
-      remove: [META_ACTIVE_SESSION, META_REST_ENDS_AT, META_SKIPPED],
+      remove: [META_ACTIVE_SESSION, META_REST_ENDS_AT, META_SKIPPED, META_SESSION_LIMIT],
     });
   }
 
@@ -371,7 +372,7 @@ export class SessionRepository {
     }
 
     const saved = await this.commit(writes, {
-      remove: [META_ACTIVE_SESSION, META_REST_ENDS_AT, META_SKIPPED],
+      remove: [META_ACTIVE_SESSION, META_REST_ENDS_AT, META_SKIPPED, META_SESSION_LIMIT],
     });
     return saved ? { status: 'saved', session } : { status: 'storage-full' };
   }
@@ -487,27 +488,71 @@ export class SessionRepository {
     return { sessionId: found.id, finishedAt: found.finishedAt ?? found.startedAt, sets };
   }
 
-  /** Exercícios que o dono pulou no treino aberto (só deste aparelho; não sobe para o servidor). */
+  async sessionLimitMinutes(sessionId: string): Promise<number | null> {
+    const value = (await this.db.meta.get(META_SESSION_LIMIT))?.value as
+      { sessionId: string; minutes: number } | undefined;
+    return value?.sessionId === sessionId ? value.minutes : null;
+  }
+
+  async setSessionLimitMinutes(sessionId: string, minutes: number | null): Promise<boolean> {
+    const saved = await this.db.transaction('rw', this.db.sessions, this.db.meta, async () => {
+      const active = await this.activeSession();
+      if (active?.id !== sessionId) return false;
+      if (minutes === null) await this.db.meta.delete(META_SESSION_LIMIT);
+      else await this.db.meta.put({ key: META_SESSION_LIMIT, value: { sessionId, minutes } });
+      return true;
+    });
+    if (saved) this.touch();
+    return saved;
+  }
+
+  /** Exercícios pulados ou finalizados no treino aberto deste aparelho. */
+  async exerciseDispositions(sessionId: string): Promise<{
+    skipped: string[];
+    finished: string[];
+  }> {
+    const value = (await this.db.meta.get(META_SKIPPED))?.value as
+      { sessionId: string; ids: string[]; finishedIds?: string[] } | undefined;
+    if (value?.sessionId !== sessionId) return { skipped: [], finished: [] };
+    return { skipped: value.ids, finished: value.finishedIds ?? [] };
+  }
+
   async skippedExercises(): Promise<string[]> {
     const active = await this.activeSession();
-    if (!active) return [];
-    const value = (await this.db.meta.get(META_SKIPPED))?.value as
-      { sessionId: string; ids: string[] } | undefined;
-    return value?.sessionId === active.id ? value.ids : [];
+    return active ? (await this.exerciseDispositions(active.id)).skipped : [];
   }
 
   /** Pula (`true`) ou volta a incluir (`false`) um exercício no plano do treino aberto. */
   async setSkipped(exerciseId: string, skipped: boolean): Promise<void> {
-    const active = await this.activeSession();
-    if (!active) return;
-    const current = new Set(await this.skippedExercises());
-    if (skipped) current.add(exerciseId);
-    else current.delete(exerciseId);
-    await this.db.meta.put({
-      key: META_SKIPPED,
-      value: { sessionId: active.id, ids: [...current] },
+    await this.setExerciseDisposition(exerciseId, skipped ? 'skipped' : 'open');
+  }
+
+  async setExerciseDisposition(
+    exerciseId: string,
+    disposition: 'skipped' | 'finished' | 'open',
+    expectedSessionId?: string,
+    itemId?: string,
+  ): Promise<boolean> {
+    const saved = await this.db.transaction('rw', this.db.sessions, this.db.meta, async () => {
+      const active = await this.activeSession();
+      if (!active || (expectedSessionId && active.id !== expectedSessionId)) return false;
+      const current = await this.exerciseDispositions(active.id);
+      const skipped = new Set(current.skipped);
+      const finished = new Set(current.finished);
+      skipped.delete(exerciseId);
+      if (itemId !== undefined) {
+        finished.delete(itemId);
+        if (disposition === 'finished') finished.add(itemId);
+      }
+      if (disposition === 'skipped') skipped.add(exerciseId);
+      await this.db.meta.put({
+        key: META_SKIPPED,
+        value: { sessionId: active.id, ids: [...skipped], finishedIds: [...finished] },
+      });
+      return true;
     });
-    this.touch();
+    if (saved) this.touch();
+    return saved;
   }
 
   /** Funde treinos que vieram do servidor. Nunca apaga linha por ausência; a lápide de um treino apaga as séries locais dele. */

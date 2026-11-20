@@ -7,6 +7,7 @@ import { catalog, item, saveRoutine, seedHistory } from '../shell/screen-test-ki
 import { ExerciseHistory } from './exercise-history';
 import { DOUBLE_TAP_MS, LiveStore } from './live-store';
 import { EMPTY_FIELDS, type SetFields } from './set-draft';
+import { recommendExercise } from './recommend-exercise';
 import { SwapStore } from './swap-store';
 import { TodayStore } from './today-store';
 
@@ -86,6 +87,58 @@ describe('LiveStore', () => {
       await conclude(t, live, { weightKg: 45, reps: 8 });
 
       expect(live.defaults()?.fields).toMatchObject({ weightKg: 45, reps: 8 });
+    });
+  });
+
+  describe('ações por exercício e tempo máximo', () => {
+    it('finaliza outro exercício sem descartar suas séries e conserva o estado ao reler', async () => {
+      const t = await setup();
+      const { live } = await begin([A(), B()]);
+      await live.choose('item:a2');
+      expect(await conclude(t, live)).toBe('saved');
+      await live.choose('item:a1');
+
+      expect(await live.finishExercise('item:a2')).toBe(true);
+      await live.load();
+      expect(live.focus()?.key).toBe('item:a1');
+      expect(live.plan().entries[1]).toMatchObject({ doneSets: 1, finished: true, skipped: false });
+      expect(live.sets()).toHaveLength(1);
+      await live.choose('item:a2');
+      expect(live.plan().entries[1].finished).toBeUndefined();
+    });
+
+    it('substitui outro item sem mover o foco e conserva a série do exercício original', async () => {
+      const t = await setup();
+      const { live } = await begin([A(), B()]);
+      expect(await conclude(t, live)).toBe('saved');
+      const alternative = catalog().find((exercise) => exercise.id === 'supino-inclinado')!;
+      await live.choose('item:a2');
+
+      expect(await live.swapEntry('item:a1', alternative)).toBe('swapped');
+      expect(live.focus()?.key).toBe('item:a2');
+      expect(live.plan().entries[0]).toMatchObject({ doneSets: 1, exerciseId: alternative.id });
+      expect(live.sets()[0].exerciseId).toBe('supino-reto');
+    });
+
+    it('usa o tempo restante para indicar uma região menos trabalhada do plano', async () => {
+      const t = await setup();
+      const { live } = await begin([A(), B({ targetSets: 1 })]);
+      expect(await conclude(t, live)).toBe('saved');
+      expect(await live.setLimitMinutes(10)).toBe(true);
+      await live.load();
+      expect(live.limitMinutes()).toBe(10);
+
+      const recommend = (seconds: number) =>
+        recommendExercise(
+          live.plan().entries,
+          live.routine()!.items,
+          live.exercises(),
+          live.sets(),
+          seconds,
+        );
+      expect(recommend(180)).toBe('item:a2');
+      expect(recommend(45)).toBe('item:a2');
+      expect(recommend(44)).toBeNull();
     });
   });
 

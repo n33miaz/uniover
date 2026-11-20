@@ -20,7 +20,7 @@ import {
 import { isWorkingSet } from '../domain/session/session-model';
 import { coalesced, quiet } from './coalesce';
 import { ExerciseHistory } from './exercise-history';
-import { type LiveFocus, type LivePlan, buildLivePlan, extraKey, itemKey } from './live-plan';
+import { type LiveFocus, type LivePlan, buildLivePlan, extraKey } from './live-plan';
 import { type SessionRecord, type SessionSet, recordsBySet, sessionRecords } from './records-view';
 import { type SetFields, toRepositoryDraft } from './set-draft';
 import { SwapStore } from './swap-store';
@@ -113,6 +113,7 @@ export class LiveStore {
   readonly sets = signal<readonly LocalSet[]>([]);
   readonly exercises = signal<ReadonlyMap<string, LocalExercise>>(new Map());
   private readonly skipped = signal<readonly string[]>([]);
+  private readonly finishedExercises = signal<readonly string[]>([]);
   private readonly swaps = signal<ReadonlyMap<string, string>>(new Map());
   private readonly chosen = signal<string | null>(null);
   readonly info = signal<FocusInfo | null>(null);
@@ -124,14 +125,15 @@ export class LiveStore {
   readonly busy = signal(false);
   /** O campo que a última tentativa de concluir a série recusou (ganha a borda de erro no cartão). */
   readonly issue = signal<'weight' | 'reps' | 'duration' | null>(null);
-  /** Quanto durava o descanso que a última série iniciou (a "meta"); desconhecido depois de recarregar a página. */
   readonly restGoalS = signal<number | null>(null);
+  readonly limitMinutes = signal<number | null>(null);
 
   readonly plan = computed<LivePlan>(() =>
     buildLivePlan({
       items: this.routine()?.items ?? [],
       sets: this.sets(),
       skipped: this.skipped(),
+      finished: this.finishedExercises(),
       swaps: this.swaps(),
       chosen: this.chosen(),
     }),
@@ -261,15 +263,17 @@ export class LiveStore {
       this.session.set(undefined);
       this.routine.set(undefined);
       this.sets.set([]);
+      this.limitMinutes.set(null);
       this.recordFlags.set(new Map());
       this.ready.set(true);
       return;
     }
 
-    const [routine, sets, skipped] = await Promise.all([
+    const [routine, sets, dispositions, limitMinutes] = await Promise.all([
       session.routineId === null ? undefined : this.routines.get(session.routineId),
       this.sessions.setsOfSession(session.id),
-      this.sessions.skippedExercises(),
+      this.sessions.exerciseDispositions(session.id),
+      this.sessions.sessionLimitMinutes(session.id),
     ]);
     const swaps = this.swapStore.read(session.id);
 
@@ -284,7 +288,9 @@ export class LiveStore {
     this.session.set(session);
     this.routine.set(routine);
     this.sets.set(sets);
-    this.skipped.set(skipped);
+    this.skipped.set(dispositions.skipped);
+    this.finishedExercises.set(dispositions.finished);
+    this.limitMinutes.set(limitMinutes);
     this.swaps.set(swaps);
     this.exercises.set(exercises);
     this.ready.set(true);
@@ -322,7 +328,12 @@ export class LiveStore {
       .filter((item) => item.supersetGroup === focus.supersetGroup && item.id !== focus.itemId)
       .every((item) => {
         const entry = entries.find((candidate) => candidate.itemId === item.id);
-        return entry === undefined || entry.skipped || entry.doneSets >= item.targetSets;
+        return (
+          entry === undefined ||
+          entry.skipped ||
+          entry.finished ||
+          entry.doneSets >= item.targetSets
+        );
       });
   }
 
@@ -333,7 +344,7 @@ export class LiveStore {
     const session = this.session();
     if (focus === null || exercise === undefined || session === undefined) return 'failed';
 
-    const closes = this.closesExercise(focus);
+    const closes = !fields.warmup && this.closesExercise(focus);
     const now = this.runtime.now();
     if (this.busy() || now - this.lastTapAt < DOUBLE_TAP_MS) {
       this.say(
@@ -454,15 +465,67 @@ export class LiveStore {
     await this.load();
   }
 
-  /** Escolhe uma linha do plano como foco; uma linha pulada volta ao plano. */
+  async setLimitMinutes(minutes: number | null): Promise<boolean> {
+    const session = this.session();
+    if (
+      !session ||
+      (minutes !== null && (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440))
+    ) {
+      return false;
+    }
+    try {
+      const saved = await this.sessions.setSessionLimitMinutes(session.id, minutes);
+      if (saved) await this.load();
+      return saved;
+    } catch {
+      return false;
+    }
+  }
+
+  async finishExercise(key: string): Promise<boolean> {
+    const entry = this.plan().entries.find((candidate) => candidate.key === key);
+    const session = this.session();
+    if (!entry || entry.itemId === null || entry.finished || entry.skipped || !session)
+      return false;
+    try {
+      if (
+        !(await this.sessions.setExerciseDisposition(
+          entry.planExerciseId,
+          'finished',
+          session.id,
+          entry.itemId,
+        ))
+      ) {
+        return false;
+      }
+    } catch {
+      this.say(this.failureText('write-failed'), 'warn');
+      return false;
+    }
+    if (this.chosen() === key) this.chosen.set(null);
+    await this.load();
+    return true;
+  }
+
+  /** Escolhe uma linha do plano como foco; uma linha encerrada volta ao plano. */
   async choose(key: string | null): Promise<void> {
     if (key === null) {
       this.chosen.set(null);
       return;
     }
     const entry = this.plan().entries.find((candidate) => candidate.key === key);
-    if (entry?.skipped) {
-      await this.sessions.setSkipped(entry.planExerciseId, false);
+    if (entry?.skipped || entry?.finished) {
+      const session = this.session();
+      if (
+        !session ||
+        !(await this.sessions.setExerciseDisposition(
+          entry.planExerciseId,
+          'open',
+          session.id,
+          entry.itemId ?? undefined,
+        ))
+      )
+        return;
       await this.load();
     }
     this.chosen.set(key);
@@ -482,34 +545,55 @@ export class LiveStore {
    * feito. Trocar de volta pelo exercício original desfaz a troca; um exercício que já está na rotina não serve (as
    * séries dele seriam contadas duas vezes).
    */
-  async swapCurrent(exercise: LocalExercise): Promise<SwapOutcome> {
-    const focus = this.focus();
-    const session = this.session();
-    if (focus === null || focus.itemId === null || session === undefined) return 'not-allowed';
+  canSwapEntry(key: string): boolean {
+    const entry = this.plan().entries.find((candidate) => candidate.key === key);
+    return (
+      entry != null &&
+      entry.itemId !== null &&
+      !entry.finished &&
+      !entry.skipped &&
+      (entry.targetSets === null || entry.doneSets < entry.targetSets) &&
+      (!entry.swapped || !this.sets().some((set) => set.exerciseId === entry.exerciseId))
+    );
+  }
 
+  async swapCurrent(exercise: LocalExercise): Promise<SwapOutcome> {
+    const key = this.focus()?.key;
+    return key === undefined ? 'not-allowed' : this.swapEntry(key, exercise, true);
+  }
+
+  async swapEntry(
+    key: string,
+    exercise: LocalExercise,
+    focusChanged = false,
+  ): Promise<SwapOutcome> {
+    const entry = this.plan().entries.find((candidate) => candidate.key === key);
+    const session = this.session();
+    if (!entry || entry.itemId === null || !session || !this.canSwapEntry(key))
+      return 'not-allowed';
+
+    const itemId = entry.itemId;
     const swaps = new Map(this.swaps());
-    if (exercise.id === focus.planExerciseId) {
-      swaps.delete(focus.itemId);
+    if (exercise.id === entry.planExerciseId) {
+      swaps.delete(itemId);
       this.persistSwaps(session.id, swaps);
       await this.load();
-      this.chosen.set(itemKey(focus.itemId));
+      if (focusChanged) this.chosen.set(key);
       return 'restored';
     }
 
-    const items = this.routine()?.items ?? [];
-    // Já está na rotina (como previsto ou como troca de outro item): as séries dele seriam contadas duas vezes.
-    const taken = items.some(
-      (item) =>
-        item.id !== focus.itemId &&
-        (item.exerciseId === exercise.id || swaps.get(item.id) === exercise.id),
+    const taken = this.plan().entries.some(
+      (candidate) =>
+        candidate.key !== key &&
+        (candidate.planExerciseId === exercise.id || candidate.exerciseId === exercise.id),
     );
-    if (taken || exercise.id === focus.exerciseId) return 'in-routine';
+    if (taken || exercise.id === entry.exerciseId) return 'in-routine';
 
     this.remember(exercise);
-    swaps.set(focus.itemId, exercise.id);
+    swaps.set(itemId, exercise.id);
     this.persistSwaps(session.id, swaps);
     await this.load();
-    this.chosen.set(itemKey(focus.itemId));
+    if (focusChanged) this.chosen.set(key);
     return 'swapped';
   }
 

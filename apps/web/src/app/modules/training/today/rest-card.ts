@@ -15,19 +15,32 @@ import { clockText } from './today-text';
   selector: 'app-rest-card',
   template: `
     <section class="rest" [class.over]="timer.over()" aria-labelledby="rest-title">
-      <h3 id="rest-title" class="title">
-        @if (timer.over()) {
-          <span i18n="@@training.live.rest-over">Descanso terminou</span>
-        } @else {
-          <span i18n="@@training.live.rest">Descanso</span>
-        }
-      </h3>
-      <p class="clock">
-        <span class="time">{{ clock() }}</span>
-      </p>
-      @if (goal(); as meta) {
-        <p class="goal" i18n="@@training.live.rest-goal">meta {{ meta }}</p>
-      }
+      <div class="readout">
+        <div>
+          <h3 id="rest-title" class="title">
+            @if (timer.over()) {
+              <span i18n="@@training.live.rest-over">Descanso terminou</span>
+            } @else {
+              <span i18n="@@training.live.rest">Descanso</span>
+            }
+          </h3>
+          @if (!timer.over()) {
+            @if (canVibrate()) {
+              <p class="note" i18n="@@training.live.rest-vibrate">Vibra no fim.</p>
+            } @else {
+              <p class="note" i18n="@@training.live.rest-no-vibrate">Sem vibração: olhe a tela.</p>
+            }
+          }
+        </div>
+        <div class="clock-group">
+          <p class="clock">
+            <span class="time">{{ clock() }}</span>
+          </p>
+          @if (goal(); as meta) {
+            <p class="goal" i18n="@@training.live.rest-goal">meta {{ meta }}</p>
+          }
+        </div>
+      </div>
       <div class="actions">
         @if (!timer.over()) {
           <button type="button" class="secondary ui-btn add" (click)="timer.add()">
@@ -51,33 +64,35 @@ import { clockText } from './today-text';
         </button>
       </div>
       @if (record() || last() || nextSet()) {
-        <div class="details">
-          @if (record()) {
-            <p class="wide">
-              <span i18n="@@training.live.rest-record">Recorde</span>
-              {{ record() }}
-            </p>
-          }
-          @if (last()) {
-            <p>
-              <span i18n="@@training.live.rest-last">Última carga</span>
-              {{ last() }}
-            </p>
-          }
-          @if (nextSet()) {
-            <p>
-              <span i18n="@@training.live.rest-next">Próxima</span>
-              {{ nextSet() }}
-            </p>
-          }
-        </div>
-      }
-      @if (!timer.over()) {
-        @if (canVibrate()) {
-          <p class="note" i18n="@@training.live.rest-vibrate">Vibra no fim.</p>
-        } @else {
-          <p class="note" i18n="@@training.live.rest-no-vibrate">Sem vibração: olhe a tela.</p>
-        }
+        <details class="references">
+          <summary>
+            @if (record()) {
+              <span i18n="@@training.live.rest-show-record">Ver recorde e detalhes</span>
+            } @else {
+              <span i18n="@@training.live.rest-show-details">Detalhes da série</span>
+            }
+          </summary>
+          <div class="details">
+            @if (record()) {
+              <p class="wide">
+                <span i18n="@@training.live.rest-record">Recorde</span>
+                {{ record() }}
+              </p>
+            }
+            @if (last()) {
+              <p>
+                <span i18n="@@training.live.rest-last">Última carga</span>
+                {{ last() }}
+              </p>
+            }
+            @if (nextSet()) {
+              <p>
+                <span i18n="@@training.live.rest-next">Próxima</span>
+                {{ nextSet() }}
+              </p>
+            }
+          </div>
+        </details>
       }
     </section>
   `,
@@ -86,7 +101,6 @@ import { clockText } from './today-text';
 })
 export class RestCard {
   protected readonly timer = inject(RestTimerService);
-  private readonly live = inject(LiveStore);
 
   /** O aparelho vibra? O iPhone não: o aviso do fim do descanso fica só na tela. */
   readonly canVibrate = input(false);
@@ -98,7 +112,7 @@ export class RestCard {
   readonly finishWorkout = output<void>();
 
   protected readonly clock = computed(() => clockText(this.timer.remaining()));
-  /** A duração do descanso que a última série iniciou; some depois de recarregar a página (não fica guardada). */
+  private readonly live = inject(LiveStore);
   protected readonly goal = computed(() => {
     const seconds = this.live.restGoalS();
     return seconds === null ? null : clockText(seconds * 1000);

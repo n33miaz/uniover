@@ -31,6 +31,7 @@ export interface LiveEntry {
   /** `null` no exercício fora da rotina: não tem meta. */
   readonly targetSets: number | null;
   readonly skipped: boolean;
+  readonly finished?: boolean;
   readonly extra: boolean;
   readonly swapped: boolean;
 }
@@ -75,6 +76,7 @@ export interface LivePlanInput {
   readonly sets: readonly LiveSetInput[];
   /** Exercícios da rotina que a pessoa pulou (o id do exercício previsto, não o do substituto). */
   readonly skipped: readonly string[];
+  readonly finished?: readonly string[];
   /** Item da rotina → exercício que o substitui hoje. */
   readonly swaps: ReadonlyMap<string, string>;
   /** Linha escolhida pela pessoa (`LiveEntry.key`), ou `null` para seguir o plano. */
@@ -101,7 +103,8 @@ export function buildLivePlan(input: LivePlanInput): LivePlan {
     setType: set.setType,
   }));
 
-  const progress = planProgress(ordered, planSets, input.skipped);
+  const finished = new Set(input.finished);
+  const progress = planProgress(ordered, planSets, input.skipped, finished);
   const itemsById = new Map(ordered.map((item) => [item.id, item]));
 
   const entries: LiveEntry[] = progress.entries.map((entry) => {
@@ -115,6 +118,7 @@ export function buildLivePlan(input: LivePlanInput): LivePlan {
       doneSets: entry.doneSets,
       targetSets: entry.targetSets,
       skipped: entry.skipped,
+      ...(item && finished.has(item.id) ? { finished: true } : {}),
       extra: entry.extra,
       swapped: exerciseId !== entry.exerciseId,
     };
@@ -170,6 +174,7 @@ export function buildLivePlan(input: LivePlanInput): LivePlan {
           other.itemId !== null &&
           other.itemId !== item.id &&
           !other.skipped &&
+          !other.finished &&
           item.supersetGroup !== null &&
           itemsById.get(other.itemId)?.supersetGroup === item.supersetGroup,
       )

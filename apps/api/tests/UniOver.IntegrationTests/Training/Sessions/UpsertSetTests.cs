@@ -3,6 +3,7 @@ using System.Text.Json;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.IntegrationTests.Training.Routines;
 using UniOver.Modules.Training.Contracts;
 using UniOver.Modules.Training.Domain;
 using UniOver.Modules.Training.Domain.Sessions;
@@ -55,6 +56,48 @@ public sealed class UpsertSetTests(PostgresFixture postgres)
         body.GetProperty("deleted").GetBoolean().Should().BeFalse();
         await using var db = app.Db();
         (await db.Set<SessionSet>().SingleAsync(s => s.Id == id, Ct)).UserId.Should().Be(TrainingApp.UserIdOf(login));
+    }
+
+    [Fact]
+    public async Task Put_PersistsFourSetsForAnExercisePlannedForThree()
+    {
+        await using var app = await TrainingApp.StartAsync(postgres);
+        var login = await app.LoginAsync();
+        var now = DateTimeOffset.UtcNow;
+        var exercise = CatalogId(0);
+        var routine = Guid.CreateVersion7();
+        using (var created = await app.PutRoutineAsync(login, routine, RoutineHelpers.Body(
+            now, [RoutineHelpers.Item(Guid.CreateVersion7(), exercise, 0, sets: 3)])))
+        {
+            created.EnsureSuccessStatusCode();
+        }
+
+        var session = Guid.CreateVersion7();
+        using (var opened = await app.PutSessionAsync(login, session, SessionBody(now, routineId: routine)))
+        {
+            opened.EnsureSuccessStatusCode();
+        }
+
+        for (var position = 0; position < 4; position++)
+        {
+            var id = Guid.CreateVersion7();
+            var key = Guid.NewGuid();
+            var set = SetBody(now, exercise, position: position);
+            using var saved = await app.PutSetAsync(login, session, id, set, key);
+            saved.StatusCode.Should().Be(HttpStatusCode.OK);
+            if (position == 3)
+            {
+                using var replay = await app.PutSetAsync(login, session, id, set, key);
+                replay.StatusCode.Should().Be(HttpStatusCode.OK);
+                Replayed(replay).Should().BeTrue();
+            }
+        }
+
+        var pages = await app.PullAllAsync(login, "sets", 10);
+        pages.SelectMany(page => page.GetProperty("items").EnumerateArray())
+            .Where(row => row.GetProperty("sessionId").GetGuid() == session)
+            .Select(row => row.GetProperty("position").GetInt32())
+            .Should().BeEquivalentTo([0, 1, 2, 3]);
     }
 
     [Fact]
