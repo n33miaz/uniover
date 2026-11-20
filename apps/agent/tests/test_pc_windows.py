@@ -170,7 +170,10 @@ def test_a_failed_read_of_the_mouse_settings_leaves_them_out() -> None:
     assert pc_windows.read_mouse_settings(broken) is None
 
 
-def test_the_test_suite_can_never_reach_a_real_power_action() -> None:
+def test_the_test_suite_can_never_reach_a_real_power_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
     # A guarda do `conftest` troca as primitivas reais: chamá-las sem injetar reprova o teste.
     with pytest.raises(AssertionError, match="energia"):
         WindowsPcPower().lock()
@@ -210,7 +213,7 @@ def test_the_real_runner_reports_the_exit_code_of_the_process(
         return subprocess.CompletedProcess(args, 1116)
 
     monkeypatch.setattr(pc_windows, "run_hidden", fake)
-    monkeypatch.setattr(pc_windows, "IS_WINDOWS", True)
+    monkeypatch.setattr(sys, "platform", "win32")
     assert pc_windows._run_shutdown(["/a"]) == 1116
     assert seen == [["shutdown", "/a"]]
 
@@ -246,14 +249,32 @@ def test_launcher_hands_the_target_over() -> None:
     assert opened == ["C:/Programas/app.exe"]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="fora do Windows o sistema recusa")
-def test_outside_windows_everything_is_refused() -> None:
+def test_outside_windows_everything_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse_input(inputs: Sequence[RawInput]) -> NoReturn:
+        raise AssertionError("um teste tentou enviar entrada de verdade")
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(pc_windows, "_send_input", refuse_input)
     with pytest.raises(PcUnsupported):
         WindowsPcInput().move(1, 1)
+
+    power = WindowsPcPower()
     with pytest.raises(PcUnsupported):
-        WindowsPcPower().lock()
+        power.shutdown(30)
     with pytest.raises(PcUnsupported):
-        WindowsPcPower().shutdown(30)
+        power.restart(30)
+    for action in (
+        power.lock,
+        power.sleep,
+        power.hibernation_available,
+        power.hibernate,
+        power.log_off,
+        power.monitor_off,
+        power.cancel_shutdown,
+    ):
+        with pytest.raises(PcUnsupported):
+            action()
+
     with pytest.raises(PcUnsupported):
         WindowsPcLauncher().launch("x")
 
