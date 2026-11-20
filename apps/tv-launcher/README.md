@@ -99,7 +99,7 @@ O contrato é `contracts/tv-launcher/config.v1.schema.json` (com exemplos em `ex
   "clock": { "size": "large", "format": "24h", "seconds": false, "date": true },
   "wallpaper": { "type": "gradient", "colors": ["#1B2440", "#3A2D5C"], "angle": 315 },
   "apps": { "mode": "listed", "items": ["com.netflix.ninja", "com.google.android.youtube.tv"] },
-  "builtin": { "settings": true, "sleep": false }
+  "builtin": { "settings": true, "sleep": true }
 }
 ```
 

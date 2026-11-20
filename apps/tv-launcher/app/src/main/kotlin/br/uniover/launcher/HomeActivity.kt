@@ -272,6 +272,7 @@ class HomeActivity : Activity() {
                 label = spec.label,
                 icon = iconFor(spec),
                 onFocused = ::centerOnTile,
+                system = spec.kind != Kind.APP,
             )
             tile.setOnClickListener { open(spec) }
             val params = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {

@@ -17,6 +17,10 @@ export type TvIconName =
   | 'minus'
   | 'previous'
   | 'next'
+  | 'media-previous'
+  | 'media-next'
+  | 'media-play'
+  | 'media-pause'
   | 'input'
   | 'play'
   | 'pause'
@@ -37,10 +41,28 @@ export type TvIconName =
   | 'wifi'
   | 'info'
   | 'settings'
+  | 'sleep'
   | 'speaker'
   | 'tv';
 
-// Traços simples (24x24, contorno) só do controle. Decorativos: o texto do botão é que informa.
+// Traços simples (24x24, contorno) do controle. Decorativos: o texto do botão é que informa. Os círculos do sistema do TV
+// Livre na TV (`settings`, `wifi`, `input`, `sleep`) usam exatamente estes caminhos nos `ic_*.xml` do launcher: o teste
+// do launcher confere que são iguais, para os dois lados nunca divergirem.
+
+/** Os desenhos cheios (os de mídia): o miolo pinta com a cor do traço, e o pausar tem barras mais grossas. */
+const FILLED: ReadonlySet<TvIconName> = new Set<TvIconName>([
+  'media-previous',
+  'media-next',
+  'media-play',
+  'sleep',
+]);
+const STROKE: Partial<Record<TvIconName, number>> = {
+  'media-previous': 2.4,
+  'media-next': 2.4,
+  'media-play': 2.4,
+  'media-pause': 3.4,
+  sleep: 0,
+};
 const PATHS: Record<TvIconName, string> = {
   back: 'M9 14L4 9l5-5 M4 9h10a6 6 0 0 1 0 12h-3',
   home: 'M3 11l9-8 9 8 M5 10v10h5v-6h4v6h5V10',
@@ -60,6 +82,11 @@ const PATHS: Record<TvIconName, string> = {
   next: 'M17 5v14 M5 5l9 7-9 7z',
   input: 'M4 12h12 M12 7l5 5-5 5 M20 4v16',
   play: 'M7 4l12 8-12 8z',
+  // Mídia do controle (anterior, tocar, pausar, próxima): cheios, com cantos arredondados pelo próprio traço.
+  'media-previous': 'M6.5 6.5v11 M18 6.8v10.4l-8-5.2z',
+  'media-next': 'M17.5 6.5v11 M6 6.8v10.4l8-5.2z',
+  'media-play': 'M8 5.8v12.4l10-6.2z',
+  'media-pause': 'M8.5 6.5v11 M15.5 6.5v11',
   pause: 'M8 5v14 M16 5v14',
   stop: 'M6 6h12v12H6z',
   rewind: 'M11 5L3 12l8 7z M21 5l-8 7 8 7z',
@@ -87,6 +114,8 @@ const PATHS: Record<TvIconName, string> = {
   // Uma engrenagem: as configurações da TV.
   settings:
     'M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z M19.4 13.5a7.5 7.5 0 0 0 0-3l1.9-1.5-2-3.4-2.3.9a7.5 7.5 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5a7.5 7.5 0 0 0-2.6 1.5l-2.3-.9-2 3.4 1.9 1.5a7.5 7.5 0 0 0 0 3l-1.9 1.5 2 3.4 2.3-.9a7.5 7.5 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.5 7.5 0 0 0 2.6-1.5l2.3.9 2-3.4z',
+  // A lua do Modo Dormir (cheia). O círculo Dormir do TV Livre na TV usa este mesmo desenho (`ic_sleep.xml`).
+  sleep: 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z',
   // Uma tela com o pé: serve aos estados em que a TV só é vista (sem controle) ou nem isso (sem acesso).
   speaker: 'M4 9v6h4l5 4V5L8 9H4z M16.5 9a4 4 0 0 1 0 6 M19 6.5a8 8 0 0 1 0 11',
   tv: 'M3 5h18v12H3z M8 21h8 M12 17v4',
@@ -97,9 +126,9 @@ const PATHS: Record<TvIconName, string> = {
   template: `
     <svg
       viewBox="0 0 24 24"
-      fill="none"
+      [attr.fill]="filled() ? 'currentColor' : 'none'"
       stroke="currentColor"
-      stroke-width="2"
+      [attr.stroke-width]="strokeWidth()"
       stroke-linecap="round"
       stroke-linejoin="round"
       aria-hidden="true"
@@ -125,5 +154,13 @@ export class TvIcon {
 
   protected path(): string {
     return PATHS[this.name()];
+  }
+
+  protected filled(): boolean {
+    return FILLED.has(this.name());
+  }
+
+  protected strokeWidth(): number {
+    return STROKE[this.name()] ?? 2;
   }
 }
