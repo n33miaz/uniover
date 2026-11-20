@@ -57,3 +57,31 @@
 .state.ok {
   color: var(--a-ok);
 }
+
+/* Tempo até a troca do QR: a faixa esvazia da direita para a esquerda e volta cheia a cada QR novo. */
+.timer {
+  align-self: center;
+  width: min(100%, 14rem);
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--a-line);
+}
+
+.timer-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--a-accent);
+  transform: scaleX(var(--qr-left));
+  transform-origin: left center;
+  /* Cada passo do relógio (1 s) desliza até o seguinte, então a barra anda contínua. */
+  transition: transform 1s linear;
+}
+
+/* Sem animação: a barra anda em degraus, um por segundo. */
+@media (prefers-reduced-motion: reduce) {
+  .timer-fill {
+    transition: none;
+  }
+}

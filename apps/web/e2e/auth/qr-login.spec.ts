@@ -177,7 +177,7 @@ test.describe('computador: o bloco "Entrar com o Celular"', () => {
     await phone.context.close();
   });
 
-  test('recusado no celular, o computador avisa e oferece outro QR', async ({
+  test('recusado no celular, o computador avisa e já mostra outro QR', async ({
     page,
     browser,
   }, info) => {
@@ -192,20 +192,24 @@ test.describe('computador: o bloco "Entrar com o Celular"', () => {
     ).toBeVisible();
 
     await expect(page.getByText('Recusado no celular.')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toHaveCount(0);
-    expect(pc.loggedIn).toBe(false);
-    await screenshot(page, info.outputPath('pc-recusado.png'));
-
-    await page.getByRole('button', { name: 'Gerar Outro QR' }).click();
+    // Sem beco sem saída: o QR novo já está na tela, sem nenhum toque.
     await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toBeVisible();
+    expect(pc.loggedIn).toBe(false);
     expect(qr.requests).toHaveLength(2);
+    await screenshot(page, info.outputPath('pc-recusado.png'));
     await phone.context.close();
   });
 
   test('o QR se renova sozinho antes de vencer, com código e segredo novos', async ({ page }) => {
-    qr.expiresIn = 6; // a tela troca o QR 5 s antes do fim: aqui, na primeira consulta
+    qr.expiresIn = 6; // a margem nunca passa de um quarto da validade: a troca vem aos 4,5 s
     await page.goto('/entrar');
     await openQr(page);
+    const bar = page.getByRole('progressbar', { name: 'Tempo até o próximo QR' });
+    await expect(bar).toBeVisible();
+    // A barra esvazia até a troca.
+    await expect
+      .poll(async () => Number(await bar.getAttribute('aria-valuenow')), { timeout: 5_000 })
+      .toBeLessThan(100);
 
     await expect.poll(() => qr.requests.length, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
     expect(qr.requests[1].code).not.toBe(qr.requests[0].code);
@@ -246,7 +250,7 @@ test.describe('computador: o bloco "Entrar com o Celular"', () => {
     await phone.context.close();
   });
 
-  test('nada é pedido antes do toque; fechar e esconder a aba encerram o QR', async ({
+  test('nada é pedido antes do toque; fechar encerra o QR e a aba escondida o pausa', async ({
     page,
   }, info) => {
     await page.goto('/entrar');
@@ -268,27 +272,23 @@ test.describe('computador: o bloco "Entrar com o Celular"', () => {
     await page.waitForTimeout(3_000);
     expect(qrCalls()).toBe(afterClose);
 
-    // Aba escondida: o QR se encerra e não volta sozinho.
+    // Aba escondida: tudo pausa (nenhuma consulta nem QR novo); de volta, o QR segue na tela e as consultas voltam.
     await openQr(page);
-    await page.evaluate(() => {
-      Object.defineProperty(document, 'visibilityState', {
-        configurable: true,
-        get: () => 'hidden',
-      });
-      document.dispatchEvent(new Event('visibilitychange'));
-    });
-    await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toHaveCount(0);
-    await page.evaluate(() => {
-      Object.defineProperty(document, 'visibilityState', {
-        configurable: true,
-        get: () => 'visible',
-      });
-      document.dispatchEvent(new Event('visibilitychange'));
-    });
-    await expect(open).toBeVisible();
-    const afterHide = qrCalls();
+    const setVisibility = (state: 'hidden' | 'visible') =>
+      page.evaluate((value) => {
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          get: () => value,
+        });
+        document.dispatchEvent(new Event('visibilitychange'));
+      }, state);
+    await setVisibility('hidden');
+    const whileHidden = qrCalls();
     await page.waitForTimeout(3_000);
-    expect(qrCalls()).toBe(afterHide);
+    expect(qrCalls()).toBe(whileHidden);
+    await setVisibility('visible');
+    await expect(page.getByRole('img', { name: 'QR para entrar pelo celular' })).toBeVisible();
+    await expect.poll(qrCalls, { timeout: 5_000 }).toBeGreaterThan(whileHidden);
     expect(qr.requests).toHaveLength(2);
   });
 
