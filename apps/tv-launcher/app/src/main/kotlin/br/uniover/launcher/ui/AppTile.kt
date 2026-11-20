@@ -31,6 +31,8 @@ class AppTile(
     icon: Drawable?,
     /** Chamado quando o tile ganha foco (a home centraliza a fileira nele). */
     private val onFocused: (AppTile) -> Unit,
+    /** Círculo do próprio sistema (Dormir, Rede, Entradas, Configurações): desenho nosso, centrado numa placa cheia. */
+    val system: Boolean = false,
 ) : LinearLayout(context) {
 
     private val ring: View
@@ -73,7 +75,7 @@ class AppTile(
             // Base translúcida: ícones com fundo transparente ficam com um círculo uniforme atrás.
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(0x33FFFFFF)
+                setColor(if (system) SYSTEM_PLATE else 0x33FFFFFF)
             }
             outlineProvider = ViewOutlineProvider.BACKGROUND
             clipToOutline = true
@@ -81,18 +83,18 @@ class AppTile(
         if (icon != null) {
             val view = ImageView(context).apply {
                 setImageDrawable(icon)
-                // Ícone adaptativo já vem sangrado e é só recortado no círculo. O antigo (quadrado) é aparado e a cor da
-                // placa vira o fundo do círculo, como no controle; sem o que aparar, ganha margem.
-                val fitted = if (icon is AdaptiveIconDrawable) null else IconFit.fitted(icon, diameter)
-                if (fitted != null) {
-                    setImageDrawable(fitted)
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                } else if (icon is AdaptiveIconDrawable) {
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                } else {
+                // Os círculos do sistema são desenho nosso: a placa enche o círculo e o traço branco fica no meio dela.
+                // Ícone de app enche sempre o círculo de borda a borda, como o azulejo do controle (`cover`): o adaptativo
+                // já vem sangrado; o antigo (quadrado) é aparado e a cor da placa vira o fundo; sem o que aparar, vai
+                // inteiro, sem folga (antes ganhava 16% de margem por lado e virava um quadrado pequeno no meio).
+                if (system) {
                     scaleType = ImageView.ScaleType.FIT_CENTER
-                    val inset = (diameter * 0.16f).toInt()
+                    val inset = (diameter * SYSTEM_GLYPH_INSET).toInt()
                     setPadding(inset, inset, inset, inset)
+                } else {
+                    val fitted = if (icon is AdaptiveIconDrawable) null else IconFit.fitted(icon, diameter)
+                    if (fitted != null) setImageDrawable(fitted)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
                 }
                 importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
             }
@@ -134,7 +136,11 @@ class AppTile(
         if (gainFocus) onFocused(this)
     }
 
-    private companion object {
+    internal companion object {
+        /** A placa dos círculos do sistema: um azul-noite claro, da mesma família do fundo padrão da home. */
+        const val SYSTEM_PLATE = 0xFF4A5A8C.toInt()
+        /** A folga do traço do sistema dentro da placa (por lado): o desenho ocupa 52% do círculo. */
+        const val SYSTEM_GLYPH_INSET = 0.24f
         const val FOCUS_MS = 140L
         const val UNFOCUSED_LABEL_ALPHA = 0.72f
     }
