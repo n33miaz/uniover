@@ -359,3 +359,25 @@ async def test_connection_lost_without_close_frame_is_not_reported_as_server_clo
             await drain(transport)
         await transport.close()
     assert not isinstance(caught.value, ServerRestarting)
+
+
+async def test_check_alive_answers_with_a_short_ping_and_is_false_when_closed() -> None:
+    async with FakeApi() as api:
+        transport = transport_for(api)
+        assert await transport.check_alive(1.0) is False  # ainda não abriu
+        await transport.connect()
+        assert await transport.check_alive(1.0) is True
+        await transport.close()
+        assert await transport.check_alive(1.0) is False
+
+
+async def test_check_alive_is_false_when_the_server_dropped_the_channel() -> None:
+    async def script(connection: ServerConnection) -> None:
+        await connection.close()
+
+    async with FakeApi(script) as api:
+        transport = transport_for(api)
+        await transport.connect()
+        await drain(transport)
+        assert await transport.check_alive(1.0) is False
+        await transport.close()

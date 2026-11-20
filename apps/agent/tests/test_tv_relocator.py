@@ -474,6 +474,9 @@ async def test_run_returns_tv_moved_so_main_can_restart_with_the_new_address(
             await asyncio.sleep(0.3)
             return "192.168.0.77"
 
+        def nudge(self) -> None:
+            pass
+
     monkeypatch.setattr(connection_module, "build_relocator", lambda *a, **k: Moved())
 
     async def script(connection: ServerConnection) -> None:

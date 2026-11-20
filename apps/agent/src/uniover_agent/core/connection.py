@@ -55,6 +55,13 @@ STOP_DUPLICATE: Final = "duplicate"
 # caminho de reserva.
 # Intervalo mínimo entre duas antecipações da reconexão por aviso de mudança de rede.
 NETWORK_WAKE_MIN_SECONDS: Final = 5.0
+# Depois de a rede mudar, a rota nova leva um instante para assentar (endereço, rota padrão, DNS): a
+# volta é sorteada entre os dois extremos, para uma frota de agentes não bater junta na API.
+NETWORK_SETTLE_MIN_SECONDS: Final = 1.0
+NETWORK_SETTLE_MAX_SECONDS: Final = 3.0
+# Prazo da conferência do canal aberto depois de a rede mudar (um ping do transporte). Sem isto um
+# canal que ficou na placa que caiu só seria dado por morto pelo ping comum (até 40 s).
+NETWORK_PROBE_TIMEOUT_SECONDS: Final = 5.0
 STOP_HANDOVER_UNSUPPORTED: Final = "handover_unsupported"
 # Candidata tirada do lugar (`replaced`) antes de virar dona: volta como candidata e reconecta já.
 # Mais de `RECANDIDACY_LIMIT` vezes em `RECANDIDACY_WINDOW_SECONDS` já não é acaso (algo disputa a
@@ -63,6 +70,10 @@ RECANDIDACY_LIMIT: Final = 5
 RECANDIDACY_WINDOW_SECONDS: Final = 60.0
 # A API confirma que promoveu esta conexão (candidata da passagem): só então deixa de ser candidato.
 HANDOVER_ACCEPTED_TYPE: Final = "agent.handover.accepted.v1"
+
+
+class NetworkMoved(TransportError):  # noqa: N818 - lê-se como fato, não como erro genérico
+    """A rede do PC mudou e o canal (aberto ou abrindo) ficou na rota velha: reconecta logo."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +149,7 @@ class ConnectionSupervisor:
         is_owner: Callable[[], bool] | None = None,
         on_handover_restarted: Callable[[], None] | None = None,
         network_watcher: NetworkChangeWatcherFactory | None = None,
+        liveness: Callable[[float], Awaitable[bool]] | None = None,
     ) -> None:
         """`handover`: esta execução veio tomar o lugar de outra. Ela é CANDIDATA (rota própria da
         conexão e `handover` no `hello`) até a API confirmar a promoção com
@@ -150,7 +162,14 @@ class ConnectionSupervisor:
         Uma candidata que recebe `replaced` antes disso (um deploy da API no meio da passagem, uma
         queda curta da antiga) não espera: volta a ser candidata, com o mesmo `instanceId`, e
         reconecta já. Nesse caso `on_handover_restarted` avisa que a confirmação anterior não vale
-        mais: quem espera a promoção deve esperar a da nova candidatura."""
+        mais: quem espera a promoção deve esperar a da nova candidatura.
+
+        `network_watcher` avisa que a rede do PC mudou (placa que sobe ou cai, rota padrão que
+        troca de placa). Com a conexão caída, o aviso antecipa a próxima tentativa; com a abertura
+        em curso desde antes da troca, ela é abandonada (ficou na rota velha) e refeita em
+        instantes; com o canal aberto, `liveness(prazo)` (um ping do transporte) confere se ele
+        segue de pé, e só se não seguir a conexão é refeita. Nenhuma placa é escolhida aqui: a
+        rota é a do sistema."""
         self._transport = transport
         self._process = process_message
         self._envelopes = envelopes
@@ -210,6 +229,8 @@ class ConnectionSupervisor:
         self._last_network_wake: float | None = None
         self._network_watcher_factory = network_watcher
         self._network_watcher: NetworkChangeWatcher | None = None
+        self._liveness = liveness
+        self._last_network_abort: float | None = None
 
     @property
     def handover_pending(self) -> bool:
@@ -399,7 +420,7 @@ class ConnectionSupervisor:
             self._stop_requested = None
             self._stop_network_watcher()
 
-    async def _run(self) -> None:
+    async def _run(self) -> None:  # noqa: PLR0912, PLR0915 - um ramo por desfecho da sessão
         """Roda até ser cancelado; só devolve (sem erro) para parar de vez (ver `stop_reason`):
         a credencial foi recusada, uma versão nova assumiu a conexão (passagem sem queda) ou outro
         agente com a mesma identidade disputa a vaga.
@@ -453,6 +474,12 @@ class ConnectionSupervisor:
                     exc,
                     wait,
                 )
+                await self._sleep(wait)
+                continue
+            except NetworkMoved as exc:
+                # Não cresce a espera: a culpa é da troca de rede, não da API.
+                wait = self._network_settle()
+                _log.info("%s; reconecto em %.1f s", exc, wait)
                 await self._sleep(wait)
                 continue
             except HandoverUnsupported:
@@ -554,9 +581,7 @@ class ConnectionSupervisor:
         self._generation += 1
         mine = self._generation
         try:
-            await self._bounded(
-                self._transport.connect(), self._policy.connect_timeout, "a abertura"
-            )
+            await self._open()
             started = self._clock.monotonic()
             _log.info("conectado")
             await self._bounded(
@@ -574,9 +599,21 @@ class ConnectionSupervisor:
             keepalive = asyncio.create_task(self._send_keepalives(mine), name="keepalive")
             reader = asyncio.create_task(self._read(mine), name="reader")
             tasks = [keepalive, reader]
+            watcher: asyncio.Task[None] | None = None
+            network = self._network_changed
+            if network is not None and self._liveness is not None:
+                # Só vale troca de rede de agora em diante: a que trouxe esta conexão já passou.
+                network.clear()
+                watcher = asyncio.create_task(
+                    self._watch_network(mine, network), name="network-watch"
+                )
+                tasks.append(watcher)
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             if reader.done():
                 reader.result()
+                return
+            if watcher is not None and watcher.done():
+                watcher.result()  # sobe `NetworkMoved`: o canal ficou na rota velha
                 return
             # O batimento acabou antes da leitura: não consegue mais enviar. A leitura pode estar
             # parada num canal meio morto, então a sessão termina aqui (o `finally` cancela a
@@ -597,6 +634,98 @@ class ConnectionSupervisor:
             await self._close_channel()
             if self._on_disconnected is not None:
                 self._on_disconnected()
+
+    def _network_settle(self) -> float:
+        span = NETWORK_SETTLE_MAX_SECONDS - NETWORK_SETTLE_MIN_SECONDS
+        return NETWORK_SETTLE_MIN_SECONDS + span * self._random()
+
+    async def _open(self) -> None:
+        """Abre o canal com prazo. Se a rede mudar com a abertura em curso desde antes da troca,
+        ela é abandonada (`NetworkMoved`): o pedido ficou na rota velha, e a espera do transporte
+        (até 105 s, para a API dormindo) não pode segurar o agente numa placa que caiu.
+
+        O aviso que chega logo no começo da abertura é da mesma troca que a acordou e não conta.
+        Depois do aviso a abertura ainda tem um instante para terminar; só então é abandonada, no
+        máximo uma vez por `NETWORK_WAKE_MIN_SECONDS` (rede que oscila não impede a conexão).
+        """
+        changed = self._network_changed
+        if changed is None:
+            await self._bounded(
+                self._transport.connect(), self._policy.connect_timeout, "a abertura"
+            )
+            return
+        changed.clear()
+        began = self._clock.monotonic()
+        opening = asyncio.ensure_future(self._transport.connect())
+        self._expect(self._policy.connect_timeout)
+        try:
+            async with asyncio.timeout(self._policy.connect_timeout):
+                while True:
+                    if await self._first_of(opening, changed.wait()):
+                        opening.result()
+                        return
+                    changed.clear()
+                    now = self._clock.monotonic()
+                    last = self._last_network_abort
+                    if now - began < NETWORK_SETTLE_MIN_SECONDS or (
+                        last is not None and now - last < NETWORK_WAKE_MIN_SECONDS
+                    ):
+                        continue
+                    if await self._first_of(opening, self._clock.sleep(self._network_settle())):
+                        opening.result()
+                        return
+                    self._last_network_abort = self._clock.monotonic()
+                    raise NetworkMoved("a rede mudou durante a abertura do canal")
+        except TimeoutError:
+            seconds = self._policy.connect_timeout
+            raise TransportError(f"a abertura passou de {seconds:.0f} s") from None
+        finally:
+            if not opening.done():
+                opening.cancel()
+                await asyncio.wait({opening}, timeout=self._policy.close_timeout)
+            if opening.done() and not opening.cancelled():
+                opening.exception()  # lida: não sobra "exceção nunca recuperada"
+
+    @staticmethod
+    async def _first_of(main: asyncio.Future[None], other: Awaitable[Any]) -> bool:
+        """Espera `main` ou `other`; `True` quando `main` acabou (o outro é cancelado)."""
+        side = asyncio.ensure_future(other)
+        try:
+            await asyncio.wait({main, side}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            if not side.done():
+                side.cancel()
+                await asyncio.gather(side, return_exceptions=True)
+        return main.done()
+
+    async def _watch_network(self, generation: int, changed: asyncio.Event) -> None:
+        """Com o canal aberto, confere-o a cada troca de rede; levanta `NetworkMoved` se ele não
+        responde mais (ficou na placa que caiu, ou a rota padrão mudou de placa)."""
+        liveness = self._liveness
+        if liveness is None:
+            return
+        last_probe: float | None = None
+        while generation == self._generation:
+            await changed.wait()
+            # Deixa a rota nova assentar; os avisos da mesma troca viram uma conferência só.
+            await self._clock.sleep(self._network_settle())
+            changed.clear()
+            if generation != self._generation:
+                return
+            now = self._clock.monotonic()
+            if last_probe is not None and now - last_probe < NETWORK_WAKE_MIN_SECONDS:
+                continue
+            last_probe = now
+            try:
+                async with asyncio.timeout(NETWORK_PROBE_TIMEOUT_SECONDS + 1):
+                    alive = await liveness(NETWORK_PROBE_TIMEOUT_SECONDS)
+            except TimeoutError:
+                alive = False
+            if generation != self._generation:
+                return
+            if not alive:
+                raise NetworkMoved("a rede mudou e o canal com a API parou de responder")
+            _log.info("a rede mudou e o canal com a API segue de pé")
 
     async def _read(self, generation: int) -> None:
         async for raw in self._transport.incoming():

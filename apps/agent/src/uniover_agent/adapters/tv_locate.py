@@ -22,6 +22,7 @@ from uniover_agent.adapters.arp import arp_mac, arp_table
 from uniover_agent.adapters.local_networks import (
     LocalInterface,
     local_interfaces,
+    local_ipv4,
     network_signature,
     sweep_networks,
 )
@@ -35,7 +36,6 @@ from uniover_agent.adapters.tv_discovery import (
     discover_android_tvs,
     http_json,
     local_address_for,
-    local_ipv4,
     samsung_identity,
     subnet_hosts,
     tcp_open,

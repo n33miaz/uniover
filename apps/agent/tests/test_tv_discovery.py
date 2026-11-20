@@ -15,6 +15,7 @@ from zeroconf import ServiceStateChange
 from uniover_agent.adapters import arp as arp_module
 from uniover_agent.adapters import tv_discovery
 from uniover_agent.adapters.arp import parse_arp_table
+from uniover_agent.adapters.local_networks import local_ipv4
 from uniover_agent.adapters.tv_discovery import (
     ANDROID_REMOTE_PORT,
     MDNS_SERVICE_TYPE,
@@ -24,7 +25,6 @@ from uniover_agent.adapters.tv_discovery import (
     discover_android_tvs,
     find_tvs,
     http_json,
-    local_ipv4,
     same_tv,
     scan_hosts,
     subnet_hosts,

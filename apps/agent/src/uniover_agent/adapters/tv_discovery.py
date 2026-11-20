@@ -1,6 +1,8 @@
 """Descoberta de TV na rede local: Samsung (REST na porta 8001) e Android TV (porta 6466).
 
-A varredura é uma só: a sub-rede IPv4 /24 da interface com rota padrão, em duas fases.
+A varredura cobre a rede de **cada** placa real e ligada do PC (no máximo um /24 cada), e não só a
+da rota padrão: com o cabo na rede da TV (sem internet) e o Wi-Fi no ponto de acesso do celular (com
+internet), a TV está na placa que não tem a rota padrão. São duas fases.
 
 1. Conexão TCP curta às portas 8001 e 6466 de cada endereço, tudo ao mesmo tempo (no Windows um
    endereço ausente não recusa, só deixa estourar o tempo; por isso o limite é curto e global).
@@ -25,7 +27,9 @@ import httpx
 from zeroconf import IPVersion, ServiceStateChange, Zeroconf
 from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 
+from uniover_agent.adapters import local_networks
 from uniover_agent.adapters.arp import arp_mac
+from uniover_agent.adapters.local_networks import MAX_SWEEP_NETWORKS, local_ipv4
 from uniover_agent.adapters.ssl_contexts import ssl_contexts
 from uniover_agent.core.tv.locator import TvIdentity, normalize_mac
 
@@ -140,17 +144,6 @@ async def discover_android_tvs(listen_seconds: float = MDNS_TIMEOUT_SECONDS) -> 
     return sorted(found.values(), key=lambda tv: ipaddress.ip_address(tv.host))
 
 
-def local_ipv4() -> str | None:
-    """Endereço da interface com rota padrão (o `connect` UDP só consulta a rota)."""
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-        try:
-            probe.connect(("192.0.2.1", 9))
-            address: str = probe.getsockname()[0]
-        except OSError:
-            return None
-    return None if address.startswith("0.") else address
-
-
 def subnet_hosts(local: str, exclude: str | None = None, prefix: int = 24) -> list[str]:
     """Os outros 253 endereços do /24 de `local` (e sem `exclude`, quando dado).
 
@@ -197,6 +190,37 @@ def usable_local_addresses() -> list[str]:
         if candidate not in usable:
             usable.append(candidate)
     return usable
+
+
+def scan_targets() -> list[tuple[str, int]]:
+    """Os endereços deste PC (e o tamanho de cada rede) cuja rede a procura de TVs varre.
+
+    Primeiro, as placas reais e ligadas (`local_interfaces`: Ethernet e Wi-Fi, com endereço de rede
+    privada), a da rota padrão primeiro. Uma placa sem rota padrão também vale: o cabo numa rede
+    sem internet ainda leva à TV. Só quando a leitura das placas falha, ou os filtros descartam
+    todas (um PC cuja única saída é um comutador virtual do Hyper-V), vale a lista antiga, pelo
+    nome da máquina, com /24. Nunca mais de `MAX_SWEEP_NETWORKS` redes.
+    """
+    found: list[tuple[str, int]] = []
+    seen: set[ipaddress.IPv4Network] = set()
+    read = local_networks.local_interfaces()
+    listed = (
+        [(item.address, item.prefix) for item in read]
+        if read
+        else [(address, 24) for address in usable_local_addresses()]
+    )
+    for address, prefix in listed:
+        try:
+            network = ipaddress.IPv4Network(f"{address}/{max(24, min(prefix, 30))}", strict=False)
+        except ValueError:
+            continue
+        if network in seen:
+            continue
+        seen.add(network)
+        found.append((address, prefix))
+        if len(found) >= MAX_SWEEP_NETWORKS:
+            break
+    return found
 
 
 class PortState(StrEnum):
@@ -363,16 +387,17 @@ async def find_tvs(  # noqa: PLR0913 - cada injeção é um ponto de teste indep
 ) -> list[DiscoveredTv]:
     """Varre a rede local atrás de TVs (todas, ou só do `kind`). Sem rede, lista vazia.
 
-    Sem `local`, varre o /24 de cada endereço utilizável desta máquina (não só o da rota padrão:
-    com várias placas a TV pode estar em outra), sem os de placa sem rede (169.254).
+    Sem `local`, varre a rede de cada placa real e ligada desta máquina (`scan_targets`): não só a
+    da rota padrão, porque com várias placas a TV pode estar na outra.
     """
-    addresses = [local] if local else usable_local_addresses()
-    if not addresses:
-        _log.warning("sem rota de rede: nada a varrer")
+    targets = [(local, 24)] if local else scan_targets()
+    if not targets:
+        _log.warning("sem rede local: nada a varrer")
         return []
+    addresses = [address for address, _ in targets]
     hosts: list[str] = []
-    for address in addresses:
-        for host in subnet_hosts(address):
+    for address, prefix in targets:
+        for host in subnet_hosts(address, prefix=prefix):
             if host not in hosts and host not in addresses:
                 hosts.append(host)
     mdns_task: asyncio.Task[list[DiscoveredTv]] | None = (
@@ -386,7 +411,7 @@ async def find_tvs(  # noqa: PLR0913 - cada injeção é um ponto de teste indep
             connect=connect,
             fetch_json=fetch_json,
             lookup_mac=lookup_mac,
-            deadline=SCAN_DEADLINE_SECONDS * len(addresses),
+            deadline=SCAN_DEADLINE_SECONDS * len(targets),
         )
         mdns_tvs = await _mdns_or_nothing(mdns_task)
     except BaseException:

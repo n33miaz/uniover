@@ -10,7 +10,8 @@ import logging
 import re
 import socket
 
-from uniover_agent.adapters.tv_discovery import local_address_for, local_ipv4
+from uniover_agent.adapters.local_networks import local_ipv4
+from uniover_agent.adapters.tv_discovery import local_address_for
 
 _log = logging.getLogger(__name__)
 

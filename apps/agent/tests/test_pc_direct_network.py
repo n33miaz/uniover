@@ -158,6 +158,21 @@ def test_the_ip_family_flags_are_honored(monkeypatch: pytest.MonkeyPatch) -> Non
     assert lan_host_addresses(False, True) == ["fd00::2"]
 
 
+def test_the_home_cable_and_the_phone_hotspot_are_both_offered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cabo na rede da TV (sem internet) e Wi-Fi no ponto de acesso do celular: o celular que é o
+    próprio ponto de acesso alcança o PC pelo Wi-Fi, então nenhuma das duas placas pode sumir."""
+    windows_names = [
+        FakeAdapter("Realtek PCIe GbE Family Controller", "{A}", [FakeIp("192.168.1.2")]),
+        FakeAdapter("Intel(R) Wi-Fi 6 AX201 160MHz", "{B}", [FakeIp("10.27.62.170")]),
+        FakeAdapter("Remote NDIS based Internet Sharing Device", "{C}", [FakeIp("10.42.0.5")]),
+    ]
+    monkeypatch.setattr("ifaddr.get_adapters", lambda: windows_names)
+
+    assert lan_host_addresses(True, False) == ["192.168.1.2", "10.27.62.170", "10.42.0.5"]
+
+
 @pytest.mark.parametrize(
     "address",
     [
