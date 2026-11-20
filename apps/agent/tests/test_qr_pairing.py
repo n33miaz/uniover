@@ -140,11 +140,12 @@ def test_success_and_failure_pages_never_reload() -> None:
         assert "refresh" not in page
 
 
-def test_approve_here_is_the_main_action_above_the_qr_and_keeps_the_page_open() -> None:
+def test_the_qr_is_the_main_path_and_approving_here_stays_as_a_second_way() -> None:
     page = pairing_page_html(LINK, "ABCD-2345")
     link = page.index(f'href="{LINK}"')
     assert 'class="approve"' in page[link - 40 : link + 10]
-    assert page.index("Aprovar neste computador") < page.index("<img")
+    # O celular (que já tem a conta aberta) é o caminho principal: o QR vem antes do link.
+    assert page.index("<img") < page.index("Aprovar neste computador")
     # Abre em outra aba: a de espera continua aqui para mostrar "PC conectado".
     assert 'target="_blank" rel="noopener"' in page
 
@@ -193,7 +194,8 @@ def test_pair_shows_the_code_the_qr_of_the_link_and_the_instruction(
     assert parse_blocks(drawing)[: len(expected)] == expected
     assert TOKEN not in out
     page = connection_page_path().read_text(encoding="utf-8")
-    assert "PC conectado. Pode fechar esta janela." in page
+    assert "Este PC já está ligado ao UniOver." in page
+    assert "Pode fechar esta janela." in page
     assert "ABCD-2345" not in page
     assert TOKEN not in page
 
@@ -263,6 +265,6 @@ def test_pair_rewrites_the_page_when_the_code_expires_or_is_denied(
     monkeypatch.setenv("UNIOVER_API_URL", "https://uniover.onrender.com")
     assert main(["pair", "--no-browser"], secrets=FakeSecretStore()) == 1
     page = connection_page_path().read_text(encoding="utf-8")
-    assert "rode o conector de novo" in page
+    assert "Abra o conector de novo" in page
     assert "ABCD-2345" not in page
     assert "CODIGO-DO-APARELHO-SECRETO" not in page

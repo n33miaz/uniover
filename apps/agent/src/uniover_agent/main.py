@@ -73,6 +73,10 @@ def _parser() -> argparse.ArgumentParser:
         "--no-browser", action="store_true", help="não abre a página local do QR no navegador"
     )
     sub.add_parser("status", help="mostra se há token e se a API responde")
+    sub.add_parser(
+        "restart",
+        help="pede ao supervisor que reinicie o agente (a bandeja continua; sem matar processo)",
+    )
     tv_parser = sub.add_parser("tv-pair", help="pareia o agente com a TV (código mostrado na tela)")
     tv_parser.add_argument("--kind", choices=("android", "samsung"), help="tipo da TV")
     tv_parser.add_argument("--host", help="endereço IP da TV (padrão: UNIOVER_TV_HOST)")
@@ -81,6 +85,11 @@ def _parser() -> argparse.ArgumentParser:
         "--installing",
         action="store_true",
         help="chamado pelo instalador (sem console): o código da TV é pedido numa janela",
+    )
+    tv_parser.add_argument(
+        "--code-on-phone",
+        action="store_true",
+        help="Android TV sem pareamento: não pede o código no PC (o app do celular pede depois)",
     )
     tv_parser.add_argument(
         "--if-needed", action="store_true", help="não pareia de novo uma TV que já está pareada"
@@ -232,6 +241,8 @@ def main(  # noqa: PLR0911, PLR0912, PLR0915 - um retorno e uma importação por
                     installing=args.installing,
                 )
             )
+        if command == "restart":
+            return system.request_restart()
         if command == "status":
             from uniover_agent.composition import pairing  # noqa: PLC0415
 
@@ -251,6 +262,7 @@ def main(  # noqa: PLR0911, PLR0912, PLR0915 - um retorno e uma importação por
                     ask_code_in_window if args.installing else tv._ask_tv_code,
                     if_needed=args.if_needed,
                     identify=identify_tv,
+                    code_on_phone=args.code_on_phone,
                 )
             )
         if command == "tv-find":
