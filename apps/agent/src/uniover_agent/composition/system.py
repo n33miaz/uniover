@@ -23,6 +23,9 @@ EXIT_TV_MOVED = 4
 EXIT_HANDOVER_UNSUPPORTED = 6
 # Outro agente vivo com a mesma identidade disputa a conexão (duas substituições em poucos minutos).
 EXIT_DUPLICATE_AGENT = 7
+# A Android TV ainda não está pareada e o código dela será digitado no celular (o instalador
+# não abre janela no PC para isso): o agente segue e o app pede o código quando a TV o mostrar.
+EXIT_TV_CODE_ON_PHONE = 8
 _NOT_PAIRED = "não pareado. Rode `uniover-agent pair` para parear este PC."
 
 
@@ -95,3 +98,21 @@ def configure_logging(level: str, log_file: str | None = None) -> None:
         force=True,
     )
     silence_noisy_loggers()
+
+
+def request_restart() -> int:
+    """`restart`: o mesmo pedido do menu da bandeja e do app (`runtime/restart-now`).
+
+    O supervisor vê o sinal em até uma volta (15 s) e reinicia só o processo do agente: o ícone da
+    bandeja e o próprio supervisor seguem de pé. É o caminho limpo para reiniciar sem matar
+    processos à mão (matar pelo nome derruba junto a bandeja, que demorava a voltar).
+    """
+    from uniover_agent.adapters.maintenance_signals import RuntimeFlagSignals  # noqa: PLC0415
+
+    try:
+        RuntimeFlagSignals().request_restart()
+    except OSError as exc:
+        print(f"Não consegui pedir o reinício ({type(exc).__name__}).", file=sys.stderr)
+        return EXIT_FAILURE
+    print("Reinício pedido: o agente volta em alguns segundos (o ícone da bandeja continua).")
+    return EXIT_OK

@@ -1,4 +1,4 @@
-param([Parameter(Mandatory = $true)][string]$StatePath, [switch]$Probe, [int]$ProbeHoldSeconds = 0)
+param([Parameter(Mandatory = $true)][string]$StatePath, [switch]$Probe, [int]$ProbeHoldSeconds = 0, [int]$ParentPid = 0)
 
 # Processo visual da bandeja. Recebe estado por arquivo atomico e devolve somente nomes de acoes no stdout.
 # O processo Python continua dono do comportamento e volta ao pystray se este host nao abrir.
@@ -311,8 +311,15 @@ $lastTheme = ''
 $lastDpi = 0
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 350
+$script:parentCheckAt = [DateTime]::MinValue
 $timer.add_Tick({
     try {
+        # O processo do agente que abriu este icone sumiu (morto por fora): o icone sai junto, para o supervisor abrir
+        # um novo que fale com um agente vivo, sem um orfao segurando o arquivo de estado.
+        if ($ParentPid -gt 0 -and [DateTime]::UtcNow -ge $script:parentCheckAt) {
+            $script:parentCheckAt = [DateTime]::UtcNow.AddSeconds(2)
+            if ($null -eq (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) { $context.ExitThread(); return }
+        }
         $theme = "{0}|{1}" -f [System.Windows.Forms.SystemInformation]::HighContrast, (Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name AppsUseLightTheme -ErrorAction SilentlyContinue).AppsUseLightTheme
         if ($theme -ne $lastTheme) { Apply-Theme; $script:lastTheme = $theme }
         Apply-Dpi
