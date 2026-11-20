@@ -23,8 +23,6 @@
       class="sleep"
       [disabled]="busy() || !store.canSend()"
       [attr.aria-busy]="sleeping() ? 'true' : null"
-      aria-labelledby="power-sleep-title"
-      aria-describedby="power-sleep-hint"
       (click)="blackOut()"
     >
       <app-tv-icon class="moon" name="sleep" />
