@@ -34,7 +34,11 @@ from uniover_agent.core.tv.icon_badging import (
     image_info,
     parse_badging,
 )
-from uniover_agent.core.tv.icon_resources import parse_icon_fallbacks
+from uniover_agent.core.tv.icon_resources import (
+    parse_adaptive_foreground,
+    parse_icon_fallbacks,
+    parse_resource_rasters,
+)
 from uniover_agent.ports import (
     AdbError,
     AdbNotReady,
@@ -143,7 +147,10 @@ class _Tally:
             return f"só há imagem não quadrada ({self.non_square} de {self.tried} testadas)"
         if self.tried == 0:
             if self.adaptive:
-                return "ícone adaptativo (XML) sem imagem PNG/WebP de reserva"
+                return (
+                    "ícone adaptativo (XML) sem imagem PNG/WebP de reserva nem camada da frente"
+                    " em PNG/WebP"
+                )
             return "o APK não declara imagem PNG/WebP de ícone"
         if self.absent:
             return "as imagens de ícone não estão no APK ou passam do limite de tamanho"
@@ -157,6 +164,8 @@ class _Look:
     square: _Square | None
     candidates: tuple[str, ...]
     version: int | None
+    # Camada da frente do ícone adaptativo: só vale depois de todos os candidatos, em qualquer APK.
+    layers: tuple[str, ...] = ()
 
 
 class IconResolver:
@@ -216,13 +225,16 @@ class IconResolver:
     ) -> tuple[_Square | None, int | None]:
         main, others = _split_paths(paths)
         first = await self._look_in(main, None, tally)
-        if first.square is not None or not first.candidates:
+        if first.square is not None or not (first.candidates or first.layers):
             return first.square, first.version
         # O principal não tinha imagem utilizável: os PNG podem estar no APK da densidade.
-        for split in _density_splits(others):
-            look = await self._look_in(split, first.candidates, tally)
-            if look.square is not None:
-                return look.square, first.version
+        for known in (first.candidates, first.layers):
+            if not known:
+                continue
+            for split in _density_splits(others):
+                look = await self._look_in(split, known, tally)
+                if look.square is not None:
+                    return look.square, first.version
         return None, first.version
 
     async def _look_in(self, remote: str, known: Sequence[str] | None, tally: _Tally) -> _Look:
@@ -235,6 +247,7 @@ class IconResolver:
             info = parse_badging(await self._inspector.dump_badging(local))
             tally.adaptive = bool(info.adaptive)
             candidates = list(info.candidates)
+            layers: list[str] = []
             found = await self._scan(local, candidates, tally)
             if not found and info.adaptive:
                 # Ícone adaptativo (XML): a imagem quadrada de reserva só consta nos recursos.
@@ -246,9 +259,33 @@ class IconResolver:
                 ]
                 candidates.extend(fallbacks)
                 found = await self._scan(local, fallbacks, tally)
-            return _Look(_pick(found), tuple(candidates), info.version_code)
+                if not found:
+                    # Sem legado: a camada da frente do próprio XML, quando ela é PNG/WebP.
+                    layers = [
+                        name
+                        for name in await self._foreground_layers(local, info.adaptive, table)
+                        if name not in candidates
+                    ]
+                    found = await self._scan(local, layers, tally)
+            return _Look(_pick(found), tuple(candidates), info.version_code, tuple(layers))
         finally:
             self._scratch.discard(local)
+
+    async def _foreground_layers(self, apk: Path, adaptive: Sequence[str], table: str) -> list[str]:
+        """PNG/WebP da camada da frente de cada XML adaptativo, da maior densidade à menor.
+
+        Um XML que o `aapt2` não lê, ou cuja camada é vetor, só não contribui: nunca levanta.
+        """
+        layers: list[str] = []
+        for xml in adaptive:
+            try:
+                tree = await self._inspector.dump_xmltree(apk, xml)
+            except IconToolError:
+                continue
+            layer = parse_adaptive_foreground(tree)
+            if layer is not None:
+                layers.extend(parse_resource_rasters(table, layer))
+        return list(dict.fromkeys(layers))
 
     async def _scan(self, apk: Path, names: Sequence[str], tally: _Tally) -> list[_Square]:
         """Lê cada candidato e fica só com as imagens quadradas que cabem no limite."""

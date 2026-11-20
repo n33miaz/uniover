@@ -2,9 +2,20 @@
 
 import pytest
 
-from uniover_agent.core.tv.icon_resources import parse_icon_fallbacks
+from uniover_agent.core.tv.icon_resources import (
+    parse_adaptive_foreground,
+    parse_icon_fallbacks,
+    parse_resource_rasters,
+)
 
-from .support_icons import RESOURCES_CINEVS, RESOURCES_SPOTIFY
+from .support_icons import (
+    RESOURCES_CINEVS,
+    RESOURCES_CINEVS_NO_LEGACY,
+    RESOURCES_SPOTIFY,
+    RESOURCES_VECTOR_ONLY,
+    XMLTREE_CINEVS,
+    XMLTREE_VECTOR_ONLY,
+)
 
 CINEVS_XML = "res/BW.xml"
 SPOTIFY_XML = "res/mipmap-anydpi-v26/spotify_icon.xml"
@@ -117,3 +128,29 @@ Package name=com.a.b id=7f
       (anydpi-v26) (file) res/ic.xml type=XML
 """
     assert parse_icon_fallbacks(text, ["res/ic.xml"]) == ()
+
+
+def test_the_foreground_reference_comes_from_the_foreground_element_only() -> None:
+    assert parse_adaptive_foreground(XMLTREE_CINEVS) == 0x7F0F0001
+    assert parse_adaptive_foreground(XMLTREE_VECTOR_ONLY) == 0x7F080000
+    # Só o fundo (ou nada legível): não há camada da frente.
+    only_background = XMLTREE_CINEVS.split("    E: foreground")[0]
+    assert parse_adaptive_foreground(only_background) is None
+    assert parse_adaptive_foreground("") is None
+
+
+def test_the_foreground_rasters_are_read_by_resource_id_from_the_largest_density_down() -> None:
+    assert parse_resource_rasters(RESOURCES_CINEVS_NO_LEGACY, 0x7F0F0001) == (
+        "res/5c.webp",
+        "res/iE.webp",
+        "res/9Q.webp",
+        "res/13.webp",
+        "res/Nt.webp",
+    )
+    # O vizinho (o fundo) nunca entra, e recurso desconhecido não dá nada.
+    assert "res/bg.webp" not in parse_resource_rasters(RESOURCES_CINEVS_NO_LEGACY, 0x7F0F0001)
+    assert parse_resource_rasters(RESOURCES_CINEVS_NO_LEGACY, 0x7F0F00FF) == ()
+
+
+def test_a_vector_foreground_has_no_raster() -> None:
+    assert parse_resource_rasters(RESOURCES_VECTOR_ONLY, 0x7F080000) == ()

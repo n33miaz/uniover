@@ -122,6 +122,50 @@ Package name=com.cnvs.apptv id=7f
         one="Fast forward %d second"
 """
 
+# O mesmo CineVS numa versão sem o ícone legado: o recurso do XML só tem o XML, e a camada da
+# frente (referenciada pelo XML) segue em WebP por densidade.
+RESOURCES_CINEVS_NO_LEGACY = """Package name=com.cnvs.apptv id=7f
+  type drawable id=08 entryCount=1
+    resource 0x7f080001 drawable/ic_banner
+      (xhdpi) (file) res/Ec.png type=PNG
+  type mipmap id=0f entryCount=3
+    resource 0x7f0f0000 mipmap/ic_launcher
+      (anydpi-v26) (file) res/BW.xml type=XML
+    resource 0x7f0f0001 mipmap/ic_launcher_foreground
+      (mdpi) (file) res/Nt.webp
+      (hdpi) (file) res/13.webp
+      (xhdpi) (file) res/9Q.webp
+      (xxhdpi) (file) res/iE.webp
+      (xxxhdpi) (file) res/5c.webp
+    resource 0x7f0f0002 mipmap/ic_launcher_background
+      (xxxhdpi) (file) res/bg.webp
+"""
+
+# `aapt2 dump xmltree --file res/BW.xml`: fundo e frente apontam para recursos pelo id.
+XMLTREE_CINEVS = """N: android=http://schemas.android.com/apk/res/android (line=2)
+  E: adaptive-icon (line=2)
+    E: background (line=3)
+      A: http://schemas.android.com/apk/res/android:drawable(0x01010199)=@0x7f0f0002
+    E: foreground (line=4)
+      A: http://schemas.android.com/apk/res/android:drawable(0x01010199)=@0x7f0f0001
+"""
+
+# Um lançador com o ícone todo em vetor (a frente é um `<vector>`): não há imagem nenhuma.
+RESOURCES_VECTOR_ONLY = """Package name=com.cnvs.apptv id=7f
+  type drawable id=08 entryCount=2
+    resource 0x7f080000 drawable/ic_launcher_foreground
+      () (file) res/drawable/ic_launcher_foreground.xml type=XML
+  type mipmap id=0f entryCount=1
+    resource 0x7f0f0000 mipmap/ic_launcher
+      (anydpi-v26) (file) res/BW.xml type=XML
+"""
+
+XMLTREE_VECTOR_ONLY = """N: android=http://schemas.android.com/apk/res/android (line=2)
+  E: adaptive-icon (line=2)
+    E: foreground (line=4)
+      A: http://schemas.android.com/apk/res/android:drawable(0x01010199)=@0x7f080000
+"""
+
 # Spotify: ícone adaptativo em todas as densidades; o legado em PNG está no mesmo recurso.
 BADGING_SPOTIFY = """\
 package: name='com.spotify.tv.android' versionCode='2340200' versionName='1.134.2'
@@ -206,6 +250,8 @@ class FakeInspector:
         self.resources: dict[bytes, str] = {}
         self.resources_dumped = 0
         self.resources_error: IconToolError | None = None
+        self.xmltrees: dict[tuple[bytes, str], str] = {}
+        self.xmltree_error: IconToolError | None = None
 
     async def dump_badging(self, apk: Path) -> str:
         if self.badging_error is not None:
@@ -217,6 +263,11 @@ class FakeInspector:
         if self.resources_error is not None:
             raise self.resources_error
         return self.resources.get(apk.read_bytes(), "")  # noqa: ASYNC240
+
+    async def dump_xmltree(self, apk: Path, member: str) -> str:
+        if self.xmltree_error is not None:
+            raise self.xmltree_error
+        return self.xmltrees.get((apk.read_bytes(), member), "")  # noqa: ASYNC240
 
     async def read_member(self, apk: Path, name: str, max_bytes: int) -> bytes | None:
         self.read.append(name)
