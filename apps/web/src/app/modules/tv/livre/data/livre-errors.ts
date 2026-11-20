@@ -5,6 +5,9 @@ import { describeFailure } from '../../data/tv-errors';
 /** `type` (último trecho) do 409 com que a API recusa uma TV cujo agente não declara o TV Livre. */
 export const UNSUPPORTED_PROBLEM = 'tv-livre-unsupported';
 
+/** `type` do 409 com que a API recusa o Modo Dormir de um convidado quando falta o TV Livre na TV: instalar é do dono. */
+export const OWNER_REQUIRED_PROBLEM = 'tv-livre-owner-required';
+
 /** Os códigos estáveis de falha que o agente devolve (`error.code`); os `adb_*` são tratados à parte, pelo prefixo. */
 export const LIVRE_AGENT_CODES: readonly string[] = [
   'unsupported',
@@ -127,6 +130,12 @@ export function describeLivreFailure(error: unknown): LivreFailure {
   const code = livreCodeOf(error);
   if (problem?.status === 409 && problem.kind === UNSUPPORTED_PROBLEM) {
     return { message: livreCodeMessage('unsupported')!, code: 'unsupported' };
+  }
+  if (problem?.status === 409 && problem.kind === OWNER_REQUIRED_PROBLEM) {
+    return {
+      message: $localize`:@@tv-livre.error.owner-required:O TV Livre não está na TV. Peça ao dono para preparar a TV.`,
+      code,
+    };
   }
   const known = code ? livreCodeMessage(code) : null;
   if (known) return { message: known, code };

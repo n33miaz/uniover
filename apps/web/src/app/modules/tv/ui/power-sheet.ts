@@ -121,8 +121,8 @@ export class PowerSheet {
 
   /**
    * "Modo Dormir" (apagar a tela): abre o Modo Dormir do TV Livre (tela preta; qualquer botão acorda). É a saída mais curta para quem
-   * quer a TV escura sem desligá-la. Sem o TV Livre na TV, o computador o instala antes (leva alguns segundos, com o botão
-   * ocupado). Como o desligamento, fecha a folha se der certo e explica aqui dentro se não der.
+   * quer a TV escura sem desligá-la. Sem o TV Livre na TV, o computador o instala antes no pedido do dono (leva alguns
+   * segundos, com o botão ocupado); o de um convidado volta pedindo que o dono prepare a TV. Como o desligamento, fecha a folha se der certo e explica aqui dentro se não der.
    */
   protected async blackOut(): Promise<void> {
     if (this.busy() || this.leaving) return;
