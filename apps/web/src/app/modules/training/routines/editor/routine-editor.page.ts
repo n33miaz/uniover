@@ -431,7 +431,7 @@ export class RoutineEditorPage {
       () => {
         this.host.nativeElement
           .querySelector<HTMLElement>(`[data-id="${id}"]`)
-          ?.scrollIntoView({ block: 'nearest' });
+          ?.scrollIntoView?.({ block: 'nearest' });
       },
       { injector: this.injector },
     );
