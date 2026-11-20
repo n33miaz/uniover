@@ -24,17 +24,21 @@
 
       <ol class="steps">
         <li i18n="@@devices.connect-page.step-open">Abra o arquivo baixado</li>
+        <li i18n="@@devices.connect-page.step-windows">Aceite o aviso do Windows (só uma vez)</li>
         @if (signedIn()) {
           <li i18n="@@devices.connect-page.step-approve">
-            Na janela que abrir, toque em Aprovar neste computador
+            Escaneie o QR com o celular, ou toque em Aprovar neste computador
           </li>
         } @else {
           <li i18n="@@devices.connect-page.step-scan">
-            Escaneie o QR da tela com o celular de quem administra
+            Escaneie o QR com o celular em que você já entrou
           </li>
         }
-        <li i18n="@@devices.connect-page.step-accept">Toque em Permitir na TV</li>
       </ol>
+      <p class="after" i18n="@@devices.connect-page.after">
+        Pronto: a TV e o início com o Windows ficam prontos sozinhos. Na TV Android, o app do celular pede o
+        código que a TV mostrar, uma vez só.
+      </p>
 
       <section class="warnings" aria-labelledby="connect-warnings">
         <h2 id="connect-warnings" class="ui-section-label" i18n="@@devices.connect-page.warnings">

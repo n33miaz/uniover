@@ -24,7 +24,7 @@ describe('ConnectPage', () => {
     return fixture.nativeElement as HTMLElement;
   }
 
-  it('on Windows offers the download, the three steps and the exact buttons of the warnings', async () => {
+  it('on Windows offers the download, the three steps, what happens alone and the exact buttons of the warnings', async () => {
     vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(WINDOWS);
     const el = await render();
     const link = el.querySelector<HTMLAnchorElement>('a.download')!;
@@ -33,9 +33,10 @@ describe('ConnectPage', () => {
     expect(link.getAttribute('download')).toBe('conectar-uniover.cmd');
     expect(Array.from(el.querySelectorAll('ol > li')).map((li) => li.textContent?.trim())).toEqual([
       'Abra o arquivo baixado',
-      'Escaneie o QR da tela com o celular de quem administra',
-      'Toque em Permitir na TV',
+      'Aceite o aviso do Windows (só uma vez)',
+      'Escaneie o QR com o celular em que você já entrou',
     ]);
+    expect(el.querySelector('.after')?.textContent).toContain('ficam prontos sozinhos');
     expect(Array.from(el.querySelectorAll('.warnings strong')).map((s) => s.textContent)).toEqual([
       'Manter',
       'Manter mesmo assim',
@@ -71,8 +72,8 @@ describe('ConnectPage', () => {
     expect(el.querySelector('a.download')).not.toBeNull();
     expect(Array.from(el.querySelectorAll('ol > li')).map((li) => li.textContent?.trim())).toEqual([
       'Abra o arquivo baixado',
-      'Na janela que abrir, toque em Aprovar neste computador',
-      'Toque em Permitir na TV',
+      'Aceite o aviso do Windows (só uma vez)',
+      'Escaneie o QR com o celular, ou toque em Aprovar neste computador',
     ]);
   });
 

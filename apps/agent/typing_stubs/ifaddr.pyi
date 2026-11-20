@@ -1,5 +1,6 @@
 class IP:
     ip: str | tuple[str, int, int]
+    network_prefix: int
 
 class Adapter:
     name: str
