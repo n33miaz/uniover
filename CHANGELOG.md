@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.71.1](https://github.com/n33miaz/uniover/compare/v0.71.0...v0.71.1) (2026-11-20)
+
+
+### TV 0.53.1
+
+#### Bug Fixes
+
+* **tv:** sleep no longer waits for the launcher
+* **web:** always show sleep in the power sheet
+* **web:** name the sleep button by its text
+
+
+### Web 0.68.1
+
+#### Bug Fixes
+
+* **web:** always show sleep in the power sheet
+
+
+### Agent 0.60.1
+
+#### Bug Fixes
+
+* **agent:** sleep installs the launcher if missing
+* **agent:** standby key when power is ignored
+
 ## [0.71.0](https://github.com/n33miaz/uniover/compare/v0.70.0...v0.71.0) (2026-11-20)
 
 
