@@ -103,6 +103,7 @@ export function planProgress(
   routineItems: readonly RoutineItemModel[],
   sets: readonly PlanSet[],
   skipped: readonly string[] = [],
+  finishedItemIds: ReadonlySet<string> = new Set(),
 ): PlanProgress {
   const ordered = [...routineItems].sort((a, b) => a.position - b.position);
   const skippedIds = new Set(skipped);
@@ -150,7 +151,9 @@ export function planProgress(
   // O que ainda falta, na ordem; o pulo tira o exercício todo do plano.
   const remaining = scheduleOf(ordered).filter(
     (slot) =>
-      !skippedIds.has(slot.item.exerciseId) && slot.round > (doneByItem.get(slot.item.id) ?? 0),
+      !skippedIds.has(slot.item.exerciseId) &&
+      !finishedItemIds.has(slot.item.id) &&
+      slot.round > (doneByItem.get(slot.item.id) ?? 0),
   );
   const first = remaining[0];
   if (first === undefined) return { entries, next: null };

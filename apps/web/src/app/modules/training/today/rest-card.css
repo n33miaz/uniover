@@ -15,6 +15,15 @@
   box-shadow: var(--shadow-1);
 }
 
+.readout {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: start;
+}
+
 .title {
   margin: 0;
   color: var(--a-ink2);
@@ -24,17 +33,33 @@
 
 .clock {
   margin: 0;
-  font-size: clamp(3rem, 15vw, 4rem);
+  font-size: clamp(2.25rem, 11vw, 3rem);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1.05;
 }
 
+.clock-group {
+  flex: none;
+  text-align: end;
+}
+
 .goal {
-  margin: calc(-1 * var(--space-1)) 0 0;
-  white-space: nowrap;
-  color: var(--a-ink2);
-  font-weight: 500;
+  margin: 0;
+  font-size: var(--fs-label);
+}
+
+.references {
+  width: 100%;
+  text-align: start;
+}
+
+.references summary {
+  min-height: var(--tap);
+  align-content: center;
+  cursor: pointer;
+  font-size: var(--fs-small);
+  font-weight: 650;
 }
 
 /* A ação principal do descanso é seguir: pular o que falta ou fechar o aviso. "+15 s" fica ao lado, secundário. */
@@ -115,7 +140,6 @@
 }
 
 .over .title,
-.over .goal,
 .over .note,
 .over .ghost {
   color: inherit;
@@ -137,19 +161,7 @@
   }
 }
 
-@keyframes enter {
-  from {
-    opacity: 0;
-    translate: 0 10px;
-  }
-}
-
-/* O cartão entra com um deslize curto (a ilustração recolhe ao mesmo tempo); o pulso do fim também só vale para quem não pediu menos movimento. */
 @media (prefers-reduced-motion: no-preference) {
-  .rest {
-    animation: enter 220ms var(--ease-out) both;
-  }
-
   .over {
     animation: done 200ms var(--ease-out) 1;
   }

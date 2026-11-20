@@ -363,7 +363,10 @@ export class LiveSession {
   }
 
   protected async complete(): Promise<void> {
-    const closes = this.live.closesExercise();
+    const focus = this.focus();
+    const warmup = this.draft().warmup;
+    const extra = focus?.itemId != null && focus.extra;
+    const closes = !warmup && this.live.closesExercise(focus);
     const outcome = await this.live.completeSet(this.draft());
     // O foco só volta ao botão depois de gravar: nenhum toque se perde no meio do caminho. No descanso o botão fica
     // escondido e o foco vai para o título.
@@ -371,7 +374,9 @@ export class LiveSession {
       const target = this.timer.active() ? this.title() : this.dock();
       target?.nativeElement.focus({ preventScroll: true });
     }
-    if (outcome === 'saved' && closes) this.exerciseCompleted.emit();
+    if (outcome !== 'saved') return;
+    if (extra && !warmup) await this.timer.skip();
+    if (closes || (extra && !warmup)) this.exerciseCompleted.emit();
   }
 
   protected async primary(): Promise<void> {
@@ -441,7 +446,17 @@ export class LiveSession {
   protected async finishExerciseFromRest(): Promise<void> {
     // O descanso era deste exercício: encerrá-lo encerra o relógio, para o próximo não abrir já em descanso.
     await this.timer.skip();
-    await this.live.skipCurrent();
+    const key = this.focus()?.key;
+    if (
+      key !== undefined &&
+      (this.focus()?.itemId === null || (await this.live.finishExercise(key)))
+    ) {
+      this.exerciseCompleted.emit();
+    }
+  }
+
+  protected async returnAfterExercise(): Promise<void> {
+    await this.timer.skip();
     this.exerciseCompleted.emit();
   }
 

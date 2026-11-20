@@ -8,6 +8,8 @@ import {
   signal,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
+import { QUEUE_RUNTIME } from '../../../core/offline-queue/queue-ports';
+import { QuickTour } from '../../../shared/ui/quick-tour';
 import type { LocalExercise } from '../data/catalog/exercise';
 import { WakeLockService } from '../data/session-live/wake-lock.service';
 import { illustrationFor, illustrationUrl } from '../illustrations/illustration-map';
@@ -16,6 +18,8 @@ import { TrainingHeaderActions } from '../shell/training-header-actions';
 import { ExerciseHistory } from './exercise-history';
 import { ExerciseChooserSheet } from './exercise-chooser-sheet';
 import { LiveStore } from './live-store';
+import { PlanSheet } from './plan-sheet';
+import { recommendExercise } from './recommend-exercise';
 import { registerOpenSessionWork } from './open-session-work';
 import { type MenuAction, SessionMenuSheet } from './session-menu-sheet';
 import { TodayStore } from './today-store';
@@ -29,7 +33,15 @@ import { WorkoutDaySkeleton } from './workout-skeletons';
  */
 @Component({
   selector: 'app-workout-day',
-  imports: [RouterLink, TrainingGlyph, ExerciseChooserSheet, SessionMenuSheet, WorkoutDaySkeleton],
+  imports: [
+    RouterLink,
+    TrainingGlyph,
+    ExerciseChooserSheet,
+    SessionMenuSheet,
+    WorkoutDaySkeleton,
+    PlanSheet,
+    QuickTour,
+  ],
   providers: [TodayStore, LiveStore, ExerciseHistory],
   template: `
     <section class="day" aria-labelledby="workout-title">
@@ -54,6 +66,46 @@ import { WorkoutDaySkeleton } from './workout-skeletons';
         </section>
       } @else {
         <p class="routine-name">{{ live.workoutName() }}</p>
+
+        <details class="session-limit">
+          <summary>
+            <span i18n="@@training.day.limit">Tempo máximo</span>
+            @if (timeLeftText(); as remaining) {
+              <span class="meta">{{ remaining }}</span>
+            }
+          </summary>
+          <form (submit)="saveLimit($event, limit.value)">
+            <label for="workout-limit" i18n="@@training.day.limit-minutes">Minutos</label>
+            <input
+              #limit
+              id="workout-limit"
+              class="ui-input"
+              type="number"
+              min="1"
+              max="1440"
+              step="1"
+              [attr.inputmode]="'numeric'"
+              [value]="live.limitMinutes() ?? ''"
+            />
+            <button type="submit" class="secondary ui-btn" [disabled]="savingLimit()">
+              <span i18n="@@training.day.save-limit">Salvar</span>
+            </button>
+            @if (live.limitMinutes() !== null) {
+              <button
+                type="button"
+                class="secondary ui-btn"
+                [disabled]="savingLimit()"
+                (click)="saveLimit($event, '')"
+              >
+                <span i18n="@@training.day.clear-limit">Remover</span>
+              </button>
+            }
+            @if (limitError()) {
+              <p role="status" i18n="@@training.day.limit-failed">O limite não foi salvo.</p>
+            }
+          </form>
+        </details>
+        <app-quick-tour [tourId]="'training-session'" [heading]="tourHeading" [steps]="tourSteps" />
 
         @if (live.plan().entries.length > 0) {
           <div class="cards">
@@ -81,7 +133,11 @@ import { WorkoutDaySkeleton } from './workout-skeletons';
                     >{{ live.exercises().get(entry.exerciseId)?.name ?? unknownName }}</span
                   >
                   <span class="meta">{{
-                    progressText(entry.doneSets, entry.targetSets, entry.skipped)
+                    entry.finished
+                      ? finishedLabel
+                      : complete(entry) && !entry.skipped
+                        ? extraSeriesLabel
+                        : progressText(entry.doneSets, entry.targetSets, entry.skipped)
                   }}</span>
                 </span>
                 @if (entry.key === suggestedKey()) {
@@ -125,9 +181,19 @@ import { WorkoutDaySkeleton } from './workout-skeletons';
       />
     }
 
+    @if (planOpen()) {
+      <app-plan-sheet
+        [entries]="live.plan().entries"
+        [names]="names()"
+        [focusKey]="suggestedKey()"
+        (chosen)="openFromPlan($event)"
+        (add)="planOpen.set(false); chooserOpen.set(true)"
+        (closed)="planOpen.set(false)"
+      />
+    }
+
     @if (menuOpen()) {
       <app-session-menu-sheet
-        [showPlan]="false"
         [canFinish]="live.workingSets() > 0"
         [screenSupported]="screenSupported()"
         [screenOn]="screenOn()"
@@ -148,18 +214,56 @@ export class WorkoutDay {
   private readonly router = inject(Router);
   private readonly wake = inject(WakeLockService);
   private readonly headerActions = inject(TrainingHeaderActions);
+  private readonly runtime = inject(QUEUE_RUNTIME);
 
   protected readonly menuLabel = $localize`:@@training.live.menu:Opções do treino`;
   protected readonly unknownName = $localize`:@@training.day.unknown:Exercício removido`;
   protected readonly chooseHeading = $localize`:@@training.day.choose-title:Adicionar Exercício`;
   protected readonly chooserOpen = signal(false);
   protected readonly menuOpen = signal(false);
+  protected readonly planOpen = signal(false);
+  protected readonly finishedLabel = $localize`:@@training.day.finished:Finalizado`;
+  protected readonly names = computed(
+    () => new Map([...this.live.exercises()].map(([id, exercise]) => [id, exercise.name])),
+  );
   protected readonly screenRefused = signal(false);
   protected readonly screenSupported = this.wake.supported;
   protected readonly screenOn = this.wake.active;
   /** "3 séries aguardando envio": sem rede é o estado normal, e a tela do dia também o mostra. */
   protected readonly awaitingText = computed(() => awaitingSetsText(this.today.awaitingSets()));
-  protected readonly suggestedKey = computed(() => this.live.focus()?.key ?? null);
+  protected readonly savingLimit = signal(false);
+  protected readonly limitError = signal(false);
+  protected readonly tourHeading = $localize`:@@training.day.tour-heading:Novidades no treino`;
+  protected readonly tourSteps = [
+    $localize`:@@training.day.tour-extra:Toque num exercício concluído para fazer uma série extra.`,
+    $localize`:@@training.day.tour-exercises:Em Exercícios do Treino, finalize um item ou escolha um similar.`,
+    $localize`:@@training.day.tour-limit:Defina o tempo máximo para destacar um exercício que cabe no tempo restante.`,
+  ];
+  private readonly now = signal(this.runtime.now());
+  private readonly secondsLeft = computed(() => {
+    const session = this.live.session();
+    const limit = this.live.limitMinutes();
+    if (!session || limit === null) return null;
+    return Math.max(0, limit * 60 - Math.floor((this.now() - session.startedAt) / 1000));
+  });
+  protected readonly timeLeftText = computed(() => {
+    const seconds = this.secondsLeft();
+    if (seconds === null) return '';
+    if (seconds === 0) return $localize`:@@training.day.limit-ended:Tempo atingido`;
+    const minutes = Math.ceil(seconds / 60);
+    return $localize`:@@training.day.limit-left:${minutes}:minutes: min restantes`;
+  });
+  protected readonly suggestedKey = computed(() => {
+    const seconds = this.secondsLeft();
+    if (seconds === null) return this.live.focus()?.key ?? null;
+    return recommendExercise(
+      this.live.plan().entries,
+      this.live.routine()?.items ?? [],
+      this.live.exercises(),
+      this.live.sets(),
+      seconds,
+    );
+  });
   /** Tudo o que o plano pedia foi feito (ou pulado): terminar passa a ser a ação principal da tela. */
   protected readonly allDone = computed(() => {
     const entries = this.live.plan().entries;
@@ -180,10 +284,26 @@ export class WorkoutDay {
       label: this.menuLabel,
       run: () => this.menuOpen.set(true),
     });
+    const tick = this.runtime.setInterval(() => {
+      if (this.live.limitMinutes() !== null) this.now.set(this.runtime.now());
+    }, 1000);
     inject(DestroyRef).onDestroy(() => {
+      this.runtime.clearInterval(tick);
       removeMenu();
       void this.wake.release();
     });
+  }
+
+  protected async saveLimit(event: Event, value: string): Promise<void> {
+    event.preventDefault();
+    if (this.savingLimit()) return;
+    this.savingLimit.set(true);
+    try {
+      this.now.set(this.runtime.now());
+      this.limitError.set(!(await this.live.setLimitMinutes(value === '' ? null : Number(value))));
+    } finally {
+      this.savingLimit.set(false);
+    }
   }
 
   protected art(exerciseId: string): string | null {
@@ -195,9 +315,14 @@ export class WorkoutDay {
   protected complete(entry: {
     readonly doneSets: number;
     readonly targetSets: number | null;
+    readonly finished?: boolean;
   }): boolean {
-    return entry.targetSets !== null && entry.doneSets >= entry.targetSets;
+    return (
+      entry.finished === true || (entry.targetSets !== null && entry.doneSets >= entry.targetSets)
+    );
   }
+
+  protected readonly extraSeriesLabel = $localize`:@@training.day.more-series:Fazer série extra`;
 
   protected progressText(done: number, target: number | null, skipped: boolean): string {
     if (skipped) return $localize`:@@training.day.skipped:Pulado`;
@@ -213,6 +338,11 @@ export class WorkoutDay {
     await this.router.navigate(['/treino/sessao/exercicio'], { queryParams: { exercicio: key } });
   }
 
+  protected async openFromPlan(key: string): Promise<void> {
+    this.planOpen.set(false);
+    await this.open(key);
+  }
+
   protected async openExtra(exercise: LocalExercise): Promise<void> {
     this.chooserOpen.set(false);
     await this.router.navigate(['/treino/sessao/exercicio'], {
@@ -222,6 +352,10 @@ export class WorkoutDay {
 
   protected async onMenu(action: MenuAction): Promise<void> {
     switch (action) {
+      case 'plan':
+        this.menuOpen.set(false);
+        this.planOpen.set(true);
+        break;
       case 'add':
         this.menuOpen.set(false);
         this.chooserOpen.set(true);

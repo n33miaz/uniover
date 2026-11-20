@@ -55,7 +55,8 @@ export const CHOOSER_PAGE_SIZE = 50;
             (input)="text.set($any($event.target).value)"
           />
         </div>
-        @if (muscle() !== '') {
+        @if (similarTo()) {
+        } @else if (muscle() !== '') {
           <app-training-chips
             [options]="muscleOptions()"
             [selected]="scope()"
@@ -109,6 +110,7 @@ export class ExerciseChooserSheet {
   readonly heading = input.required<string>();
   /** Músculo principal em que a lista abre (o do exercício que se quer trocar); vazio abre em todos. */
   readonly muscle = input('');
+  readonly similarTo = input<LocalExercise | null>(null);
   /** Exercícios que não servem (já estão na rotina): ficam fora da lista. */
   readonly excludeIds = input<readonly string[]>([]);
 
@@ -139,7 +141,18 @@ export class ExerciseChooserSheet {
   ]);
   protected readonly filtered = computed(() => {
     const excluded = new Set(this.excludeIds());
-    return this.results().filter((exercise) => !excluded.has(exercise.id));
+    const similar = this.similarTo();
+    const candidates = this.results().filter((exercise) => !excluded.has(exercise.id));
+    if (similar === null) return candidates;
+    const muscles = new Set(similar.primaryMuscles);
+    const score = (exercise: LocalExercise) =>
+      exercise.primaryMuscles.filter((muscle) => muscles.has(muscle)).length;
+    return candidates
+      .filter((exercise) => exercise.id !== similar.id && score(exercise) > 0)
+      .sort(
+        (a, b) =>
+          score(b) - score(a) || a.name.localeCompare(b.name, 'pt-BR') || a.id.localeCompare(b.id),
+      );
   });
   protected readonly shown = computed(() => this.filtered().slice(0, this.limit()));
   protected readonly hidden = computed(() => this.filtered().length - this.shown().length);
@@ -150,6 +163,7 @@ export class ExerciseChooserSheet {
     effect(() => {
       const query: CatalogQuery = {
         text: this.text(),
+        equipment: this.similarTo()?.equipment,
         group: this.muscle() === '' ? this.group() || undefined : undefined,
         muscle: this.muscle() !== '' && this.scope() === 'same' ? this.muscle() : undefined,
       };

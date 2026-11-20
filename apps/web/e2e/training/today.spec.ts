@@ -173,7 +173,7 @@ test.describe('Hoje', () => {
     await expect(page.getByRole('dialog', { name: 'Editar Série' })).toBeVisible();
   });
 
-  test('a rotina do dia vem primeiro, a semana confirma embaixo, e o botão de iniciar fica acima da lista', async ({
+  test('a semana vem primeiro e o treino pode iniciar na primeira tela', async ({
     page,
     context,
   }) => {
@@ -194,7 +194,7 @@ test.describe('Hoje', () => {
 
     const weekBox = (await week.boundingBox())!;
     const routineBox = (await routine.boundingBox())!;
-    expect(routineBox.y).toBeLessThan(weekBox.y);
+    expect(weekBox.y).toBeLessThan(routineBox.y);
     // Sem busca: nenhum campo de pesquisa antes do botão de iniciar.
     await expect(page.getByRole('searchbox')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Trocar rotina' })).toHaveCount(0);
@@ -208,22 +208,7 @@ test.describe('Hoje', () => {
     // O botão principal está na primeira tela do celular (390×664), sem rolar.
     expect(startBox.y + startBox.height).toBeLessThanOrEqual(page.viewportSize()!.height);
 
-    // A lista de exercícios vem recolhida atrás de "Ver Rotina" e abre abaixo do botão de iniciar.
-    const toggle = routine.locator('.routine-toggle');
-    await expect(toggle).toHaveText('Ver Rotina');
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.locator('.lines')).toBeHidden();
-    await toggle.click();
-    await expect(toggle).toHaveText('Ocultar Rotina');
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    const listBox = (await page.locator('.lines').boundingBox())!;
-    expect(startBox.y).toBeLessThan(listBox.y);
-
-    const rows = page.locator('.lines .ui-row');
-    await expect(rows).toHaveCount(3);
-    await expect(rows.first()).toContainText('Supino reto com barra');
-    await expect(rows.first()).toContainText('4 × 6–10 · última vez 40 kg × 10');
-    await expect(rows.first()).toContainText('tente 42,5 kg');
+    await expect(page.getByRole('button', { name: 'Ver Rotina' })).toHaveCount(0);
 
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await settle(page);
@@ -262,7 +247,6 @@ test.describe('Hoje', () => {
     await reopened.getByRole('button', { name: /Treino B/ }).click();
 
     await expect(page.getByRole('heading', { name: 'Treino B · Costas e bíceps' })).toBeVisible();
-    await expect(page.locator('.lines .ui-row').first()).toContainText('Puxada supinada na polia');
   });
 
   test('o fundo fecha o seletor sem demora com movimento reduzido', async ({ page, context }) => {

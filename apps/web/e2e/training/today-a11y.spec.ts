@@ -41,7 +41,6 @@ const SCREENS: readonly Screen[] = [
     open: async (page, context) => {
       await launch(context, page);
       await openToday(page);
-      await expect(page.locator('.lines .ui-row')).toHaveCount(3);
     },
   },
   {

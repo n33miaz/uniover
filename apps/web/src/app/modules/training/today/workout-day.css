@@ -123,6 +123,28 @@ app-workout-day .check {
   color: var(--a-ok-ink);
 }
 
+app-workout-day .session-limit summary {
+  min-height: var(--tap);
+  padding: var(--space-2);
+  cursor: pointer;
+}
+
+app-workout-day .session-limit summary .meta {
+  margin-inline-start: var(--space-2);
+}
+
+app-workout-day .session-limit form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2);
+}
+
+app-workout-day .session-limit input {
+  width: 5rem;
+}
+
 /* "Concluir Treino" fica fixo embaixo, como nas outras telas da sessão. */
 app-workout-day .dock {
   position: fixed;
