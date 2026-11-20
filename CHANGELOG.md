@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.72.0](https://github.com/n33miaz/uniover/compare/v0.71.1...v0.72.0) (2026-11-20)
+
+
+### Devices 0.66.0
+
+#### Features
+
+* **pc:** restart, logoff, hibernate, monitor off
+* **web:** optional three-finger gestures
+* **pc:** label keys by host system
+* **pc:** paste as text and follow windows mouse
+* **pc:** paste long text in one go
+
+#### Bug Fixes
+
+* **pc:** label accepted power requests
+* **web:** steady pc typing field
+* **web:** keep pc typing echo in view
+
+
+### Web 0.69.0
+
+#### Features
+
+* **pc:** restart, logoff, hibernate, monitor off
+* **web:** optional three-finger gestures
+* **pc:** paste as text and follow windows mouse
+* **pc:** paste long text in one go
+
+#### Bug Fixes
+
+* **pc:** label accepted power requests
+* **web:** steady pc typing field
+* **web:** keep pc typing echo in view
+
+
+### Agent 0.61.0
+
+#### Features
+
+* **pc:** restart, logoff, hibernate, monitor off
+* **pc:** paste as text and follow windows mouse
+
+#### Bug Fixes
+
+* **pc:** clipboard owner and media off input lane
+* **pc:** refuse power actions off windows
+
 ## [0.71.1](https://github.com/n33miaz/uniover/compare/v0.71.0...v0.71.1) (2026-11-20)
 
 
