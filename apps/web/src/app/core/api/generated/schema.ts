@@ -15241,7 +15241,7 @@ export interface components {
       network: boolean;
       /** @default true */
       settings: boolean;
-      /** @default false */
+      /** @default true */
       sleep: boolean;
     };
     LivreClock: {

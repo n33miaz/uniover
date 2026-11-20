@@ -150,7 +150,7 @@ test.describe('a entrada no menu da TV', () => {
     await expect(sheet.getByRole('heading', { name: 'Apagar a Tela?' })).toBeVisible();
     await expect(button(sheet, 'Desligar')).toHaveCount(0);
     await expect(sheet.getByText('Agendar')).toHaveCount(0);
-    await button(sheet, 'Apagar a Tela').click();
+    await button(sheet, 'Modo Dormir').click();
     await expect.poll(() => livre.to('POST', '/sleep').length).toBe(1);
   });
 });

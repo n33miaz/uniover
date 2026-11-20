@@ -99,7 +99,7 @@
       "additionalProperties": false,
       "properties": {
         "settings": { "type": "boolean", "default": true, "description": "Ícone de Configurações da TV no fim da fileira. É a saída de emergência: só desligue com o agente atualizado e a reversão ensaiada." },
-        "sleep": { "type": "boolean", "default": false, "description": "Ícone Dormir no fim da fileira." },
+        "sleep": { "type": "boolean", "default": true, "description": "Ícone Dormir no fim da fileira (ligado por padrão)." },
         "network": { "type": "boolean", "default": true, "description": "Ícone Rede (a tela de rede da TV) no fim da fileira. Só aparece se a TV tem essa tela." },
         "inputs": { "type": "boolean", "default": true, "description": "Ícone Entradas (HDMI e antena) no fim da fileira. Só aparece se a TV tem uma tela de entradas conhecida." },
         "brand": { "type": "boolean", "default": true, "description": "O nome do sistema, pequeno, num canto da tela. Os três campos acima são do nível 2 do app; um app mais velho os ignora." }

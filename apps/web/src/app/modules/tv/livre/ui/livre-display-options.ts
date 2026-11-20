@@ -14,8 +14,8 @@ interface Choice<T extends string> {
 
 /**
  * Tudo que a tela inicial da TV aceita além do fundo: o relógio (tamanho, 12 ou 24 horas, data, segundos), o tamanho dos
- * ícones e quando mostrar o nome dos apps. Mais os círculos Rede e Entradas e o nome do sistema, que só o launcher novo
- * conhece (sem ele, não aparecem aqui). Tudo vai no rascunho e vale com "Aplicar na TV", como o resto da configuração.
+ * ícones e quando mostrar o nome dos apps. Mais o círculo Dormir (ligado por padrão, existe desde o primeiro launcher) e
+ * os círculos Rede e Entradas e o nome do sistema, que só o launcher novo conhece (sem ele, não aparecem aqui). Tudo vai no rascunho e vale com "Aplicar na TV", como o resto da configuração.
  */
 @Component({
   selector: 'app-livre-display-options',

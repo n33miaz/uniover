@@ -78,7 +78,7 @@ describe('parseLivreConfig', () => {
     expect(config.icons).toEqual({ size: 'large', labels: 'never' });
     expect(config.builtin).toEqual({
       settings: false,
-      sleep: false,
+      sleep: true,
       network: true,
       inputs: true,
       brand: true,

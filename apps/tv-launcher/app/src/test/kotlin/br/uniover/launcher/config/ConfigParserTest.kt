@@ -34,7 +34,7 @@ class ConfigParserTest {
         assertEquals(AppsMode.ALL, c.apps.mode)
         assertFalse("apps de fábrica ficam ocultos por padrão", c.apps.showFactory)
         assertTrue("Configurações é a saída de emergência", c.builtin.settings)
-        assertFalse(c.builtin.sleep)
+        assertTrue("Dormir vem ligado: é o jeito mais curto de apagar a tela", c.builtin.sleep)
         assertEquals(0, c.sleep.maxMinutes)
     }
 

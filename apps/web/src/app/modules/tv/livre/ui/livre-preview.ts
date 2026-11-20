@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { ClockService } from '../../../../core/time/clock.service';
 import { AppIcon } from '../../ui/app-icon';
+import { TvIcon } from '../../ui/tv-icon';
 import { LivreAppRow, PREVIEW_MAX_TILES, gradientCss, previewClock } from '../data/livre-config';
 import { LivreConfig } from '../data/livre-types';
 
@@ -13,7 +14,7 @@ import { LivreConfig } from '../data/livre-types';
  */
 @Component({
   selector: 'app-livre-preview',
-  imports: [AppIcon],
+  imports: [AppIcon, TvIcon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div
@@ -45,20 +46,14 @@ import { LivreConfig } from '../data/livre-types';
                 }
               </li>
             }
+            @if (config().builtin.sleep) {
+              <li class="tile sleep">
+                <span class="icon gear"><app-tv-icon name="sleep" /></span>
+              </li>
+            }
             @if (config().builtin.settings) {
-              <li class="tile">
-                <span class="icon gear">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.8"
-                    aria-hidden="true"
-                  >
-                    <circle cx="12" cy="12" r="3" />
-                    <path [attr.d]="gearPath" />
-                  </svg>
-                </span>
+              <li class="tile settings">
+                <span class="icon gear"><app-tv-icon name="settings" /></span>
               </li>
             }
           </ul>
@@ -176,25 +171,24 @@ import { LivreConfig } from '../data/livre-types';
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    /* O círculo de Configurações da TV, no fim da fileira como no launcher. */
+    /* Os círculos de Dormir e de Configurações da TV, no fim da fileira como no launcher. */
     .gear {
       display: grid;
       place-items: center;
       width: var(--tile);
       height: var(--tile);
       border-radius: 50%;
-      background: rgb(255 255 255 / 0.16);
+      background: #4a5a8c;
       color: #fff;
     }
-    .gear svg {
-      width: 48%;
-      height: 48%;
+    /* O traço ocupa 52% do círculo, como no launcher (folga de 24% por lado). */
+    .gear app-tv-icon {
+      width: 52%;
+      height: 52%;
     }
   `,
 })
 export class LivrePreview {
-  protected readonly gearPath =
-    'M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9 7 7 M17 17l2.1 2.1 M19.1 4.9 17 7 M7 17l-2.1 2.1';
   readonly config = input.required<LivreConfig>();
   /** O que a Home mostrará, na ordem do launcher (a tela calcula, a miniatura só desenha). */
   readonly apps = input.required<readonly LivreAppRow[]>();
@@ -213,8 +207,10 @@ export class LivrePreview {
   protected readonly sizes = computed(
     () => `clock-${this.config().clock.size} icon-${this.config().icons.size}`,
   );
-  /** Cabem poucos círculos na miniatura; a Configurações da TV, quando ligada, ocupa um dos lugares. */
-  protected readonly shown = computed(() =>
-    this.apps().slice(0, PREVIEW_MAX_TILES - (this.config().builtin.settings ? 1 : 0)),
-  );
+  /** Cabem poucos círculos na miniatura; Dormir e a Configurações da TV, quando ligados, ocupam um lugar cada. */
+  protected readonly shown = computed(() => {
+    const builtin = this.config().builtin;
+    const reserved = (builtin.settings ? 1 : 0) + (builtin.sleep ? 1 : 0);
+    return this.apps().slice(0, Math.max(0, PREVIEW_MAX_TILES - reserved));
+  });
 }

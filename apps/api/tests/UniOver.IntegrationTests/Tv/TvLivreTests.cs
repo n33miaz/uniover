@@ -746,6 +746,7 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         config.GetProperty("apps").GetProperty("showFactory").GetBoolean().Should().BeTrue();
         config.GetProperty("clock").GetProperty("size").GetString().Should().Be("large", "o que se omite vale o padrão");
         config.GetProperty("wallpaper").GetProperty("angle").GetInt32().Should().Be(315);
+        config.GetProperty("builtin").GetProperty("sleep").GetBoolean().Should().BeTrue("Dormir omitido vale o padrão, ligado");
     }
 
     [Fact]
@@ -1132,6 +1133,7 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         launcher["apps"]!["mode"]!.GetValue<string>().Should().Be("all");
         launcher["apps"]!["showFactory"]!.GetValue<bool>().Should().BeFalse();
         launcher["wallpaper"]!["colors"]!.AsArray().Select(n => n!.GetValue<string>()).Should().Equal("#1B2440", "#3A2D5C");
+        launcher["builtin"]!["sleep"]!.GetValue<bool>().Should().BeTrue("o círculo Dormir vem ligado por padrão");
     }
 
     [Fact]

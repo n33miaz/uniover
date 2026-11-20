@@ -128,11 +128,23 @@
   </section>
 }
 
-@if (store.launcherExtras()) {
-  @if (builtin(); as builtin) {
-    <section class="group" aria-labelledby="livre-screen-title">
-      <h2 id="livre-screen-title" class="title" i18n="@@tv-livre.display.screen">Na Tela da TV</h2>
+@if (builtin(); as builtin) {
+  <section class="group" aria-labelledby="livre-screen-title">
+    <h2 id="livre-screen-title" class="title" i18n="@@tv-livre.display.screen">Na Tela da TV</h2>
 
+    <!-- O Dormir existe desde o primeiro launcher: a chave vale para qualquer TV com o TV Livre. -->
+    <label class="row">
+      <span class="text" i18n="@@tv-livre.display.sleep">Círculo Dormir</span>
+      <input
+        type="checkbox"
+        role="switch"
+        class="ui-switch"
+        [checked]="builtin.sleep"
+        [disabled]="!enabled()"
+        (change)="store.setBuiltin({ sleep: checked($event) })"
+      />
+    </label>
+    @if (store.launcherExtras()) {
       <label class="row">
         <span class="text" i18n="@@tv-livre.display.network">Círculo Rede</span>
         <input
@@ -166,6 +178,6 @@
           (change)="store.setBuiltin({ brand: checked($event) })"
         />
       </label>
-    </section>
-  }
+    }
+  </section>
 }

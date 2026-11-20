@@ -35,7 +35,7 @@ export const LIVRE_CONFIG = {
   wallpaper: { type: 'gradient', colors: ['#1B2440', '#3A2D5C'], angle: 315, dim: 0.25 },
   apps: { mode: 'all', items: [], hidden: [], showFactory: false },
   icons: { size: 'medium', labels: 'always' },
-  builtin: { settings: true, sleep: false, network: true, inputs: true, brand: true },
+  builtin: { settings: true, sleep: true, network: true, inputs: true, brand: true },
   sleep: { maxMinutes: 0 },
 };
 

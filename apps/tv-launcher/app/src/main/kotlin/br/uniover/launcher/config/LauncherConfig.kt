@@ -54,7 +54,8 @@ data class IconsConfig(
 
 data class BuiltinConfig(
     val settings: Boolean = true,
-    val sleep: Boolean = false,
+    /** Círculo "Dormir" (tela preta; qualquer tecla acorda). Ligado por padrão: é o jeito mais curto de apagar a tela. */
+    val sleep: Boolean = true,
     /** Círculo "Rede" (a tela de rede da TV) no fim da fileira. */
     val network: Boolean = true,
     /** Círculo "Entradas" (HDMI e antena); só aparece se a TV tem uma tela para abrir. */

@@ -20,6 +20,7 @@ import {
   restoreDialogFocus,
 } from '../../../shared/ui/dialog-motion';
 import { leaveSheet } from './sheet-motion';
+import { TvIcon } from './tv-icon';
 
 /**
  * Folha "Desligar a TV?": sobe de baixo, sem botão de fechar (a saída é "Cancelar" ou Esc). Desligar é a única
@@ -33,6 +34,7 @@ import { leaveSheet } from './sheet-motion';
  */
 @Component({
   selector: 'app-power-sheet',
+  imports: [TvIcon],
   templateUrl: './power-sheet.html',
   styleUrl: './power-sheet.css',
 })
@@ -49,8 +51,16 @@ export class PowerSheet {
   readonly closed = output<void>();
 
   protected readonly busy = signal(false);
-  /** O TV Livre está na TV e o agente ao alcance: então "Apagar a Tela" (o Modo Dormir) tem como agir. */
-  protected readonly sleepAvailable = signal(false);
+  /**
+   * O TV Livre está na TV e o agente ao alcance: então o Modo Dormir tem como agir. `null` enquanto a pergunta não volta;
+   * nesse meio-tempo o botão já aparece (esmaecido) numa TV Android, para não surgir depois e empurrar a folha.
+   */
+  protected readonly sleepAvailable = signal<boolean | null>(null);
+  protected readonly showSleep = computed(() => {
+    const available = this.sleepAvailable();
+    if (available !== null) return available;
+    return this.store.selectedTv()?.kind !== 'samsung';
+  });
   protected readonly error = signal<string | null>(null);
   protected readonly chosen = signal<Date | null>(null);
   /** O tempo pronto escolhido (em minutos), ou "personalizar" (o horário do dia), ou nada. */
@@ -116,7 +126,7 @@ export class PowerSheet {
   }
 
   /**
-   * "Apagar a Tela": abre o Modo Dormir do TV Livre (tela preta; qualquer botão acorda). É a saída mais curta para quem
+   * "Modo Dormir" (apagar a tela): abre o Modo Dormir do TV Livre (tela preta; qualquer botão acorda). É a saída mais curta para quem
    * quer a TV escura sem desligá-la. Como o desligamento, fecha a folha se der certo e explica aqui dentro se não der.
    */
   protected async blackOut(): Promise<void> {
