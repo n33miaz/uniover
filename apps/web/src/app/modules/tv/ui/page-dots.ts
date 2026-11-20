@@ -55,7 +55,6 @@ import { Component, computed, input, output } from '@angular/core';
       background: transparent;
       cursor: pointer;
       touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
     }
     /* Cor cheia (sem opacidade): o ponto de uma página fora de vista precisa de 3:1 contra o fundo. */
     .mark {

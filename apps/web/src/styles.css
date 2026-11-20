@@ -17,6 +17,9 @@
   --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --radius: 14px;
   --gutter: 16px;
+  --module-top: calc(var(--gutter) + env(safe-area-inset-top, 0px));
+  --module-left: max(var(--gutter), env(safe-area-inset-left, 0px));
+  --module-right: max(var(--gutter), env(safe-area-inset-right, 0px));
 
   /*
    * Tokens de apresentação (Início, Ajustes e telas que quiserem adotar). Os de cima não mudam de valor: outras
@@ -197,43 +200,12 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
-/* Uma só barra, discreta em qualquer superfície rolável; os tokens acompanham os dois temas. Vale onde há mouse: no
-   toque (celular) a barra do próprio sistema é sobreposta, não ocupa largura e some sozinha; estilizá-la a tornaria
-   fixa, tiraria largura dos cartões e faria aparecer a barra das linhas de deslizar. A página reserva a calha para o
-   conteúdo não pular quando a barra aparece (as folhas fazem o mesmo em `.ui-dialog`). */
+/* As propriedades padrão preservam as barras sobrepostas nas plataformas que as usam.
+   No toque, a barra nativa some sozinha e acompanha o esquema de cores do tema. */
 @media (hover: hover) and (pointer: fine) {
-  html {
-    scrollbar-gutter: stable;
-  }
-
-  /* Firefox não conhece `::-webkit-scrollbar` e usa as propriedades padrão. No Chromium e no Safari elas anulariam o
-     desenho abaixo (cantos arredondados e o realce ao passar o mouse), por isso ficam só onde o pseudo-elemento não existe. */
-  @supports not selector(::-webkit-scrollbar) {
-    * {
-      scrollbar-width: thin;
-      scrollbar-color: var(--a-ink3) transparent;
-    }
-  }
-
-  *::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-
-  *::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  *::-webkit-scrollbar-thumb {
-    border: 3px solid transparent;
-    border-radius: var(--radius-pill);
-    background: var(--a-ink3);
-    background-clip: padding-box;
-  }
-
-  *::-webkit-scrollbar-thumb:hover {
-    background: var(--a-accent);
-    background-clip: padding-box;
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--a-ink) 35%, transparent) transparent;
   }
 }
 
@@ -269,13 +241,8 @@ main {
   padding-bottom: calc(var(--gutter) + var(--safe-bottom));
 }
 
-/*
- * Fora de um campo de digitação nada é selecionável, e o toque não pinta o retângulo azul padrão do navegador: o app é
- * uma interface de toque, não um documento. O toque prolongado no iOS também não abre a lupa nem o menu do sistema sobre
- * botões, cartões e imagens. Campos que recebem texto restauram a seleção e o menu de colar (editar não pode quebrar), e
- * texto que a pessoa precisa copiar ganha a classe `ui-selectable` (hoje, só o registro do agente). O que é para copiar
- * em geral vai num campo somente leitura ou num botão "Copiar". O foco de teclado continua visível (`:focus-visible`).
- */
+/* Campos de texto mantêm seleção e colagem. O restante da interface bloqueia a seleção e o
+   menu do toque prolongado, com realce transparente também nos campos. */
 html,
 body,
 body * {
@@ -305,10 +272,7 @@ input[type='week' i],
 input[type='tel' i],
 input[type='url' i],
 textarea,
-[contenteditable],
-[contenteditable] *,
-.ui-selectable,
-.ui-selectable * {
+:read-write:not(input, textarea) {
   user-select: text;
   -webkit-user-select: text;
   -webkit-touch-callout: default;
@@ -962,7 +926,6 @@ html:has(> body > #boot-skeleton) {
     overlay var(--dur-slow) allow-discrete,
     display var(--dur-slow) allow-discrete;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
 }
 
 .ui-dialog::backdrop {
@@ -1053,10 +1016,6 @@ html:has(> body > #boot-skeleton) {
  * já interpreta pressão contínua e gestos no carrossel, por isso conserva exclusivamente os estados que ele define.
  * Quando um cartão ui-press envolve um link, somente o cartão responde para o toque não parecer duplicado.
  */
-:where(button, a[href], [role='button'], [role='tab'], label.ui-row, .ui-btn, .ui-tap, .ui-press) {
-  -webkit-tap-highlight-color: transparent;
-}
-
 :where(
     button:not(:disabled):not([aria-disabled='true']),
     a[href]:not([aria-disabled='true']),

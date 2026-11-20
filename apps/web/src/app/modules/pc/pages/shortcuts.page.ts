@@ -69,7 +69,6 @@ import { PcShortcutGrid } from '../ui/shortcut-grid';
       color: var(--a-ink2);
       cursor: pointer;
       touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
     }
     .icon.on {
       background: var(--a-accent-soft);

@@ -32,7 +32,6 @@
   font-weight: 650;
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 .goto-go:active:not(:disabled) {
   background: var(--a-accent-soft);

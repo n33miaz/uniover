@@ -135,7 +135,6 @@ function isWithin(path: string, section: string): boolean {
     :host {
       display: flex;
       flex-direction: column;
-      -webkit-tap-highlight-color: transparent;
     }
     app-page-top-bar {
       position: sticky;

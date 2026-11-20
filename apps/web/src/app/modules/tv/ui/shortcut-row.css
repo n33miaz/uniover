@@ -18,7 +18,6 @@ button {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  -webkit-tap-highlight-color: transparent;
 }
 /* Os atalhos ficam focáveis mesmo sem agente (aria-disabled), só apagados. */
 .shortcut[aria-disabled='true'] {

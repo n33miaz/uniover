@@ -52,7 +52,6 @@
   font-weight: 650;
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 .release {
   border-color: var(--a-accent);

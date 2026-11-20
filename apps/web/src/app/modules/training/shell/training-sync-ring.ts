@@ -44,7 +44,6 @@ import { TrainingSyncIndicator } from './training-sync-indicator';
       color: var(--a-ink2);
       cursor: pointer;
       touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
     }
     .ring:focus-visible {
       outline: 3px solid var(--a-accent);

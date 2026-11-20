@@ -159,7 +159,6 @@ function isWithin(path: string, base: string): boolean {
     nav.training {
       border-top-color: color-mix(in srgb, var(--a-accent) 20%, var(--a-line));
       box-shadow: 0 -5px 18px color-mix(in srgb, var(--a-ink) 5%, transparent);
-      -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
     }
     nav.training a {

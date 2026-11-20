@@ -29,7 +29,6 @@
   font-weight: 650;
   text-decoration: none;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 .row:active {
   background: var(--a-accent-soft);

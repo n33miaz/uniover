@@ -54,7 +54,6 @@
   white-space: nowrap;
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .tab[aria-selected='true'] {

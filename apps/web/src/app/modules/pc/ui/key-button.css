@@ -19,7 +19,6 @@
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  -webkit-tap-highlight-color: transparent;
   transition: transform var(--dur-fast) var(--ease-out);
 }
 .key:active:not(:disabled) {

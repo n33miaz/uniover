@@ -211,7 +211,6 @@ h2:focus {
   background: none;
   color: var(--a-ink);
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
   transition: transform var(--dur-fast) var(--ease-out);
 }
 

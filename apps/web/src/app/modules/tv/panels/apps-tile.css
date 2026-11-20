@@ -13,7 +13,6 @@ button {
   font: inherit;
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 button:disabled {
   opacity: 0.5;

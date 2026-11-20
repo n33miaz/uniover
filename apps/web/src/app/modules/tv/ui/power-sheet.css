@@ -212,7 +212,6 @@ h2 {
   text-align: start;
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 .sleep:disabled {
   opacity: 0.55;
