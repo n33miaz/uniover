@@ -30,6 +30,7 @@ from uniover_agent.core import (
 from uniover_agent.core.pc.devices import DeviceDecision
 from uniover_agent.core.pc.direct import (
     BYE_FLUSH_SECONDS,
+    REFUSED_CLOSED,
     REFUSED_FAILED,
     REFUSED_UNAVAILABLE,
     RTC_SILENT_TYPES,
@@ -46,7 +47,7 @@ from uniover_agent.ports import (
     DirectUnavailable,
     PeerCallbacks,
 )
-from uniover_agent.ports.pc_direct import ScreenPeer
+from uniover_agent.ports.pc_direct import SCREEN_MAX_LIFETIME_SECONDS, ScreenPeer
 
 from .support import AGENT_ID, FakeAudio, dump, envelope
 
@@ -2492,6 +2493,109 @@ class _Approvals:
     def check(self, device_id: str | None, device_name: str | None) -> DeviceDecision:
         self.checked.append((device_id, device_name))
         return self.decision
+
+
+class FakeScreenPeer:
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.accepted = asyncio.Event()
+        self.stopped = asyncio.Event()
+        self.exited = asyncio.Event()
+        self.reaped = asyncio.Event()
+
+    async def accept_offer(
+        self, sdp: str, token: str, ttl_seconds: int, lifetime_seconds: int
+    ) -> str:
+        assert (sdp, token, ttl_seconds) == (SDP, TOKEN, 30)
+        assert lifetime_seconds == SCREEN_MAX_LIFETIME_SECONDS
+        self.started.set()
+        await self.accepted.wait()
+        return "SCREEN-ANSWER"
+
+    def stop(self) -> None:
+        self.stopped.set()
+
+    async def wait(self) -> None:
+        await self.exited.wait()
+        self.reaped.set()
+
+
+DEVICE_ID = "3fa9c10d7be2465a"
+
+
+async def open_screen(lab: Lab, screen_id: str) -> str:
+    return await lab.open(
+        session=screen_id, scopes=["screen"], device_id=DEVICE_ID, parent_session_id=SESSION
+    )
+
+
+async def test_a_new_screen_waits_for_the_previous_process_to_exit(lab: Lab) -> None:
+    lab.service._devices = _Approvals(DeviceDecision.APPROVED)  # type: ignore[assignment]
+    first, second = FakeScreenPeer(), FakeScreenPeer()
+    factory = iter((first, second))
+    lab.service._screen_factory = lambda: next(factory)
+    first.accepted.set()
+    second.accepted.set()
+    await lab.open_authenticated(device_id=DEVICE_ID)
+    assert await open_screen(lab, "first-screen") == "SCREEN-ANSWER"
+
+    replacement = asyncio.create_task(open_screen(lab, "second-screen"))
+    try:
+        await asyncio.wait_for(first.stopped.wait(), timeout=1)
+        assert not second.started.is_set()
+        first.exited.set()
+        assert await asyncio.wait_for(replacement, timeout=1) == "SCREEN-ANSWER"
+        assert first.reaped.is_set()
+        await lab.service.close("first-screen")
+        assert not second.stopped.is_set()
+        assert lab.service.authenticated
+    finally:
+        first.exited.set()
+        second.exited.set()
+        replacement.cancel()
+        await asyncio.gather(replacement, return_exceptions=True)
+
+
+async def test_screen_rechecks_approval_while_the_parent_is_still_authenticated(lab: Lab) -> None:
+    approvals = _Approvals(DeviceDecision.APPROVED)
+    lab.service._devices = approvals  # type: ignore[assignment]
+
+    def unexpected_screen() -> ScreenPeer:
+        pytest.fail("O processo de tela não deve ser criado.")
+
+    lab.service._screen_factory = unexpected_screen
+    await lab.open_authenticated(device_id=DEVICE_ID, device_name="iPhone")
+    approvals.decision = DeviceDecision.DENIED
+
+    with pytest.raises(DirectRefused) as refused:
+        await open_screen(lab, "screen")
+
+    assert refused.value.code == "device_denied"
+    assert approvals.checked == [(DEVICE_ID, "iPhone"), (DEVICE_ID, "iPhone")]
+    assert lab.service.authenticated
+
+
+async def test_screen_closed_during_acceptance_waits_for_process_exit(lab: Lab) -> None:
+    lab.service._devices = _Approvals(DeviceDecision.APPROVED)  # type: ignore[assignment]
+    screen = FakeScreenPeer()
+    lab.service._screen_factory = lambda: screen
+    await lab.open_authenticated(device_id=DEVICE_ID)
+
+    opening = asyncio.create_task(open_screen(lab, "screen"))
+    try:
+        await asyncio.wait_for(screen.started.wait(), timeout=1)
+        await lab.service.close("screen")
+        assert screen.stopped.is_set()
+        screen.accepted.set()
+        with pytest.raises(DirectRefused) as refused:
+            await asyncio.wait_for(opening, timeout=1)
+        assert refused.value.code == REFUSED_CLOSED
+        screen.exited.set()
+        await asyncio.wait_for(screen.reaped.wait(), timeout=1)
+    finally:
+        screen.exited.set()
+        opening.cancel()
+        await asyncio.gather(opening, return_exceptions=True)
 
 
 @pytest.mark.parametrize(
