@@ -607,22 +607,53 @@ public sealed class TvLivreTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task SleepAvailability_FollowsTheLauncherBeingInstalledAndTheAgentBeingThere()
+    public async Task SleepAvailability_DoesNotWaitForTheLauncher_OnlyForTheAgentAndACompatibleTv()
     {
         await using var app = await TvApp.StartAsync(postgres);
         await using var agent = await ConnectAsync(app);
         using (var before = await app.GetAsync($"{Base}/sleep"))
         {
-            (await TvApp.JsonAsync(before)).GetProperty("available").GetBoolean().Should().BeFalse("ainda não há estado: não se sabe se está instalado");
+            (await TvApp.JsonAsync(before)).GetProperty("available").GetBoolean()
+                .Should().BeTrue("sem estado guardado (PC reinstalado) o agente instala o launcher no próprio pedido");
         }
 
         var request = app.PostAsync($"{Base}/refresh");
         var command = await NextAsync(agent, "tv.livre.v1");
-        await StateThenReplyAsync(agent, command, StateBody(command, installed: true));
+        await StateThenReplyAsync(agent, command, StateBody(command, installed: false));
         (await Within(request)).Dispose();
+        using (var notInstalled = await app.GetAsync($"{Base}/sleep"))
+        {
+            (await TvApp.JsonAsync(notInstalled)).GetProperty("available").GetBoolean().Should().BeTrue();
+        }
 
+        var again = app.PostAsync($"{Base}/refresh");
+        var second = await NextAsync(agent, "tv.livre.v1");
+        var unsupported = StateBody(second);
+        unsupported["supported"] = false;
+        await StateThenReplyAsync(agent, second, unsupported);
+        (await Within(again)).Dispose();
         using var after = await app.GetAsync($"{Base}/sleep");
-        (await TvApp.JsonAsync(after)).GetProperty("available").GetBoolean().Should().BeTrue();
+        (await TvApp.JsonAsync(after)).GetProperty("available").GetBoolean().Should().BeFalse("a TV não é Android TV");
+    }
+
+    [Fact]
+    public async Task Sleep_WaitsAsLongAsAnInstall_BecauseTheAgentMayInstallTheLauncherFirst()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app);
+
+        var request = app.PostAsync($"{Base}/sleep");
+        var command = await NextAsync(agent, "tv.livre.v1");
+        ActionOf(command).Should().Be("sleep");
+
+        // Os outros comandos desistem aos 8 s; o Dormir que instala antes tem os 90 s do TV Livre.
+        app.Time.Advance(TimeSpan.FromSeconds(45));
+        await Task.Delay(300, Ct);
+        request.IsCompleted.Should().BeFalse("instalar o launcher leva mais que o tempo de uma tecla");
+
+        await TvApp.ReplyAsync(agent, command);
+        using var response = await Within(request);
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
     [Fact]
