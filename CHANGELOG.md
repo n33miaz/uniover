@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.70.0](https://github.com/n33miaz/uniover/compare/v0.69.0...v0.70.0) (2026-11-20)
+
+
+### Devices 0.64.0
+
+#### Features
+
+* **agent:** launcher level and quiet apply
+* **tv:** sleep for controllers, minutes, 7 speeds
+
+#### Bug Fixes
+
+* **web:** keep switcher release button on screen
+
+
+### TV 0.52.0
+
+#### Features
+
+* **tv-launcher:** fit icons, add tiles and name
+* **web:** sleep time chips and screen options
+* **web:** black out from power, 7 pad speeds
+* **agent:** launcher level and quiet apply
+* **tv:** sleep for controllers, minutes, 7 speeds
+* **tv:** two state play pause
+
+#### Bug Fixes
+
+* **tv:** sleep entry for controllers, guard
+* **web:** repair livre store after rebase
+* **tv-launcher:** fill app icons edge to edge
+* **tv:** turn the sleep tile on by default
+* **tv:** match header gaps on both sides
+
+
+### Web 0.67.0
+
+#### Features
+
+* **web:** sleep time chips and screen options
+* **agent:** launcher level and quiet apply
+* **tv:** sleep for controllers, minutes, 7 speeds
+* **tv:** two state play pause
+
+#### Bug Fixes
+
+* **tv:** sleep entry for controllers, guard
+* **tv:** turn the sleep tile on by default
+* **tv:** match header gaps on both sides
+* **web:** keep switcher release button on screen
+
+
+### Agent 0.59.0
+
+#### Features
+
+* **agent:** launcher level and quiet apply
+
+#### Bug Fixes
+
+* **tv:** sleep entry for controllers, guard
+
 ## [0.69.0](https://github.com/n33miaz/uniover/compare/v0.68.0...v0.69.0) (2026-11-14)
 
 
