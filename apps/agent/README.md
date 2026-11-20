@@ -387,6 +387,11 @@ qualquer falha ao abrir, queda ou parada do canal devolve tudo a ela, sem que o 
   em comandos sem `--frozen` e trazer o `av` de volta. Por isso o instalador e o supervisor rodam todo comando do uv com
   `UV_FROZEN=1`, e o supervisor, com o agente já de pé, confere a versão: se for anterior à 0.9.8, grava o diagnóstico
   `supervisor.old_uv` e, se o uv veio do winget, pede `winget upgrade astral-sh.uv` sem esperar (uma vez por dia).
+- **Sem o grupo `dev` no PC.** O grupo `dev` do `pyproject.toml` (pytest, mypy, ruff, import-linter...) é só do repositório e
+  do CI. No PC, todo `uv sync` e `uv run` do instalador, do supervisor e da atualização leva `--no-dev` (aceito desde o
+  uv 0.4; medido na 0.4.30), com `UV_NO_DEV=1` como reforço para uv novos. O sync é exato: num ambiente que já tinha esses
+  pacotes, o primeiro `sync --no-dev` os remove (medido: de 141 MB para 56 MB). O padrão do projeto não muda: `uv sync`
+  e `uv run` no repositório continuam trazendo o grupo `dev`.
 
 ### Entrada do PC isolada do resto do agente
 
@@ -602,7 +607,7 @@ Windows (UAC), uma vez, logo no começo. O modo automático:
 
 O lançador chama o `app\tools\run-agent.ps1` que veio com a versão atual e mantém uma cópia conhecida para
 recuperação. Assim o supervisor, o ícone e futuras correções também chegam pela atualização. O supervisor fica sem
-janela, faz `uv sync` e `run`; se o agente cair, volta com espera crescente (5 s até 5 min, voltando a 5 s depois de
+janela, faz `uv sync --no-dev` e `uv run --no-dev`; se o agente cair, volta com espera crescente (5 s até 5 min, voltando a 5 s depois de
 10 min de agente saudável). Se o `uv` ou o ambiente virtual quebrarem numa atualização do Windows, recria
 `%LOCALAPPDATA%\UniOver\runtime\venv`. O registro fica em `%LOCALAPPDATA%\UniOver\logs\agent.log`.
 
@@ -1186,7 +1191,7 @@ arquivos conferidos contra a árvore do commit no GitHub. Sem assinatura ativa a
 divergente, o pacote é recusado, sem seguir "só com o zip"); com manifesto válido ela é conferência extra: a consulta
 falhar só gera aviso, mas divergir recusa. O manifesto traz um número crescente (`sequence`): o agente guarda o maior
 em `runtime\manifest-sequence.txt` e recusa manifesto de outro commit com número menor ou igual (rebaixamento). Só então roda
-`uv sync --frozen` (as versões do `uv.lock`, sem reescrevê-lo) num ambiente descartável e o auto-diagnóstico dela
+`uv sync --frozen --no-dev` (as versões do `uv.lock`, sem reescrevê-lo nem trazer o grupo `dev`) num ambiente descartável e o auto-diagnóstico dela
 (`python -m uniover_agent.selfcheck`, que lê o `agent.toml` real com as regras novas). Versão em prova (menos de 10
 minutos estável) não é substituída; atualização que falha tenta de novo em 30 min, 1 h, 2 h... até 6 h. Detalhes e
 limites em `adr/0018-manifesto-assinado-do-agente.md`.

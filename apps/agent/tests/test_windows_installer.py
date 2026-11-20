@@ -586,3 +586,21 @@ def test_bootstrap_follows_the_production_ref_configured_once() -> None:
     assert (
         json.loads(UPDATE_CHANNEL.read_text(encoding="utf-8"))["production_ref"] == PRODUCTION_REF
     )
+
+
+def test_every_uv_sync_and_run_of_the_installed_agent_leaves_out_the_dev_group() -> None:
+    # O grupo `dev` do pyproject (pytest, mypy, ruff...) é do repositório e do CI, nunca do PC.
+    # A flag vai em cada comando (uv antigos ignoram `UV_NO_DEV`); a variável é só reforço.
+    def code(script: Path) -> list[str]:
+        lines = script.read_text(encoding="utf-8").splitlines()
+        return [line for line in lines if not line.lstrip().startswith("#")]
+
+    installer = [line for line in code(INSTALLER) if re.search(r"&\s*\$uv\s+(?!@)", line, re.I)]
+    find = [line for line in code(INSTALLER) if "$findArguments = @('run'" in line]
+    runner = [line for line in code(RUNNER) if re.search(r"'(?:sync|run) --", line)]
+    assert len(installer) >= 9
+    assert len(find) == 1
+    assert len(runner) >= 6
+    assert [line for line in installer + find + runner if "--no-dev" not in line] == []
+    for script in (INSTALLER, RUNNER):
+        assert "$env:UV_NO_DEV = '1'" in script.read_text(encoding="utf-8")

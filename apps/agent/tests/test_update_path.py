@@ -400,10 +400,10 @@ def test_the_updated_supervisor_starts_the_agent_and_the_tray_with_a_fake_uv(
     (bin_dir / "uv.cmd").write_text(
         "@echo off\r\n"
         'if "%~1"=="sync" echo %*>"%UNIOVER_TEST_RECORD%.sync"\r\n'
-        'if "%~5"=="run" echo %*>"%UNIOVER_TEST_RECORD%.run"\r\n'
-        'if "%~5"=="tray" echo %*>"%UNIOVER_TEST_RECORD%.tray"\r\n'
-        'if "%~5"=="run" ping -n 120 127.0.0.1 >nul\r\n'
-        'if "%~5"=="tray" ping -n 120 127.0.0.1 >nul\r\n'
+        'if "%~6"=="run" echo %*>"%UNIOVER_TEST_RECORD%.run"\r\n'
+        'if "%~6"=="tray" echo %*>"%UNIOVER_TEST_RECORD%.tray"\r\n'
+        'if "%~6"=="run" ping -n 120 127.0.0.1 >nul\r\n'
+        'if "%~6"=="tray" ping -n 120 127.0.0.1 >nul\r\n'
         "exit /b 0\r\n",
         encoding="ascii",
     )
@@ -434,13 +434,16 @@ def test_the_updated_supervisor_starts_the_agent_and_the_tray_with_a_fake_uv(
                 break
             time.sleep(0.1)
         app = base / "app"
-        assert f'run --project "{app}" uniover-agent run' in Path(str(record) + ".run").read_text(
-            encoding="utf-8"
-        )
-        assert f'run --project "{app}" uniover-agent tray' in Path(str(record) + ".tray").read_text(
-            encoding="utf-8"
-        )
-        assert "sync" in Path(str(record) + ".sync").read_text(encoding="utf-8")
+        assert f'run --project "{app}" --no-dev uniover-agent run' in Path(
+            str(record) + ".run"
+        ).read_text(encoding="utf-8")
+        assert f'run --project "{app}" --no-dev uniover-agent tray' in Path(
+            str(record) + ".tray"
+        ).read_text(encoding="utf-8")
+        # O grupo `dev` do pyproject nunca vai para o PC: o sync e cada `uv run` levam `--no-dev`.
+        sync = Path(str(record) + ".sync").read_text(encoding="utf-8")
+        assert "sync" in sync
+        assert "--no-dev" in sync
     finally:
         subprocess.run(  # noqa: S603 - taskkill do sistema, só para encerrar o que o teste abriu
             [

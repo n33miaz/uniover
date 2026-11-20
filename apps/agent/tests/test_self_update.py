@@ -457,6 +457,7 @@ def test_uv_sync_runs_in_a_throwaway_environment_and_never_in_the_running_one(
     run_uv_sync(candidate)
     [(command, kwargs)] = fake.calls
     # `--frozen`: o uv.lock manda, uma dependência diferente da ensaiada nunca entra sozinha.
+    # `--no-dev`: o grupo `dev` do pyproject (pytest, mypy...) nunca vai para o PC.
     assert command == [
         "C:/uv/uv.exe",
         "sync",
@@ -465,6 +466,7 @@ def test_uv_sync_runs_in_a_throwaway_environment_and_never_in_the_running_one(
         "--project",
         str(candidate),
         "--quiet",
+        "--no-dev",
     ]
     # O ambiente do agente em uso (arquivos presos no Windows) fica intocado.
     assert kwargs["env"]["UV_PROJECT_ENVIRONMENT"] == str(tmp_path / "app.new.venv")
@@ -486,6 +488,7 @@ def test_uv_check_uses_the_same_environment_without_syncing_again(
         "--no-sync",
         "--project",
         str(tmp_path / "app.new"),
+        "--no-dev",
         "python",
         "-m",
         "uniover_agent.selfcheck",

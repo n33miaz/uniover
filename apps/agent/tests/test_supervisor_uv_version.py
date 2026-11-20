@@ -132,3 +132,25 @@ def test_every_uv_command_of_the_supervisor_runs_frozen(pc: Pc, tmp_path: Path) 
         settle_agent(pc)
         assert wait_for(seen.exists, 20)
     assert seen.read_text("ascii").split()[0] == "[1][1]"
+
+
+def test_no_uv_command_of_the_supervisor_brings_the_dev_group(pc: Pc, tmp_path: Path) -> None:
+    # O grupo `dev` do pyproject (pytest, mypy, ruff...) nunca vai para o PC: `--no-dev` em cada
+    # `uv sync` e `uv run` (uv antigos ignoram `UV_NO_DEV`, que fica só como reforço).
+    seen = tmp_path / "calls.txt"
+    record = 'echo [%UV_NO_DEV%] %*>>"%UNIOVER_TEST_CALLS%"'
+    waiting = "ping -n 300 127.0.0.1 > nul"
+    pc.uv(
+        [record, waiting, "exit /b 0"],
+        sync_lines=[record, "exit /b 0"],
+        tray_lines=[record, waiting, "exit /b 0"],
+        update_lines=[record, "exit /b 0"],
+    )
+    with heartbeat(pc.alive), pc.running(UNIOVER_TEST_CALLS=str(seen)):
+        settle_agent(pc)
+        assert wait_for(lambda: pc.tray_starts() >= 1, 20), pc.supervisor_log()
+        time.sleep(1)
+    calls = seen.read_text("ascii").splitlines()
+    assert {line.split()[1] for line in calls} >= {"sync", "run"}
+    assert any(line.rstrip().endswith("uniover-agent tray") for line in calls)
+    assert [line for line in calls if not line.startswith("[1] ") or "--no-dev" not in line] == []
