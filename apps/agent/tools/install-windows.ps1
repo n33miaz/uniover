@@ -113,19 +113,106 @@ try {
     }
 } catch { }
 
-function Write-Page([string]$Html, [bool]$Reload = $true) {
-    # Pagina de andamento (modo automatico). $Html ja vem com as entidades HTML (o arquivo e so ASCII). Troca por
-    # renomeacao: a pagina se recarrega sozinha e nunca pode ler meio arquivo.
+# Simbolo do app (o mesmo da tela de entrar e do favicon, sem mudar nada nele), embutido na pagina: o MESMO texto de
+# LOGO_SVG em src/uniover_agent/adapters/pairing_page.py (um teste confere).
+$logoSvg = '<svg class="logo" viewBox="0 0 512 512" aria-hidden="true" focusable="false"><rect width="512" height="512" rx="112" fill="#3B6B4B"/><g fill="none" stroke="#FFFFFF" stroke-width="48" stroke-linecap="round"><circle cx="256" cy="256" r="70" fill="#FFFFFF" stroke="none"/><path d="M362.1 149.9A150 150 0 0 1 362.1 362.1"/><path d="M149.9 149.9A150 150 0 0 0 149.9 362.1"/></g></svg>'
+
+# Estilo da pagina de conexao: o MESMO texto de PAGE_STYLE em src/uniover_agent/adapters/pairing_page.py (um teste
+# confere), para a janela nao mudar de cara quando o agente passa a escreve-la (QR do celular). Cores do app, claro e escuro.
+$pageStyle = @(
+    ':root{color-scheme:light dark;--bg:#f2f5f1;--surface:#ffffff;--ink:#17201a;--ink2:#46544a;',
+    '--line:#d0dad0;--accent:#3b6b4b;--accent-soft:#dcebdf;--on-accent:#ffffff;--ok:#0e7a5c;',
+    '--bad:#b3261e;--bad-soft:#f8e3e1}',
+    '@media (prefers-color-scheme: dark){:root{--bg:#101512;--surface:#181f1a;--ink:#e9efea;',
+    '--ink2:#b0bdb3;--line:#2f3b33;--accent:#98c4a3;--accent-soft:#243a2b;--on-accent:#0a160d;',
+    '--ok:#3fc7a3;--bad:#f0736b;--bad-soft:#3a1f1d}}',
+    '*{box-sizing:border-box}',
+    'body{margin:0;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;',
+    'padding:24px 16px;background:var(--bg);color:var(--ink);',
+    'font:17px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}',
+    '.card{width:100%;max-width:560px;margin-top:4vh;padding:28px 24px;',
+    'border:1px solid var(--line);border-radius:20px;background:var(--surface);',
+    'box-shadow:0 6px 16px -4px rgb(23 32 26 / .12)}',
+    '.brand{display:flex;align-items:center;gap:10px;margin:0 0 20px;font-weight:700;',
+    'color:var(--accent)}',
+    '.logo{flex:none;width:28px;height:28px;border-radius:22%}',
+    'h1{margin:0 0 8px;font-size:1.6rem;line-height:1.25}',
+    '.lead{margin:0 0 20px;color:var(--ink2);font-size:1.05rem}',
+    '.lead.ok{color:var(--ok);font-weight:600}',
+    '.lead.bad{padding:12px 14px;border-radius:12px;background:var(--bad-soft);color:var(--ink)}',
+    '.qr{margin:0 0 20px;text-align:center}',
+    '.qr img{display:block;width:min(100%,300px);height:auto;margin:0 auto 12px;padding:12px;',
+    'border:1px solid var(--line);border-radius:16px;background:#ffffff}',
+    '.code{margin:0 0 4px;font-size:clamp(1.8rem,7vw,2.6rem);font-weight:700;',
+    'letter-spacing:.08em;font-variant-numeric:tabular-nums}',
+    '.hint{margin:0 0 16px;color:var(--ink2);font-size:.95rem}',
+    '.approve{display:inline-block;max-width:100%;min-height:44px;margin:0 0 4px;',
+    'padding:12px 24px;border:2px solid var(--accent);border-radius:999px;color:var(--accent);',
+    'font-weight:700;text-decoration:none}',
+    '.approve:hover{background:var(--accent-soft)}',
+    'a:focus-visible{outline:3px solid var(--accent);outline-offset:3px}',
+    '.steps{margin:0 0 16px;padding:0;list-style:none;border-top:1px solid var(--line)}',
+    '.steps li{display:flex;align-items:center;gap:12px;padding:12px 0;',
+    'border-bottom:1px solid var(--line);color:var(--ink2)}',
+    '.mark{flex:none;display:grid;place-items:center;width:24px;height:24px;',
+    'border:2px solid var(--line);border-radius:50%}',
+    '.steps .done{color:var(--ink)}',
+    '.steps .done .mark{border-color:var(--ok);background:var(--ok)}',
+    '.steps .done .mark::after{content:"";width:6px;height:11px;border:solid var(--surface);',
+    'border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg)}',
+    '.steps .now{color:var(--ink);font-weight:600}',
+    '.steps .now .mark{border-color:var(--accent);border-top-color:transparent;',
+    'animation:spin 1s linear infinite}',
+    '.steps .fail{color:var(--ink)}',
+    '.steps .fail .mark{border-color:var(--bad);background:var(--bad)}',
+    '@keyframes spin{to{transform:rotate(360deg)}}',
+    '@media (prefers-reduced-motion: reduce){.steps .now .mark{animation:none;',
+    'border-top-color:var(--accent);background:var(--accent-soft)}}',
+    '.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);',
+    'white-space:nowrap}',
+    '.foot{margin:0;color:var(--ink2);font-size:.9rem}'
+) -join ''
+
+# As etapas que a pessoa ve, na ordem (as mesmas chaves e nomes de STEPS no agente).
+$pageSteps = @(
+    @('prepare', 'Preparar este computador'),
+    @('phone', 'Ligar ao seu celular'),
+    @('tv', 'Encontrar a TV'),
+    @('ready', 'Deixar tudo pronto')
+)
+$stepStateText = @{ done = 'conclu&iacute;da'; now = 'agora'; todo = 'a seguir'; fail = 'n&atilde;o deu certo' }
+
+function Get-StepsHtml([string]$Current, [bool]$Failed) {
+    # Etapa vazia: todas concluidas (o fim). Antes da atual: concluidas; a atual: agora (ou falhou); depois: a seguir.
+    $position = $pageSteps.Count
+    for ($i = 0; $i -lt $pageSteps.Count; $i++) {
+        if ($pageSteps[$i][0] -eq $Current) { $position = $i }
+    }
+    $items = ''
+    for ($i = 0; $i -lt $pageSteps.Count; $i++) {
+        $state = if ($i -lt $position) { 'done' } elseif ($i -eq $position) { if ($Failed) { 'fail' } else { 'now' } } else { 'todo' }
+        $items += '<li class="' + $state + '"><span class="mark" aria-hidden="true"></span><span>' + $pageSteps[$i][1] +
+            '</span><span class="sr"> (' + $stepStateText[$state] + ')</span></li>'
+    }
+    return '<ol class="steps" aria-label="Etapas">' + $items + '</ol>'
+}
+
+function Write-Page([string]$Title, [string]$Message, [string]$Step = '', [string]$Tone = 'info', [bool]$Reload = $true, [bool]$Failed = $false) {
+    # Pagina de conexao (modo automatico). $Title e $Message ja vem com as entidades HTML (o arquivo e so ASCII). Troca por
+    # renomeacao: a pagina se recarrega sozinha e nunca pode ler meio arquivo. Sem script: a pagina e um arquivo local.
     $refresh = ''
+    $foot = 'Pode fechar esta janela.'
     if ($Reload) {
         $refresh = '<meta http-equiv="refresh" content="3">'
+        $foot = 'Pode deixar esta janela aberta: ela se atualiza sozinha.'
     }
+    $leadClass = if ($Tone -eq 'info') { 'lead' } else { 'lead ' + $Tone }
     $page = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">' + $refresh +
-        '<meta name="viewport" content="width=device-width, initial-scale=1"><title>UniOver</title>' +
-        '<style>body{margin:0;background:#f8fafc;color:#111827;font:24px/1.5 system-ui,sans-serif}' +
-        'main{box-sizing:border-box;max-width:720px;margin:0 auto;padding:64px 24px;text-align:center}' +
-        'h1{margin:0;font-size:32px}@media(prefers-color-scheme:dark){body{background:#0f172a;color:#f1f5f9}}' +
-        '</style></head><body><main><h1>' + $Html + '</h1></main></body></html>'
+        '<meta name="viewport" content="width=device-width, initial-scale=1"><title>' + $Title + ' &middot; UniOver</title>' +
+        '<style>' + $pageStyle + '</style></head><body><main class="card" aria-labelledby="title">' +
+        '<p class="brand">' + $logoSvg + 'UniOver</p>' +
+        '<h1 id="title">' + $Title + '</h1><p class="' + $leadClass + '" role="status">' + $Message + '</p>' +
+        (Get-StepsHtml $Step $Failed) + '<p class="foot">' + $foot + '</p></main></body></html>'
     try {
         New-Item -ItemType Directory -Path (Split-Path $pageFile -Parent) -Force | Out-Null
         $temporary = $pageFile + '.new'
@@ -268,27 +355,171 @@ if ($Uninstall) {
     exit 0
 }
 
-function Find-Uv {
-    $command = Get-Command uv -ErrorAction SilentlyContinue
-    if ($command) {
-        return $command.Source
+function Show-Step([string]$Step, [string]$Message) {
+    Write-Page 'Conectando este PC' $Message $Step
+}
+
+function Update-ProcessPath {
+    # Um programa recem-instalado (winget, instalador do uv) grava o PATH novo no registro, mas este processo continua com o
+    # PATH de quando nasceu. Relemos o do usuario e o da maquina e somamos ao atual, sem repetir pastas.
+    $parts = @()
+    foreach ($scope in @('Machine', 'User')) {
+        try { $parts += ([Environment]::GetEnvironmentVariable('Path', $scope) -split ';') } catch { }
     }
-    Write-Host 'Preparando uma ferramenta que o UniOver precisa (so na primeira vez)...'
-    winget install --id astral-sh.uv -e --source winget --accept-package-agreements --accept-source-agreements
-    $command = Get-Command uv -ErrorAction SilentlyContinue
-    if (-not $command) {
-        # O winget cria o atalho fora do PATH desta sessao; procuramos nos dois lugares que ele usa.
-        foreach ($candidate in @('Microsoft\WinGet\Links\uv.exe', 'Microsoft\WindowsApps\uv.exe', '.local\bin\uv.exe')) {
-            $path = Join-Path $env:LOCALAPPDATA $candidate
-            if (Test-Path $path) {
-                return $path
-            }
+    $parts += ($env:Path -split ';')
+    $seen = @{}
+    $merged = @()
+    foreach ($part in $parts) {
+        $clean = [Environment]::ExpandEnvironmentVariables($part.Trim())
+        if ($clean -and -not $seen.ContainsKey($clean.ToLowerInvariant())) {
+            $seen[$clean.ToLowerInvariant()] = $true
+            $merged += $clean
         }
     }
-    if (-not $command) {
-        throw 'Uma ferramenta que o UniOver precisa foi instalada, mas o Windows ainda nao a encontrou. Feche tudo e abra o conector de novo.'
+    $env:Path = $merged -join ';'
+}
+
+function Find-UvExecutable {
+    # O PATH desta sessao, e depois cada lugar onde as formas de instalar o uv o deixam. O winget poe o programa em
+    # WinGet\Packages\astral-sh.uv_*\uv.exe e so cria o atalho (Links) e o PATH para as sessoes novas.
+    $command = Get-Command uv -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+    $candidates = @()
+    foreach ($relative in @('Microsoft\WinGet\Links\uv.exe', 'Microsoft\WindowsApps\uv.exe', '.local\bin\uv.exe')) {
+        $candidates += (Join-Path $env:LOCALAPPDATA $relative)
     }
-    return $command.Source
+    if ($env:USERPROFILE) {
+        $candidates += (Join-Path $env:USERPROFILE '.local\bin\uv.exe')
+        $candidates += (Join-Path $env:USERPROFILE '.cargo\bin\uv.exe')
+    }
+    try {
+        $packages = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+        $candidates += @(Get-ChildItem -LiteralPath $packages -Directory -Filter 'astral-sh.uv_*' -ErrorAction Stop |
+            Sort-Object LastWriteTime -Descending | ForEach-Object { Join-Path $_.FullName 'uv.exe' })
+    } catch { }
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $candidate }
+    }
+    return $null
+}
+
+function Use-Uv([string]$Path) {
+    # A pasta do uv entra no PATH deste processo (os filhos a herdam) e o caminho fica anotado para o supervisor achar o
+    # mesmo uv mesmo sem o PATH novo (runtime\uv-path.txt; ver Find-Uv em run-agent.ps1).
+    $folder = Split-Path $Path -Parent
+    if (($env:Path -split ';') -notcontains $folder) { $env:Path = $folder + ';' + $env:Path }
+    try {
+        $runtime = Join-Path $base 'runtime'
+        New-Item -ItemType Directory -Path $runtime -Force | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $runtime 'uv-path.txt'), $Path, [System.Text.UTF8Encoding]::new($false))
+    } catch { }
+    return $Path
+}
+
+function Find-Uv {
+    # Acha o uv ou o instala, e segue sozinho: nunca pede para a pessoa abrir outro terminal.
+    $found = Find-UvExecutable
+    if ($found) { return Use-Uv $found }
+    Write-InstallLog 'uv ausente: instalando pelo winget.'
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+        $output = & $winget.Source install --id astral-sh.uv -e --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1 | Out-String
+        Write-InstallLog ('winget uv (codigo ' + $LASTEXITCODE + '): ' + $output)
+        Update-ProcessPath
+        $found = Find-UvExecutable
+        if ($found) { return Use-Uv $found }
+    }
+    # Sem winget (ou se ele falhou): o instalador oficial do uv, que poe o programa em %USERPROFILE%\.local\bin.
+    try {
+        Write-InstallLog 'uv ainda ausente: usando o instalador oficial do uv.'
+        # Num PowerShell filho (herda o console oculto deste): o script de fora pode encerrar o proprio processo.
+        $shell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $output = & $shell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command '[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; irm https://astral.sh/uv/install.ps1 | iex' 2>&1 | Out-String
+        Write-InstallLog ('instalador do uv: ' + $output)
+    }
+    catch {
+        Write-InstallLog ('instalador do uv falhou: ' + $_.Exception.Message)
+    }
+    Update-ProcessPath
+    $found = Find-UvExecutable
+    if ($found) { return Use-Uv $found }
+    throw 'Nao consegui instalar uma ferramenta que o UniOver precisa. Confira a internet e abra o conector de novo.'
+}
+
+function Find-AdbExecutable {
+    # Os mesmos lugares que o agente procura (locate_adb em adapters/tv_adb.py).
+    $command = Get-Command adb -ErrorAction SilentlyContinue
+    if ($command) { return $command.Source }
+    $candidates = @(
+        (Join-Path $base 'tools\platform-tools\adb.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Android\Sdk\platform-tools\adb.exe')
+    )
+    try {
+        $packages = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+        $candidates += @(Get-ChildItem -LiteralPath $packages -Directory -Filter 'Google.PlatformTools_*' -ErrorAction Stop |
+            Sort-Object LastWriteTime -Descending | ForEach-Object { Join-Path $_.FullName 'platform-tools\adb.exe' })
+    } catch { }
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $candidate }
+    }
+    return $null
+}
+
+function Install-Adb {
+    # O adb da Google deixa o agente listar os apps da TV, abrir app e digitar. Falhar aqui nao para a instalacao: o
+    # controle remoto funciona sem ele, e o app explica o que falta. Primeiro o winget (confere o pacote pelo hash do
+    # manifesto); sem ele, o pacote oficial da Google, aceito so com a assinatura digital valida da Google.
+    $found = Find-AdbExecutable
+    if ($found) { return $found }
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+        try {
+            $output = & $winget.Source install --id Google.PlatformTools -e --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity 2>&1 | Out-String
+            Write-InstallLog ('winget adb (codigo ' + $LASTEXITCODE + '): ' + $output)
+        } catch { Write-InstallLog ('winget adb falhou: ' + $_.Exception.Message) }
+        Update-ProcessPath
+        $found = Find-AdbExecutable
+        if ($found) { return $found }
+    }
+    $temporary = Join-Path $env:TEMP ('uniover-adb-' + [guid]::NewGuid())
+    $target = Join-Path $base 'tools'
+    $candidate = Join-Path $target 'platform-tools.new'
+    try {
+        New-Item -ItemType Directory -Path $temporary -Force | Out-Null
+        $zip = Join-Path $temporary 'platform-tools.zip'
+        Invoke-WebRequest -UseBasicParsing -Uri 'https://dl.google.com/android/repository/platform-tools-latest-windows.zip' -OutFile $zip
+        New-Item -ItemType Directory -Path $target -Force | Out-Null
+        Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $candidate)
+        $adb = Join-Path $candidate 'platform-tools\adb.exe'
+        $signature = Get-AuthenticodeSignature -LiteralPath $adb
+        if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Google LLC') {
+            throw ('assinatura do adb nao confere: ' + $signature.Status)
+        }
+        $final = Join-Path $target 'platform-tools'
+        Remove-Item -LiteralPath $final -Recurse -Force -ErrorAction SilentlyContinue
+        Move-Folder (Join-Path $candidate 'platform-tools') $final
+        return (Join-Path $final 'adb.exe')
+    }
+    catch {
+        Write-InstallLog ('adb nao instalado: ' + $_.Exception.Message)
+        return $null
+    }
+    finally {
+        Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-ConfigValue([string]$Path, [string]$Key) {
+    # Le um valor de texto simples do agent.toml (o tv-find grava tv_kind ali). Sem o arquivo ou a chave: $null.
+    try {
+        foreach ($line in [System.IO.File]::ReadAllLines($Path, [System.Text.Encoding]::UTF8)) {
+            if ($line -match ('^\s*' + [regex]::Escape($Key) + '\s*=\s*"([^"]*)"')) { return $Matches[1] }
+        }
+    } catch { }
+    return $null
 }
 
 function Write-Config([string]$Path, [string[]]$Lines) {
@@ -719,35 +950,17 @@ function Resolve-InstallFolder([string]$Path) {
     return $full
 }
 
-function Select-InstallFolder {
-    # A pergunta da primeira instalacao, numa janela do Windows (a unica alem do aviso de permissao). Cancelar ou fechar
-    # usa a pasta padrao: ninguem fica preso aqui. O texto leva acentos por escape (este arquivo e so ASCII).
-    try {
-        Add-Type -AssemblyName System.Windows.Forms
-        $owner = New-Object System.Windows.Forms.Form
-        $owner.TopMost = $true
-        $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-        $dialog.Description = [regex]::Unescape('Escolha onde o UniOver vai ficar guardado neste computador.\nSe tiver d\u00favida, s\u00f3 clique em OK: ele fica numa pasta pr\u00f3pria, dentro do seu usu\u00e1rio.')
-        $dialog.SelectedPath = $anchor
-        $dialog.ShowNewFolderButton = $true
-        if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK -and $dialog.SelectedPath) {
-            return $dialog.SelectedPath
-        }
-    }
-    catch { }
-    return $null
-}
-
 function Initialize-InstallFolder {
-    # Primeira instalacao: usa -InstallDir ou pergunta onde guardar. Reinstalacao: mantem a pasta que ja existe (mudar de
+    # Primeira instalacao: usa -InstallDir ou a pasta padrao. Reinstalacao: mantem a pasta que ja existe (mudar de
     # pasta exige remover antes; mover um programa em uso e pareamento no meio de uma atualizacao nao vale o risco).
     New-Item -ItemType Directory -Path $anchor -Force | Out-Null
     if ($existingBase) {
         if ($InstallDir) { Write-InstallLog 'Ja existe uma instalacao: a pasta pedida foi ignorada e a atual foi mantida.' }
         return
     }
+    # Sem -InstallDir fica na pasta padrao, sem perguntar: cada janela a mais e um passo que a pessoa nao precisava dar.
+    # Escolher outra pasta e a opcao avancada (-InstallDir), como no ADR da instalacao por usuario.
     $wanted = $InstallDir
-    if (-not $wanted -and $automatic) { $wanted = Select-InstallFolder }
     if (-not $wanted) { return }
     $final = Resolve-InstallFolder $wanted
     if ($final -ne $anchor) {
@@ -817,13 +1030,20 @@ function Write-InstallDiagnosis([string]$Uv) {
 }
 
 function Invoke-AutomaticInstall {
-    # Primeiro a pergunta da pasta: a pagina de andamento mora nela, e a janela aberta no navegador nao pode trocar de lugar.
+    # Um link, um QR: depois do aviso do Windows (uma vez) e da aprovacao no celular, tudo termina sozinho. A pagina de
+    # andamento mora na pasta de instalacao: ela e decidida antes de a pagina abrir (sem pergunta: a padrao ou -InstallDir).
     Initialize-InstallFolder
-    Write-Page 'Instalando o UniOver&hellip;'
+    $script:currentStep = 'prepare'
+    Show-Step 'prepare' 'Aceite o aviso do Windows que vai aparecer (s&oacute; desta vez). Depois disso, nada mais &eacute; perguntado neste PC.'
     Open-Page
 
-    $uv = Find-Uv
+    # A unica janela que aparece e o pedido de permissao do Windows, uma vez, logo no comeco: depois dele a pessoa so
+    # precisa do celular, e nenhuma atualizacao pede de novo.
+    $system = Set-SystemSettings
+    Show-Step 'prepare' 'Preparando este computador. Na primeira vez leva alguns minutos; em seguida aparece aqui um QR para o seu celular.'
+
     New-Item -ItemType Directory -Path $base -Force | Out-Null
+    $uv = Find-Uv
     # O instalador e um caminho manual de recuperacao: pare o supervisor antigo antes de mover
     # qualquer pasta que ele possa estar usando. A auto-atualizacao usa o lancador estavel acima.
     Stop-Agent
@@ -836,11 +1056,6 @@ function Invoke-AutomaticInstall {
     # auto-atualizacao consegue trocar a pasta do agente por renomeacao (pasta em uso nao troca).
     $env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'runtime\venv'
 
-    # A unica janela que aparece e o pedido de permissao do Windows, uma vez; depois disso nenhuma atualizacao pede.
-    Write-Page 'Aceite o aviso de permiss&atilde;o do Windows (s&oacute; desta vez).'
-    $system = Set-SystemSettings
-    Write-Page 'Instalando o UniOver&hellip;'
-
     # A instalacao que existia, se havia, fica em app.previous (a troca e feita dentro de Get-AgentSource, so depois de o
     # pacote novo estar inteiro): se este processo cair, ainda ha para onde voltar.
     Backup-Environment
@@ -852,38 +1067,48 @@ function Invoke-AutomaticInstall {
     foreach ($stale in @('current.json', 'prepared.json')) { Remove-Item -LiteralPath (Join-Path $base ('runtime\' + $stale)) -Force -ErrorAction SilentlyContinue }
     Set-ConfigValues $config (Get-BaseConfig)
 
-    Write-Host 'Preparando o UniOver (na primeira vez demora um pouco)...'
     Invoke-Prepare $uv
 
     # A versao instalada se examina antes de seguir: se ela nao carrega neste computador, para aqui com uma frase simples.
     Invoke-SelfCheck $uv
 
-    # 1. Acha a TV na rede. O agente grava tipo, endereco e identificador no agent.toml.
-    Write-Page 'Procurando a TV&hellip;'
+    # O adb (lista de apps da TV, abrir app, digitar) entra sozinho. Sem ele o controle funciona e o app explica o que falta.
+    $adb = Install-Adb
+    if (-not $adb) { Write-InstallLog 'Seguindo sem o adb: a lista de apps da TV fica para depois.' }
+
+    # 1. Liga este PC a conta: a pagina mostra o QR, o celular (ja com a conta aberta) aprova. Ja pareado: nao pede de novo.
+    # A pagina ja esta aberta: o agente so a reescreve (--no-browser evita uma segunda aba).
+    $script:currentStep = 'phone'
+    Show-Step 'phone' 'Quase l&aacute;: o QR para o seu celular aparece aqui em instantes.'
+    & $uv run --project $source uniover-agent pair --if-needed --no-browser --installing
+    if ($LASTEXITCODE -ne 0) {
+        Write-InstallLog "pair terminou com codigo $LASTEXITCODE"
+        throw 'Este computador nao foi ligado a sua conta: o codigo venceu ou foi recusado. Abra o conector de novo para ganhar um codigo novo.'
+    }
+
+    # 2. Acha a TV na rede (o agente grava tipo, endereco e identificador no agent.toml) e, na Samsung, pede o "Permitir"
+    # na tela da TV. Na Android TV o codigo que a TV mostra e digitado no app do celular: nenhuma janela no PC.
+    $script:currentStep = 'tv'
+    Show-Step 'tv' 'Procurando a TV na rede. Deixe a TV ligada.'
     $findArguments = @('run', '--project', $source, 'uniover-agent', 'tv-find')
     if ($tvKindGiven) {
         $findArguments += @('--kind', $TvKind)
     }
     & $uv @findArguments
     $tvFound = ($LASTEXITCODE -eq 0)
-
-    # 2. Pareia este PC com a conta (codigo + QR na pagina local, que se atualiza sozinha). Ja pareado: nao pede de novo.
-    # A pagina ja esta aberta: o agente so a reescreve (--no-browser evita uma segunda aba).
-    & $uv run --project $source uniover-agent pair --if-needed --no-browser --installing
-    if ($LASTEXITCODE -ne 0) {
-        Write-InstallLog "pair terminou com codigo $LASTEXITCODE"
-        throw 'Este computador nao foi ligado a sua conta. Abra o conector de novo e aprove no app.'
-    }
-
-    # 3. Pareia a TV (na Samsung, aceite o aviso Permitir na tela da TV; na Android TV o codigo e pedido numa janela).
-    $tvPaired = $false
+    $tvState = 'missing'
     if ($tvFound) {
-        Write-Page 'Pareando a TV&hellip; Aceite Permitir na tela da TV, ou digite o c&oacute;digo na janela que abrir.'
-        & $uv run --project $source uniover-agent tv-pair --if-needed --installing
-        $tvPaired = ($LASTEXITCODE -eq 0)
+        $kind = Get-ConfigValue $config 'tv_kind'
+        if ($kind -eq 'samsung') {
+            Show-Step 'tv' 'TV encontrada. Na tela da TV, escolha Permitir.'
+        }
+        & $uv run --project $source uniover-agent tv-pair --if-needed --installing --code-on-phone
+        $tvState = switch ($LASTEXITCODE) { 0 { 'paired' } 8 { 'phone' } default { 'failed' } }
     }
 
-    # 4. O agente passa a iniciar com o Windows, sem janela, sem perguntar.
+    # 3. O agente passa a iniciar com o Windows, sem janela, sem perguntar, e ja comeca agora.
+    $script:currentStep = 'ready'
+    Show-Step 'ready' 'Deixando tudo pronto para iniciar sozinho com o Windows.'
     Write-AgentLauncher
     Register-AgentTask
     Start-ScheduledTask -TaskName $taskName
@@ -893,11 +1118,17 @@ function Invoke-AutomaticInstall {
     # Um exame final da instalacao fica no registro, para quem for ajudar saber como ela ficou.
     Write-InstallDiagnosis $uv
 
+    $tvLine = switch ($tvState) {
+        'paired' { '  - A TV foi encontrada e ligada ao UniOver.' }
+        'phone' { '  - A TV foi encontrada; o codigo dela e digitado no app do celular.' }
+        default { '  - A TV ainda nao esta ligada (abra o conector de novo com a TV ligada).' }
+    }
     $summary = @(
         'Pronto. O que foi feito:',
         "  - O UniOver foi instalado em $base e se atualiza sozinho.",
         "  - $system",
-        $(if ($tvPaired) { '  - A TV foi encontrada e ligada ao UniOver.' } else { '  - A TV ainda nao esta ligada (abra o conector de novo com a TV ligada).' }),
+        $tvLine,
+        $(if ($adb) { '  - A lista de apps da TV esta disponivel.' } else { '  - A lista de apps da TV fica para depois (abra o conector de novo com internet).' }),
         '  - Ele inicia sozinho quando voce entra no Windows, sem nenhuma janela.',
         ('  - O que ele faz e o que da errado fica anotado em ' + (Join-Path $base 'logs')),
         'Para desligar o UniOver, rode o comando abaixo (suas configuracoes ficam guardadas):',
@@ -905,11 +1136,16 @@ function Invoke-AutomaticInstall {
     )
     foreach ($line in $summary) { Write-Host $line; Write-InstallLog $line }
 
-    if ($tvPaired) {
-        Write-Page 'Pronto. Pode fechar esta janela.' $false
-    }
-    else {
-        Write-Page 'Pronto, mas a TV ainda n&atilde;o foi pareada. Ligue a TV e abra o conector de novo.' $false
+    switch ($tvState) {
+        'paired' {
+            Write-Page 'Tudo pronto' 'Este PC e a TV j&aacute; est&atilde;o no UniOver. Use o controle pelo celular.' '' 'ok' $false
+        }
+        'phone' {
+            Write-Page 'Falta s&oacute; a TV' 'No celular, abra a TV no UniOver: a TV vai mostrar um c&oacute;digo de 6 letras e n&uacute;meros, e o app pede para voc&ecirc; digit&aacute;-lo. Isso a pr&oacute;pria TV exige, uma vez s&oacute;.' 'tv' 'info' $false
+        }
+        default {
+            Write-Page 'PC pronto, TV n&atilde;o encontrada' 'Este PC j&aacute; est&aacute; no UniOver. Ligue a TV na mesma rede deste PC e abra o conector de novo: ele s&oacute; completa o que faltar.' 'tv' 'info' $false $true
+        }
     }
 }
 
@@ -925,7 +1161,8 @@ if ($automatic) {
         Write-InstallLog ('Falha: ' + $_.Exception.ToString())
         Restore-PreviousVersion
         Restore-RunningAgent
-        Write-Page ('A instala&ccedil;&atilde;o n&atilde;o terminou: ' + $reason + ' Feche esta janela e abra o conector de novo. Se n&atilde;o resolver, avise quem te ajudou: os detalhes ficaram no arquivo instalacao.log, na pasta do UniOver.') $false
+        $failedStep = if ($script:currentStep) { $script:currentStep } else { 'prepare' }
+        Write-Page 'A conex&atilde;o n&atilde;o terminou' ($reason + ' Se n&atilde;o resolver, os detalhes ficaram no arquivo instalacao.log, na pasta do UniOver.') $failedStep 'bad' $false $true
         exit 1
     }
 }
