@@ -12,12 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from uniover_agent.adapters.adb_authorization import AdbAuthorization, AdbKeys, resolve_tv_mac
+from uniover_agent.adapters.android_tools import aapt2_watch, adb_watch
 from uniover_agent.adapters.apk_tools import (
     Aapt2Inspector,
     FileIconCache,
     TempApkScratch,
     default_icons_dir,
-    locate_aapt2,
 )
 from uniover_agent.adapters.arp import arp_mac
 from uniover_agent.adapters.cleanup_day_file import CleanupDayFile
@@ -48,7 +48,12 @@ from uniover_agent.adapters.tv_samsung_pairing import SamsungPairingError, pair_
 from uniover_agent.adapters.tv_samsung_volume import SamsungVolume
 from uniover_agent.adapters.tv_volume_check import check_volume
 from uniover_agent.adapters.wol import send_wake_on_lan
-from uniover_agent.composition.system import EXIT_FAILURE, EXIT_OK, agent_version
+from uniover_agent.composition.system import (
+    EXIT_FAILURE,
+    EXIT_OK,
+    EXIT_TV_CODE_ON_PHONE,
+    agent_version,
+)
 from uniover_agent.config import (
     Settings,
     adb_key_backup_dir,
@@ -637,7 +642,7 @@ def compose_light_settings(
 
 
 def build_adb(  # noqa: PLR0913 - todos são configuração independente
-    path: Path,
+    path: Path | Callable[[], Path | None],
     host: str,
     settings: Settings,
     user_active: Callable[[], bool],
@@ -681,13 +686,22 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
     """
     # Valida a lista do dono antes de qualquer coisa: lista errada para o agente com o motivo.
     keep = require_cleanup_keep(settings)
-    path = locate_adb(settings.adb_path)
-    if path is None:
+    watch = adb_watch(
+        settings.adb_path, installation_base(), download=settings.android_tools_download
+    )
+    found = watch.refresh()
+    if found is None and not watch.can_provision:
         _log.warning(
             "adb não encontrado (UNIOVER_ADB_PATH, PATH ou Android SDK): "
             "lista de apps e abertura por pacote ficam desligadas"
         )
         return None
+    if found is None:
+        # O canal é montado já: o `adb` é procurado a cada comando e a capacidade só é declarada
+        # quando ele aparece (baixado agora, pelo instalador ou pela pessoa), sem reiniciar.
+        _log.warning("adb não encontrado: %s", watch.status_line())
+        setup.background.append(watch.run)
+    path: Path | Callable[[], Path | None] = found if found is not None else watch.path
     # Quando alguém está diante da tela da TV no app: a única hora em que um caminho automático
     # pode abrir uma conexão ADB nova (ver `AdbTv._may_connect`). O sinal é só `tv.presence.v1`: o
     # tipo de um comando não prova ninguém (o atalho do iPhone e o desligamento agendado mandam
@@ -824,6 +838,10 @@ def compose_adb(  # noqa: PLR0915 - uma linha por passo da composição
             hook()
 
     async def declare_when_usable() -> None:
+        if watch.path() is None:
+            # Sem `adb` ainda: a capacidade entra quando ele aparecer (vai no `hello` periódico).
+            watch.on_found(lambda _path: declare_adb_capabilities())
+            return
         # `tv.adb` vai ao `hello` sempre que há `adb` neste PC, mesmo sem a permissão da TV: o app
         # só mostra "Atualizar lista" (o único toque que pede a permissão) a quem tem a
         # capacidade, e sem ela o dono nunca teria como dar o primeiro aceite. Nada fica exposto:
@@ -953,15 +971,25 @@ def compose_icons(
     O publicador roda em tarefa de fundo: a lista sem ícones sai como sempre e os ícones chegam
     depois, um APK por vez, sem passar pela trava dos comandos curtos do ADB.
     """
-    aapt = locate_aapt2(settings.aapt_path)
-    if aapt is None:
+    watch = aapt2_watch(
+        settings.aapt_path, installation_base(), download=settings.android_tools_download
+    )
+    found = watch.refresh()
+    if found is None and not watch.can_provision:
         _log.info("aapt2 não encontrado (UNIOVER_AAPT_PATH ou Android SDK): sem ícones dos apps")
         return None
     scratch = TempApkScratch()
     scratch.purge()
     cache = FileIconCache(Path(settings.icons_dir) if settings.icons_dir else default_icons_dir())
+    aapt: Path | Callable[[], Path | None] = found if found is not None else watch.path
     resolver = IconResolver(adb, Aapt2Inspector(aapt), cache, scratch)
     manager = setup.manager
+
+    def paused() -> bool:
+        # Sem `aapt2` (ainda baixando) os ícones esperam como no modo foco: nenhum APK é copiado
+        # da TV à toa; quando ele aparece, `resume` retoma o que ficou pela metade.
+        return is_paused() or (found is None and watch.path() is None)
+
     publisher = AppIconPublisher(
         resolver,
         adb,
@@ -970,10 +998,14 @@ def compose_icons(
         lambda: manager.snapshot().connection == "hot",
         clock.sleep,
         monotonic=clock.monotonic,
-        is_paused=is_paused,
+        is_paused=paused,
     )
     manager.subscribe(publisher.on_state)
     setup.background.append(publisher.run)
+    if found is None:
+        _log.info("aapt2 não encontrado: %s", watch.status_line())
+        watch.on_found(lambda _path: publisher.resume())
+        setup.background.append(watch.run)
     return publisher
 
 
@@ -992,11 +1024,14 @@ async def tv_pair(  # noqa: PLR0911, PLR0913, PLR0917 - espelha a linha de coman
     *,
     if_needed: bool = False,
     identify: Callable[[TvKindName, str], Awaitable[TvIdentity | None]] | None = None,
+    code_on_phone: bool = False,
 ) -> int:
     """Pareia a TV escolhida e guarda a credencial no lugar adequado ao driver.
 
     Com `if_needed`, uma TV que já tem credencial guardada não é pareada de novo (o instalador
-    roda de novo para atualizar sem pedir outro aceite na TV).
+    roda de novo para atualizar sem pedir outro aceite na TV). Com `code_on_phone`, uma Android
+    TV sem pareamento nem é contatada: o código que ela mostra é digitado no app do celular,
+    depois que o agente já está rodando, e não numa janela no PC.
     """
     tv_host = require_tv_host(host or settings.tv_host)
     tv_kind = kind or settings.tv_kind
@@ -1031,6 +1066,9 @@ async def tv_pair(  # noqa: PLR0911, PLR0913, PLR0917 - espelha a linha de coman
     if if_needed and is_paired(cert_dir):
         print("A TV já está pareada.")
         return EXIT_OK
+    if code_on_phone:
+        print("A TV será pareada pelo celular: o app pede o código que aparecer na TV.")
+        return EXIT_TV_CODE_ON_PHONE
     print(f"Pareando com a TV em {tv_host}. Deixe a TV ligada e a tela de pareamento aberta.")
     try:
         await pair_tv(tv_host, settings.tv_client_name, cert_dir, ask_code)

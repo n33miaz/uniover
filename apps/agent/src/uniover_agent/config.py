@@ -175,6 +175,9 @@ class Settings(BaseSettings):
     # ícones) e a pasta do cache (padrão: `%LOCALAPPDATA%\UniOver\icons`).
     aapt_path: str | None = None
     icons_dir: str | None = None
+    # Sem `adb` ou `aapt2` (e sem caminho configurado), o agente baixa os dois da Google para a
+    # pasta de instalação, em segundo plano. `false` desliga o download (a procura continua).
+    android_tools_download: bool = True
     # De que ramo do repositório o agente se atualiza (`develop` hoje; `main` quando a publicação
     # voltar).
     update_channel: str = DEFAULT_CHANNEL

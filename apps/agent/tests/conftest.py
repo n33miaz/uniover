@@ -138,6 +138,15 @@ def no_real_network(monkeypatch: pytest.MonkeyPatch) -> None:
     # teste põe ali): sem isto uma varredura de teste cairia na rede de verdade.
     monkeypatch.setattr(tv_locate, "local_interfaces", lambda: [])
     monkeypatch.setattr(local_networks, "local_interfaces", lambda: [])
+    # Nenhum teste baixa as ferramentas do Android da Google nem consulta o custo da rede real: os
+    # testes do download passam um cliente HTTP falso e uma conferência de rede própria.
+    from uniover_agent.adapters import android_tools  # noqa: PLC0415
+
+    async def no_download() -> object:
+        raise AssertionError("teste tentou baixar as ferramentas do Android da internet")
+
+    monkeypatch.setattr(android_tools, "_default_client", no_download)
+    monkeypatch.setattr(android_tools, "network_block_reason", lambda: "testes sem rede")
 
 
 @pytest.fixture(autouse=True)

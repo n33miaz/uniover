@@ -733,6 +733,38 @@ def test_locate_adb_searches_the_path_then_the_android_sdk(
     assert locate_adb(None) == on_path
 
 
+def test_locate_adb_finds_the_copy_the_installer_downloads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    base = tmp_path / "UniOver"
+    tools = base / "tools" / "platform-tools"
+    tools.mkdir(parents=True)
+    exe = tools / ("adb.exe" if sys.platform == "win32" else "adb")
+    exe.write_text("x")
+    assert locate_adb(None, base) == exe
+
+
+def test_locate_adb_finds_the_winget_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    package = (
+        tmp_path
+        / "local"
+        / "Microsoft"
+        / "WinGet"
+        / "Packages"
+        / "Google.PlatformTools_Microsoft.Winget.Source_8wekyb3d8bbwe"
+        / "platform-tools"
+    )
+    package.mkdir(parents=True)
+    exe = package / ("adb.exe" if sys.platform == "win32" else "adb")
+    exe.write_text("x")
+    assert locate_adb(None, tmp_path / "sem-uniover") == exe
+
+
 # --- religar o serviço do controle (vigia) -------------------------------------------------------
 
 REMOTE_SERVICE = "com.google.android.tv.remote.service"
