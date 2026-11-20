@@ -9,7 +9,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
+import { Subject, firstValueFrom } from 'rxjs';
 import { APP_CONFIG } from '../config/app-config';
 import { PcAvailability } from '../modules/pc-availability';
 import { SessionState } from '../session/session-state';
@@ -73,7 +73,7 @@ const MAX_BUFFERED_BYTES = 16_384;
  * O que o canal pode levar, como a API o concede na oferta: `pc` (ponteiro, cliques, teclas, texto e mídia do PC) e `tv` (as
  * teclas e o texto da TV que o agente controla). É um canal do APARELHO: o PC e a TV usam o mesmo, cada um com o seu escopo.
  */
-export type DirectScope = 'pc' | 'tv';
+export type DirectScope = 'pc' | 'tv' | 'screen';
 
 /** Quem pediu o canal aberto: a tela do PC e a da TV. Ele fica aberto enquanto houver alguém que o queira. */
 export type DirectOwner = 'pc' | 'tv';
@@ -146,6 +146,7 @@ export interface DirectAnswer {
 
 /** O que a oferta pede: os escopos e, com o da TV, qual TV (sem ela a API usa a única que a conta vê). */
 export interface DirectOfferRequest {
+  readonly parentSessionId?: string;
   readonly scopes: readonly DirectScope[];
   readonly tvId: string | null;
 }
@@ -186,6 +187,7 @@ export class DirectSignaling {
             sdp,
             scopes: [...request.scopes],
             ...(request.tvId !== null ? { tvId: request.tvId } : {}),
+            ...(request.parentSessionId ? { parentSessionId: request.parentSessionId } : {}),
           };
     const body = await firstValueFrom(this.http.post<unknown>(`${BASE}/offer`, payload));
     const dto = body as Record<string, unknown> | null;
@@ -198,7 +200,9 @@ export class DirectSignaling {
       throw new Error('resposta de oferta fora do formato');
     }
     const granted = Array.isArray(dto['scopes'])
-      ? dto['scopes'].filter((scope): scope is DirectScope => scope === 'pc' || scope === 'tv')
+      ? dto['scopes'].filter(
+          (scope): scope is DirectScope => scope === 'pc' || scope === 'tv' || scope === 'screen',
+        )
       : ['pc' as const];
     return { sessionId: dto['sessionId'], sdp: dto['sdp'], token: dto['token'], scopes: granted };
   }
@@ -212,6 +216,23 @@ export class DirectSignaling {
       ),
     );
   }
+}
+
+/** Espera a coleta de candidatos terminar (ou o prazo curto): a oferta sai inteira, sem depender de trickle. */
+export function gatherDirectIce(connection: RTCPeerConnection): Promise<void> {
+  if (connection.iceGatheringState === 'complete') return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(done, GATHER_TIMEOUT_MS);
+    function done() {
+      clearTimeout(timer);
+      connection.removeEventListener('icegatheringstatechange', check);
+      resolve();
+    }
+    function check() {
+      if (connection.iceGatheringState === 'complete') done();
+    }
+    connection.addEventListener('icegatheringstatechange', check);
+  });
 }
 
 interface Pending {
@@ -382,6 +403,13 @@ export class DirectChannel {
   readonly mode = computed<'direct' | 'cloud'>(() => (this.open() ? 'direct' : 'cloud'));
   /** O último tempo de ida e volta medido no canal (ms), ou `null`. */
   readonly rtt = signal<number | null>(null);
+  /** Sessão de entrada autenticada que pode acompanhar a medição. */
+  readonly pcSessionId = computed(() =>
+    this.open() && this.grantedScopes().includes('pc') ? (this.link?.sessionId ?? null) : null,
+  );
+  private readonly pointerSamples = new Subject<{ sessionId: string; milliseconds: number }>();
+  /** Uma amostra por resposta, inclusive quando o RTT é igual ao anterior. */
+  readonly pointerRtt = this.pointerSamples.asObservable();
 
   // Os totais do ponteiro desde que o canal abriu, e o número da última mensagem.
   private seq = 0;
@@ -698,7 +726,7 @@ export class DirectChannel {
       this.link = link;
       this.listen(link);
       await connection.setLocalDescription(await connection.createOffer());
-      await this.gathered(connection);
+      await gatherDirectIce(connection);
       const sdp = connection.localDescription?.sdp;
       if (!sdp) throw new Error('sem oferta');
       const answer = await this.signaling.offer(sdp, {
@@ -745,23 +773,6 @@ export class DirectChannel {
       this.connecting = false;
       this.readyWaiter = null;
     }
-  }
-
-  /** Espera a coleta de candidatos terminar (ou o prazo curto): a oferta sai inteira, sem depender de trickle. */
-  private gathered(connection: RTCPeerConnection): Promise<void> {
-    if (connection.iceGatheringState === 'complete') return Promise.resolve();
-    return new Promise<void>((resolve) => {
-      const timer = setTimeout(done, GATHER_TIMEOUT_MS);
-      function done() {
-        clearTimeout(timer);
-        connection.removeEventListener('icegatheringstatechange', check);
-        resolve();
-      }
-      function check() {
-        if (connection.iceGatheringState === 'complete') done();
-      }
-      connection.addEventListener('icegatheringstatechange', check);
-    });
   }
 
   private opened(link: Link): Promise<void> {
@@ -911,6 +922,8 @@ export class DirectChannel {
       this.pingSentAt.delete(message['n']);
       this.lastRtt = Math.max(0, Math.round(performance.now() - sent));
       this.rtt.set(this.lastRtt);
+      const sessionId = this.pcSessionId();
+      if (sessionId !== null) this.pointerSamples.next({ sessionId, milliseconds: this.lastRtt });
     }
   }
 

@@ -27,8 +27,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     /// teclas e o texto da TV que este agente controla, pelo mesmo caminho dos comandos tv.* da
     /// nuvem; nunca o desligamento, abrir app nem limpeza). Sem `scopes` o canal é só do PC,
     /// como sempre foi. Quem decide os escopos é a API, que os confere para a pessoa e para a TV
-    /// no momento da oferta; o agente só os aplica. `scopes` só vai a quem declara a capacidade
-    /// tv.rtc.v1. Só vai a quem declara a capacidade pc.rtc.v1. `ticket` (opcional) só vai a
+    /// no momento da oferta; o agente só os aplica. `scopes` com tv só vai a quem declara
+    /// tv.rtc.v1. O escopo exclusivo screen só vai a quem declara pc.screen.v1, exige o aparelho
+    /// aprovado e traz parentSessionId (a sessão de controle do PC à qual a tela fica
+    /// vinculada). Só vai a quem declara a capacidade pc.rtc.v1. `ticket` (opcional) só vai a
     /// quem declara pc.rtc.reconcile.v1.
     /// </summary>
     public partial class PcRtcOfferV1Message
@@ -84,6 +86,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public long MaxLifetimeSeconds { get; set; }
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("parentSessionId")]
+        public Guid? ParentSessionId { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("scopes")]
         public PcRtcOfferV1BodyScopesItem[]? Scopes { get; set; }
 
@@ -111,7 +117,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public long TokenTtlSeconds { get; set; }
     }
 
-    public enum PcRtcOfferV1BodyScopesItem { Pc, Tv };
+    public enum PcRtcOfferV1BodyScopesItem { Pc, Screen, Tv };
 
     public partial class PcRtcOfferV1Message
     {
@@ -146,6 +152,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             {
                 case "pc":
                     return PcRtcOfferV1BodyScopesItem.Pc;
+                case "screen":
+                    return PcRtcOfferV1BodyScopesItem.Screen;
                 case "tv":
                     return PcRtcOfferV1BodyScopesItem.Tv;
             }
@@ -158,6 +166,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             {
                 case PcRtcOfferV1BodyScopesItem.Pc:
                     JsonSerializer.Serialize(writer, "pc", options);
+                    return;
+                case PcRtcOfferV1BodyScopesItem.Screen:
+                    JsonSerializer.Serialize(writer, "screen", options);
                     return;
                 case PcRtcOfferV1BodyScopesItem.Tv:
                     JsonSerializer.Serialize(writer, "tv", options);

@@ -30,7 +30,7 @@ namespace UniOver.Modules.Devices.Features.PcControl;
 /// eles, só o PC, como sempre foi) e <paramref name="TvId"/> a TV (sem ela, a única ou a padrão que a pessoa vê). A API só concede o
 /// que a pessoa pode agora: o que não puder cai sem erro e a resposta diz o que ficou.
 /// </summary>
-internal sealed record PcRtcOfferRequest(string? Sdp, string[]? Scopes = null, Guid? TvId = null);
+internal sealed record PcRtcOfferRequest(string? Sdp, string[]? Scopes = null, Guid? TvId = null, Guid? ParentSessionId = null);
 
 /// <summary>O que um canal direto pode levar: o PC (ponteiro, teclado, mídia) e/ou as teclas e o texto da TV do agente.</summary>
 [Flags]
@@ -39,18 +39,21 @@ internal enum PcRtcScopes
     None = 0,
     Pc = 1,
     Tv = 2,
+    Screen = 8,
 }
 
 internal static class PcRtcScopeNames
 {
     public const string Pc = "pc";
     public const string Tv = "tv";
+    public const string Screen = "screen";
 
     /// <summary>Os nomes do contrato, na ordem fixa (<c>pc</c> antes de <c>tv</c>).</summary>
     public static string[] ToWire(PcRtcScopes scopes) =>
     [
         .. scopes.HasFlag(PcRtcScopes.Pc) ? [Pc] : Array.Empty<string>(),
         .. scopes.HasFlag(PcRtcScopes.Tv) ? [Tv] : Array.Empty<string>(),
+        .. scopes.HasFlag(PcRtcScopes.Screen) ? [Screen] : Array.Empty<string>(),
     ];
 
     /// <summary>Sem a lista, o pedido é só do PC (o app anterior ao escopo); nome desconhecido vira <see cref="PcRtcScopes.None"/>.</summary>
@@ -68,6 +71,7 @@ internal static class PcRtcScopeNames
             {
                 Pc => PcRtcScopes.Pc,
                 Tv => PcRtcScopes.Tv,
+                Screen => PcRtcScopes.Screen,
                 _ => PcRtcScopes.None,
             };
         }
@@ -98,7 +102,9 @@ internal sealed record PcRtcSession(
     Guid? SessionFamily = null,
     bool RevokePending = false,
     PcRtcScopes Scopes = PcRtcScopes.Pc,
-    Guid? TvId = null);
+    Guid? TvId = null,
+    Guid? ParentSessionId = null,
+    DateTimeOffset? NegotiatedUntil = null);
 
 /// <summary>O que o registro fez com a sessão que o agente disse ter aberto.</summary>
 internal enum PcRtcRestoreOutcome
@@ -146,12 +152,20 @@ internal static class PcRtcValidator
 
         if (request?.Scopes is { } scopes
             && (scopes.Length is 0 or > 2 || scopes.Distinct(StringComparer.Ordinal).Count() != scopes.Length
-                || scopes.Any(name => name is not (PcRtcScopeNames.Pc or PcRtcScopeNames.Tv))))
+                || scopes.Any(name => name is not (PcRtcScopeNames.Pc or PcRtcScopeNames.Tv or PcRtcScopeNames.Screen))
+                || (scopes.Contains(PcRtcScopeNames.Screen) && scopes.Length != 1)))
         {
-            errors["scopes"] = ["Use pc e/ou tv, sem repetir."];
+            errors["scopes"] = ["Use pc e/ou tv, sem repetir, ou apenas screen."];
         }
 
-        if (request?.TvId == Guid.Empty)
+        var isScreen = PcRtcScopeNames.Parse(request?.Scopes) == PcRtcScopes.Screen;
+        if (isScreen && (request?.ParentSessionId is null || request.ParentSessionId == Guid.Empty)
+            || !isScreen && request?.ParentSessionId is not null)
+        {
+            errors["parentSessionId"] = ["Informe a sessão de controle do PC somente para a tela."];
+        }
+
+        if (request?.TvId == Guid.Empty || isScreen && request?.TvId is not null)
         {
             errors["tvId"] = ["Informe a TV."];
         }
@@ -270,15 +284,56 @@ internal sealed class PcRtcSessions(TimeProvider time)
                 return null;
             }
 
-            previous = _sessions.Values.Where(s => string.Equals(s.AgentSlug, agentSlug, StringComparison.Ordinal)).ToList();
+            previous = _sessions.Values.Where(s => s.Scopes != PcRtcScopes.Screen
+                && string.Equals(s.AgentSlug, agentSlug, StringComparison.Ordinal)).ToList();
             return OpenLocked(userId, agentId, agentSlug, sessionFamily, scopes, tvId, now);
         }
     }
 
-    private PcRtcSession OpenLocked(
-        Guid userId, Guid agentId, string agentSlug, Guid? sessionFamily, PcRtcScopes scopes, Guid? tvId, DateTimeOffset now)
+    public PcRtcSession? TryOpenScreen(
+        Guid userId, Guid agentId, string agentSlug, Guid? family, Guid parentId, out IReadOnlyList<PcRtcSession> previous)
     {
-        var session = new PcRtcSession(Guid.CreateVersion7(), userId, agentId, agentSlug, now, sessionFamily, Scopes: scopes, TvId: tvId);
+        var now = time.GetUtcNow();
+        lock (_gate)
+        {
+            if (!HasScreenParentLocked(parentId, userId, agentId, family, now))
+            {
+                previous = [];
+                return null;
+            }
+
+            previous = _sessions.Values.Where(s => s.Scopes == PcRtcScopes.Screen && s.AgentId == agentId).ToList();
+            return OpenLocked(userId, agentId, agentSlug, family, PcRtcScopes.Screen, null, now, parentId);
+        }
+    }
+
+    private bool HasScreenParentLocked(Guid parentId, Guid userId, Guid agentId, Guid? family, DateTimeOffset now) =>
+        family is not null
+        && _sessions.TryGetValue(parentId, out var parent)
+        && parent.UserId == userId && parent.AgentId == agentId && parent.SessionFamily == family
+        && parent.Scopes.HasFlag(PcRtcScopes.Pc) && !parent.RevokePending && parent.NegotiatedUntil > now;
+
+    public bool FinishNegotiation(Guid sessionId, Guid userId, DateTimeOffset until)
+    {
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(sessionId, out var session) || session.UserId != userId || session.RevokePending
+                || session.ParentSessionId is { } parentId
+                    && !HasScreenParentLocked(parentId, userId, session.AgentId, session.SessionFamily, time.GetUtcNow()))
+            {
+                return false;
+            }
+
+            _sessions[sessionId] = session with { NegotiatedUntil = until };
+            return true;
+        }
+    }
+
+    private PcRtcSession OpenLocked(
+        Guid userId, Guid agentId, string agentSlug, Guid? sessionFamily, PcRtcScopes scopes, Guid? tvId, DateTimeOffset now,
+        Guid? parentId = null)
+    {
+        var session = new PcRtcSession(Guid.CreateVersion7(), userId, agentId, agentSlug, now, sessionFamily, Scopes: scopes, TvId: tvId, ParentSessionId: parentId);
         foreach (var old in _sessions.Where(s => now - s.Value.OpenedAt > MaxAge).Select(s => s.Key).ToList())
         {
             _sessions.Remove(old);
@@ -296,6 +351,7 @@ internal sealed class PcRtcSessions(TimeProvider time)
     private bool HasLiveOfAnotherLocked(string agentSlug, Guid userId, DateTimeOffset now) =>
         _sessions.Values.Any(s =>
             s.UserId != userId
+            && s.Scopes != PcRtcScopes.Screen
             && string.Equals(s.AgentSlug, agentSlug, StringComparison.Ordinal)
             && now - s.OpenedAt <= PcRtcHandler.MaxLifetime + TokenLifetime);
 
@@ -304,7 +360,11 @@ internal sealed class PcRtcSessions(TimeProvider time)
     {
         _sessions.Remove(session.Id);
         Remember(session.Id);
-        RememberUsage(session);
+        if (session.Scopes != PcRtcScopes.Screen)
+        {
+            RememberUsage(session);
+        }
+
         if (session.TvId is not null)
         {
             _closedTv[session.Id] = (session, time.GetUtcNow() + ClosedTvMemory);
@@ -344,7 +404,7 @@ internal sealed class PcRtcSessions(TimeProvider time)
         if (_sessions.TryGetValue(sessionId, out var live))
         {
             // Viva, desta pessoa e dentro da vida máxima de um canal (a esquecida pelo agente não conta).
-            return live.UserId == userId && now - live.OpenedAt <= PcRtcHandler.MaxLifetime + TokenLifetime
+            return live.UserId == userId && live.Scopes != PcRtcScopes.Screen && now - live.OpenedAt <= PcRtcHandler.MaxLifetime + TokenLifetime
                 ? (live.AgentSlug, live.OpenedAt)
                 : null;
         }
@@ -437,7 +497,8 @@ internal sealed class PcRtcSessions(TimeProvider time)
                         : new PcRtcRestore(PcRtcRestoreOutcome.Closed, null);
             }
 
-            if (_sessions.Values.Any(s => string.Equals(s.AgentSlug, claimed.AgentSlug, StringComparison.Ordinal)))
+            if (_sessions.Values.Any(s => s.Scopes != PcRtcScopes.Screen
+                && string.Equals(s.AgentSlug, claimed.AgentSlug, StringComparison.Ordinal)))
             {
                 return new PcRtcRestore(PcRtcRestoreOutcome.Replaced, null);
             }
@@ -476,7 +537,7 @@ internal sealed class PcRtcSessions(TimeProvider time)
     }
 
     /// <summary>A sessão, se é desta pessoa; <paramref name="negotiating"/> exige também que a janela do token ainda esteja aberta.</summary>
-    public PcRtcSession? Get(Guid sessionId, Guid userId, bool negotiating)
+    public PcRtcSession? Get(Guid sessionId, Guid userId, bool negotiating, Guid? sessionFamily = null)
     {
         lock (_gate)
         {
@@ -485,16 +546,25 @@ internal sealed class PcRtcSessions(TimeProvider time)
                 return null;
             }
 
-            return negotiating && time.GetUtcNow() - session.OpenedAt > TokenLifetime ? null : session;
+            var now = time.GetUtcNow();
+            if (session.ParentSessionId is { } parentId
+                && (session.SessionFamily != sessionFamily || session.RevokePending
+                    || !HasScreenParentLocked(parentId, userId, session.AgentId, sessionFamily, now)))
+            {
+                return null;
+            }
+
+            return negotiating && now - session.OpenedAt > TokenLifetime ? null : session;
         }
     }
 
     /// <summary>Tira a sessão (fechamento pedido pela pessoa dela); outra pessoa não a acha.</summary>
-    public PcRtcSession? TakeOwned(Guid sessionId, Guid userId)
+    public PcRtcSession? TakeOwned(Guid sessionId, Guid userId, Guid? sessionFamily = null)
     {
         lock (_gate)
         {
-            if (!_sessions.TryGetValue(sessionId, out var session) || session.UserId != userId)
+            if (!_sessions.TryGetValue(sessionId, out var session) || session.UserId != userId
+                || sessionFamily is not null && session.Scopes == PcRtcScopes.Screen && session.SessionFamily != sessionFamily)
             {
                 return null;
             }
@@ -748,6 +818,8 @@ internal sealed class PcRtcHandler(
 
     public static readonly TimeSpan MaxLifetime = TimeSpan.FromMinutes(15);
 
+    private static readonly TimeSpan ScreenMaxLifetime = TimeSpan.FromSeconds(90);
+
     /// <param name="isOwner">O administrador: o único que toma o canal de outra pessoa (um convidado nunca derruba o canal de ninguém).</param>
     /// <param name="lifetime">O que resta do token de acesso desta requisição: o canal nunca vive mais que ele.</param>
     /// <param name="sessionFamily">A sessão (família do refresh) da requisição; o canal fecha quando ela acaba.</param>
@@ -770,6 +842,13 @@ internal sealed class PcRtcHandler(
         }
 
         var requested = PcRtcScopeNames.Parse(request.Scopes);
+        var isScreen = requested == PcRtcScopes.Screen;
+        if (requested.HasFlag(PcRtcScopes.Screen) && (!isScreen || !isOwner || sessionFamily is null
+            || request.ParentSessionId is null || request.ParentSessionId == Guid.Empty))
+        {
+            return PcProblems.DirectForbidden();
+        }
+
         var granted = PcRtcScopes.None;
         PcTarget? target = null;
         Guid? tvId = null;
@@ -789,14 +868,14 @@ internal sealed class PcRtcHandler(
         }
 
         // O PC: a permissão do módulo e o computador da própria pessoa. Se o canal já é do agente da TV, o PC só entra se for o mesmo.
-        if (requested.HasFlag(PcRtcScopes.Pc) && await grants.HasAsync(userId, AccessPermissions.PcModule, cancellationToken))
+        if ((requested.HasFlag(PcRtcScopes.Pc) || isScreen) && await grants.HasAsync(userId, AccessPermissions.PcModule, cancellationToken))
         {
             allowed = true;
             var pc = await resolver.ResolveAsync(userId, cancellationToken);
             if (pc is not null && (target is null || string.Equals(pc.Slug, target.Slug, StringComparison.Ordinal)))
             {
                 target = pc;
-                granted |= PcRtcScopes.Pc;
+                granted |= isScreen ? PcRtcScopes.Screen : PcRtcScopes.Pc;
             }
             else if (pc is null && target is null)
             {
@@ -820,7 +899,7 @@ internal sealed class PcRtcHandler(
             return RemoteCareProblems.Offline();
         }
 
-        if (!OffersDirect(target))
+        if (!OffersDirect(target) || isScreen && !target.Capabilities.Contains(PcMessages.ScreenRtcCapability, StringComparer.Ordinal))
         {
             return PcProblems.DirectUnavailable();
         }
@@ -839,7 +918,11 @@ internal sealed class PcRtcHandler(
         // Um aparelho que o PC já avisou estar pendente ou recusado nem chega a mexer no canal de outro aparelho. Só vale para o PC: o canal só
         // da TV não depende dessa aprovação (a TV pela nuvem também não depende).
         var origin = origins.Read();
-        var withPc = granted.HasFlag(PcRtcScopes.Pc);
+        var withPc = granted.HasFlag(PcRtcScopes.Pc) || isScreen;
+        if (isScreen && (origin.DeviceId is null || !target.Capabilities.Contains(PcMessages.DeviceCapability, StringComparer.Ordinal)))
+        {
+            return PcProblems.DirectForbidden();
+        }
         if (withPc && origin.DeviceId is not null && deviceStates.RefusalFor(target.Slug, origin.DeviceId) is { } refusal)
         {
             // A aprovação é só do controle do PC. Quando a mesma oferta também pode levar a TV,
@@ -862,21 +945,24 @@ internal sealed class PcRtcHandler(
         // com a TV de um computador que não é dele nunca derruba o canal de quem usa o PC.
         // A decisão "há canal vivo de outra pessoa?", a captura das sessões a substituir e a abertura são UMA operação no registro: duas
         // ofertas ao mesmo tempo não passam as duas, e a lista a fechar depois é exatamente a que estava lá no instante da abertura.
-        var session = sessions.TryOpen(userId, isOwner, target.AgentId, target.Slug, sessionFamily, granted, tvId, out var previous);
+        // Para a tela, a API confere a sessão de login e o agente confirma que o controle pai foi autenticado por este aparelho.
+        var session = isScreen
+            ? sessions.TryOpenScreen(userId, target.AgentId, target.Slug, sessionFamily, request.ParentSessionId!.Value, out var previous)
+            : sessions.TryOpen(userId, isOwner, target.AgentId, target.Slug, sessionFamily, granted, tvId, out previous);
         if (session is null)
         {
-            return PcProblems.DirectBusy();
+            return isScreen ? PcProblems.DirectForbidden() : PcProblems.DirectBusy();
         }
 
         var token = NewToken();
         using var pending = answers.Expect(target.Slug, session.Id);
-        var maxLifetime = (int)Math.Min(lifetime.TotalSeconds, MaxLifetime.TotalSeconds);
+        var maxLifetime = (int)Math.Min(lifetime.TotalSeconds, (isScreen ? ScreenMaxLifetime : MaxLifetime).TotalSeconds);
         // Sem o escopo da TV a oferta é a de sempre (sem o campo): é a única que um agente anterior entende.
         var scopes = granted == PcRtcScopes.Pc ? null : PcRtcScopeNames.ToWire(granted);
         // Quem sabe reconciliar (reconectar depois de a API reiniciar) leva um bilhete assinado pela API, que o agente só guarda e devolve; o
         // esquema da oferta de um agente anterior é fechado, então o campo nem sai para ele. Sem a sessão de login não há bilhete (a API
         // não teria como saber se ela ainda vale): o canal, se sobreviver a uma reinicialização, é reaberto pelo app.
-        var reconcilable = tickets is not null
+        var reconcilable = !isScreen && tickets is not null
             && sessionFamily is not null
             && target.Capabilities.Contains(PcMessages.RtcReconcileCapability, StringComparer.Ordinal);
         var issuedAt = time?.GetUtcNow() ?? DateTimeOffset.UtcNow;
@@ -899,7 +985,8 @@ internal sealed class PcRtcHandler(
             (int)PcRtcSessions.TokenLifetime.TotalSeconds,
             maxLifetime,
             scopes,
-            ticket);
+            ticket,
+            session.ParentSessionId);
 
         // A oferta leva o aparelho (a aprovação no PC); o canal herda a decisão. Sem a capacidade, ou sem o escopo do PC, o campo nem sai.
         if (withPc)
@@ -936,7 +1023,7 @@ internal sealed class PcRtcHandler(
 
             // `rtc_closed` é a recusa de antes da troca do par (a sessão já tinha sido fechada): as anteriores seguem. Só `rtc_failed` e
             // `rtc_unavailable` vêm depois de o agente ter lido a oferta e podido trocar o par: aí o registro acompanha (como sempre foi).
-            if (reply.Value.Error?.Code != RtcClosedCode)
+            if (!isScreen && reply.Value.Error?.Code != RtcClosedCode)
             {
                 await ReplacePreviousAsync(previous, target.Slug, client, cancellationToken);
             }
@@ -946,7 +1033,7 @@ internal sealed class PcRtcHandler(
                 : RemoteCareProblems.CommandFailed(reply.Value.Error?.Code);
         }
 
-        // O agente aceitou a oferta e trocou o par: agora sim as anteriores saem do registro, com o aviso e a trilha.
+        // O agente aceitou a oferta: agora sim as anteriores do mesmo tipo saem do registro, com o aviso e a trilha.
         await ReplacePreviousAsync(previous, target.Slug, client, cancellationToken);
 
         // A permissão pode ter caído entre a primeira conferência e a aceitação do agente (o ouvinte de revogação não achava a sessão: ela
@@ -963,13 +1050,23 @@ internal sealed class PcRtcHandler(
         if (answer is null)
         {
             sessions.TakeOwned(session.Id, userId);
+            if (isScreen)
+            {
+                await CloseWithoutRequestAsync(target.Slug, session.Id);
+            }
+
             return RemoteCareProblems.Timeout();
         }
 
         // A negociação leva segundos, e a sessão pode ter sido revogada nesse meio (o ouvinte a tirou daqui e mandou o fechamento,
         // que pode ter passado na frente da oferta no agente): nada do canal chega ao app, e o agente é avisado outra vez.
-        if (sessions.Get(session.Id, userId, negotiating: false) is null)
+        if (!sessions.FinishNegotiation(session.Id, userId, issuedAt + TimeSpan.FromSeconds(maxLifetime)))
         {
+            if (isScreen)
+            {
+                sessions.TakeOwned(session.Id, userId);
+            }
+
             await CloseWithoutRequestAsync(target.Slug, session.Id);
             return PcProblems.DirectRevoked();
         }
@@ -1006,11 +1103,11 @@ internal sealed class PcRtcHandler(
     }
 
     public async Task<IResult> CandidateAsync(
-        Guid userId, Guid sessionId, PcRtcCandidateRequest request, CancellationToken cancellationToken)
+        Guid userId, Guid sessionId, PcRtcCandidateRequest request, CancellationToken cancellationToken, Guid? sessionFamily = null)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (sessions.Get(sessionId, userId, negotiating: true) is not { } session)
+        if (sessions.Get(sessionId, userId, negotiating: true, sessionFamily) is not { } session)
         {
             return PcProblems.DirectExpired();
         }
@@ -1023,9 +1120,9 @@ internal sealed class PcRtcHandler(
     }
 
     /// <summary>Fecha o canal da sessão. Quem não é dono dela (ou sessão que já fechou) recebe "não existe": nada vaza.</summary>
-    public async Task<IResult> CloseAsync(Guid userId, Guid sessionId, ClientInfo client, CancellationToken cancellationToken)
+    public async Task<IResult> CloseAsync(Guid userId, Guid sessionId, ClientInfo client, CancellationToken cancellationToken, Guid? sessionFamily = null)
     {
-        if (sessions.TakeOwned(sessionId, userId) is not { } session)
+        if (sessions.TakeOwned(sessionId, userId, sessionFamily ?? Guid.Empty) is not { } session)
         {
             return TypedResults.NotFound();
         }
@@ -1189,7 +1286,7 @@ internal sealed class PcRtcAccessListener(PcRtcSessions sessions, PcRtcRevoker r
         UserAccessChangeKind.AccountDisabled => PcRtcCloseV1BodyReason.Revoked,
         UserAccessChangeKind.ModuleRemoved => ReasonForLost(session, change.Module switch
         {
-            AccessPermissions.PcModule => PcRtcScopes.Pc,
+            AccessPermissions.PcModule => PcRtcScopes.Pc | PcRtcScopes.Screen,
             AccessPermissions.TvModule => PcRtcScopes.Tv,
             _ => PcRtcScopes.None,
         }),
@@ -1280,12 +1377,12 @@ internal static class PcRtcRights
         ArgumentNullException.ThrowIfNull(grants);
 
         var valid = PcRtcScopes.None;
-        if (scopes.HasFlag(PcRtcScopes.Pc)
+        if ((scopes.HasFlag(PcRtcScopes.Pc) || scopes == PcRtcScopes.Screen && isOwner)
             && await grants.HasAsync(userId, AccessPermissions.PcModule, cancellationToken)
             && await resolver.ResolveAsync(userId, cancellationToken) is { } pc
             && string.Equals(pc.Slug, agentSlug, StringComparison.Ordinal))
         {
-            valid |= PcRtcScopes.Pc;
+            valid |= scopes & (PcRtcScopes.Pc | PcRtcScopes.Screen);
         }
 
         if (scopes.HasFlag(PcRtcScopes.Tv)
@@ -1526,7 +1623,7 @@ internal sealed partial class PcRtcReconciler(
             }
 
             var claimed = new PcRtcSession(
-                ticket.SessionId, ticket.UserId, agent.AgentId, agentSlug, ticket.IssuedAt < now ? ticket.IssuedAt : now, ticket.Family, false, ticket.Scopes, ticket.TvId);
+                ticket.SessionId, ticket.UserId, agent.AgentId, agentSlug, ticket.IssuedAt < now ? ticket.IssuedAt : now, ticket.Family, false, ticket.Scopes, ticket.TvId, NegotiatedUntil: ticket.ExpiresAt - PcRtcSessions.TokenLifetime);
             var restore = sessions.Restore(claimed);
             if (restore.Outcome is PcRtcRestoreOutcome.Closed or PcRtcRestoreOutcome.Replaced)
             {
@@ -1732,7 +1829,7 @@ internal static class PcRtcEndpoints
         var errors = PcRtcValidator.Candidate(request);
         return errors.Count > 0
             ? ProblemDetailsExtensions.ValidationProblem(errors)
-            : await handler.CandidateAsync(userId, sessionId, request!, cancellationToken);
+            : await handler.CandidateAsync(userId, sessionId, request!, cancellationToken, current.SessionId);
     }
 
     private static async Task<IResult> CloseAsync(
@@ -1743,7 +1840,7 @@ internal static class PcRtcEndpoints
             return RemoteCareProblems.Unauthenticated();
         }
 
-        return await handler.CloseAsync(userId, sessionId, ClientInfo.From(http), cancellationToken);
+        return await handler.CloseAsync(userId, sessionId, ClientInfo.From(http), cancellationToken, current.SessionId);
     }
 
     /// <summary>

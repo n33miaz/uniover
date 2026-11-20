@@ -15790,6 +15790,8 @@ export interface components {
       sdpMLineIndex: null | number | string;
     };
     PcRtcOfferRequest: {
+      /** Format: uuid */
+      parentSessionId?: null | string;
       scopes?: null | string[];
       sdp: null | string;
       /** Format: uuid */

@@ -161,7 +161,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentHandoverV1, AgentLogsV1, AgentMaintenanceV1, PcClickV2, PcClipboardV1, PcControlV1, PcDeviceV1, PcKeyV2, PcMediaStateV1, PcMouseV1, PcOpV1, PcPointerZoomV1, PcPowerHibernateV1, PcPowerV2, PcRtcReconcileV1, PcRtcV1, PcTargetV1, PcTextV2, PcTextV3, PcVolumeV1, TransportKeepaliveV1, TransportRestartV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvLivreV2, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvRtcV1, TvSettingsOpenV1 };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentHandoverV1, AgentLogsV1, AgentMaintenanceV1, PcClickV2, PcClipboardV1, PcControlV1, PcDeviceV1, PcKeyV2, PcMediaStateV1, PcMouseV1, PcOpV1, PcPointerZoomV1, PcPowerHibernateV1, PcPowerV2, PcRtcReconcileV1, PcRtcV1, PcScreenV1, PcTargetV1, PcTextV2, PcTextV3, PcVolumeV1, TransportKeepaliveV1, TransportRestartV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvLivreV2, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvRtcV1, TvSettingsOpenV1 };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -261,6 +261,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.PcRtcReconcileV1;
                 case "pc.rtc.v1":
                     return AgentHelloV1BodyCapabilitiesItem.PcRtcV1;
+                case "pc.screen.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.PcScreenV1;
                 case "pc.target.v1":
                     return AgentHelloV1BodyCapabilitiesItem.PcTargetV1;
                 case "pc.text.v2":
@@ -411,6 +413,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.PcRtcV1:
                     JsonSerializer.Serialize(writer, "pc.rtc.v1", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.PcScreenV1:
+                    JsonSerializer.Serialize(writer, "pc.screen.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.PcTargetV1:
                     JsonSerializer.Serialize(writer, "pc.target.v1", options);

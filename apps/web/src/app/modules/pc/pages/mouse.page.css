@@ -331,3 +331,19 @@
     animation: ring-fade 300ms linear forwards;
   }
 }
+
+:host(.screen-probe) app-pc-screen-probe {
+  flex: 0 0 auto;
+  max-height: 65%;
+}
+
+@media (orientation: landscape) {
+  :host(.screen-probe) .stage {
+    flex-direction: row;
+  }
+
+  :host(.screen-probe) app-pc-screen-probe {
+    width: 55%;
+    max-height: 100%;
+  }
+}

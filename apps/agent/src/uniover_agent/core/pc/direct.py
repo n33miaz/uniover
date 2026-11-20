@@ -83,6 +83,7 @@ from uniover_agent.ports.pc_direct import (
     DirectPeerFactory,
     DirectUnavailable,
     PeerCallbacks,
+    ScreenPeer,
 )
 
 _log = logging.getLogger(__name__)
@@ -96,6 +97,8 @@ TV_RTC_CAPABILITY: Final = "tv.rtc.v1"
 RECONCILE_CAPABILITY: Final = "pc.rtc.reconcile.v1"
 SCOPE_PC: Final = "pc"
 SCOPE_TV: Final = "tv"
+SCOPE_SCREEN: Final = "screen"
+PC_SCREEN_CAPABILITY: Final = "pc.screen.v1"
 KNOWN_SCOPES: Final = frozenset({SCOPE_PC, SCOPE_TV})
 OFFER_TYPE: Final = "pc.rtc.offer.v1"
 CANDIDATE_TYPE: Final = "pc.rtc.candidate.v1"
@@ -491,8 +494,11 @@ class PcDirectService:
         monotonic: Callable[[], float] = time.monotonic,
         devices: DeviceApprovals | None = None,
         announce_reconcile: AnnounceReconcile | None = None,
+        screen_factory: Callable[[], ScreenPeer] | None = None,
     ) -> None:
         self._factory = factory
+        self._screen_factory = screen_factory
+        self._screen: tuple[str, ScreenPeer] | None = None
         self._agent_id = agent_id
         self._gate = gate
         # A faixa do PC (`ProcessMessage`) nasce depois deste serviço: `bind` a entrega.
@@ -572,6 +578,7 @@ class PcDirectService:
         device_name: str | None = None,
         scopes: Iterable[str] | None = None,
         ticket: str | None = None,
+        parent_session_id: str | None = None,
     ) -> str:
         """Atende a oferta: troca o par anterior, aplica a oferta e devolve a resposta SDP.
 
@@ -580,6 +587,16 @@ class PcDirectService:
         também o recusa; um canal só da TV não depende dessa aprovação (a TV pela nuvem também
         não)."""
         granted = frozenset(scopes) if scopes is not None else frozenset({SCOPE_PC})
+        if granted == {SCOPE_SCREEN}:
+            return await self._open_screen(
+                session_id,
+                sdp,
+                token,
+                ttl_seconds,
+                max_lifetime_seconds,
+                device_id,
+                parent_session_id,
+            )
         if not granted or not granted <= KNOWN_SCOPES:
             raise DirectRefused(REFUSED_UNAVAILABLE)
         if SCOPE_TV in granted and self._tv is None:
@@ -662,6 +679,63 @@ class PcDirectService:
             session.watchdog = asyncio.create_task(self._watch(session))
             return answer
 
+    async def _open_screen(  # noqa: PLR0913, PLR0917 - os campos da oferta de tela
+        self,
+        session_id: str,
+        sdp: str,
+        token: str,
+        ttl_seconds: int,
+        lifetime_seconds: int | None,
+        device_id: str | None,
+        parent_session_id: str | None,
+    ) -> str:
+        parent = self._current
+        if (
+            self._screen_factory is None
+            or self._screen is not None
+            or self._was_closed(session_id)
+            or parent is None
+            or parent.closed
+            or not parent.authenticated
+            or SCOPE_PC not in parent.scopes
+            or parent.id != parent_session_id
+            or device_id is None
+            or parent.device_id != device_id
+        ):
+            raise DirectRefused(REFUSED_UNAVAILABLE)
+        peer = self._screen_factory()
+        screen = (session_id, peer)
+        self._screen = screen
+        try:
+            answer = await asyncio.wait_for(
+                peer.accept_offer(sdp, token, ttl_seconds, min(lifetime_seconds or 90, 90)),
+                self._settings.accept_timeout_seconds,
+            )
+            if self._screen is not screen:
+                raise DirectRefused(REFUSED_CLOSED)
+        except (Exception, asyncio.CancelledError) as error:
+            self._stop_screen(session_id)
+            if isinstance(error, (DirectRefused, asyncio.CancelledError)):
+                raise
+            raise DirectRefused(REFUSED_FAILED) from None
+        self._spawn(self._watch_screen(screen))
+        return answer
+
+    async def _watch_screen(self, screen: tuple[str, ScreenPeer]) -> None:
+        session_id, peer = screen
+        await peer.wait()
+        if self._screen is screen:
+            self._stop_screen(session_id)
+            with contextlib.suppress(Exception):
+                await self._notify_closed(session_id, REASON_REQUESTED, None)
+
+    def _stop_screen(self, session_id: str | None = None) -> None:
+        screen = self._screen
+        if screen is not None and (session_id is None or screen[0] == session_id):
+            self._screen = None
+            self._remember_closed(screen[0])
+            screen[1].stop()
+
     async def add_candidate(
         self, session_id: str, candidate: str, mid: str | None, index: int | None
     ) -> None:
@@ -681,6 +755,7 @@ class PcDirectService:
         # Qualquer fechamento que a API manda vale também para uma oferta do mesmo id que ainda
         # venha (ela espera em tarefa própria e pode chegar depois dele).
         self._remember_closed(session_id)
+        self._stop_screen(session_id)
         session = self._current
         if session is not None and session.id == session_id:
             # A API sabe que fechou e não é avisada de volta, exceto pela soma da TV: as teclas
@@ -698,6 +773,7 @@ class PcDirectService:
         rede) não deve derrubar um arrasto. A vida máxima do canal (o que resta do token de acesso)
         continua valendo; a revogação chega pela API e fecha na hora quando ela está de volta.
         """
+        self._stop_screen()
         # Uma reconciliação em curso perdeu a conexão que a confirmaria: a próxima conexão a refaz.
         self._cancel_reconcile()
         session = self._current
@@ -1311,6 +1387,7 @@ class PcDirectService:
             return False
         session.closed = True
         if self._current is session:
+            self._stop_screen()
             self._current = None
             self._cancel_grace()
             self._cancel_reconcile()
@@ -1456,6 +1533,7 @@ def pc_rtc_handlers(
                 device_name=command.device_name,
                 scopes=_scopes_of(body.get("scopes")),
                 ticket=_text_of(body.get("ticket")),
+                parent_session_id=_text_of(body.get("parentSessionId")),
             )
         except DirectRefused as refused:
             return CommandResult(

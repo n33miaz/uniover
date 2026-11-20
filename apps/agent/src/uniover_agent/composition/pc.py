@@ -22,6 +22,7 @@ from uniover_agent.adapters.pc_input_thread import (
     PcInputThread,
 )
 from uniover_agent.adapters.pc_media_session import WindowsPcMediaSession
+from uniover_agent.adapters.pc_screen_process import ScreenProcess
 from uniover_agent.adapters.pc_windows import (
     WindowsPcForeground,
     WindowsPcInput,
@@ -71,6 +72,7 @@ from uniover_agent.core import (
 )
 from uniover_agent.core.pc.devices import DeviceApprovals
 from uniover_agent.core.pc.direct import (
+    PC_SCREEN_CAPABILITY,
     RECONCILE_CAPABILITY,
     RTC_SILENT_TYPES,
     ReconcileClaim,
@@ -463,8 +465,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         ),
     )
     capabilities = _capabilities()
-    approvals = devices
-    if approvals is not None:
+    if devices is not None:
         capabilities.append(PC_DEVICE_CAPABILITY)
     direct: PcDirectService | None = None
     silent_types = set(PC_SILENT_TYPES)
@@ -479,12 +480,13 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
             clock,
             direct_factory,
             on_main(record),
-            approvals,
+            devices,
         )
         handlers.update(pc_rtc_handlers(direct, sender, lane_envelopes))
         silent_types |= RTC_SILENT_TYPES
-        capabilities.append(PC_RTC_CAPABILITY)
-        capabilities.append(RECONCILE_CAPABILITY)
+        capabilities.extend((PC_RTC_CAPABILITY, RECONCILE_CAPABILITY))
+        if sys.platform == "win32" and devices is not None:
+            capabilities.append(PC_SCREEN_CAPABILITY)
     lane = PcLane(
         HandleCommand(handlers, clock_now),
         lane_envelopes,
@@ -495,7 +497,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         on_release_queued=pacer.hurry,
         direct_active=(lambda: direct.holds_inputs) if direct is not None else None,
         pointer_stale=lambda command: _older_than(clock, command, MAX_POINTER_AGE_SECONDS),
-        devices=approvals,
+        devices=devices,
         spread=(
             PointerSpread(
                 min_pixels=settings.pc_pointer_spread_min_px,
@@ -524,7 +526,7 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         host,
         settings.pc_working_set_min_mb if host is not None else 0,
         protect_memory,
-        approvals,
+        devices,
         lane_envelopes.pc_device_state,
         fire,
         sender.send,
@@ -595,6 +597,7 @@ def _build_direct(  # noqa: PLR0913, PLR0917 - dependências da montagem
         ),
         devices=devices,
         announce_reconcile=announce_reconcile,
+        screen_factory=ScreenProcess if sys.platform == "win32" and devices is not None else None,
     )
 
 

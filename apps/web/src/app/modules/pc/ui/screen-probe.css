@@ -1,0 +1,40 @@
+:host {
+  display: block;
+  overflow: auto;
+  padding: var(--space-2);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+label {
+  display: grid;
+  gap: var(--space-1);
+}
+
+button,
+select {
+  min-height: 44px;
+}
+
+canvas {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 28vh;
+  margin: var(--space-1) auto 0;
+}
+
+canvas[hidden] {
+  display: none;
+}
+
+textarea {
+  display: block;
+  width: 100%;
+  min-height: 6rem;
+}

@@ -14,6 +14,7 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { PcArmed } from '../data/pc-armed';
 import { MAX_BATCHES_IN_FLIGHT, MAX_KEYS_IN_FLIGHT, PcInput } from '../data/pc-input';
@@ -29,6 +30,7 @@ import { PcActionBar } from '../ui/action-bar';
 import { PcLiveKeyboard } from '../ui/live-keyboard';
 import { PcKeyPanel } from '../ui/key-panel';
 import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
+import { PcScreenProbe } from '../ui/screen-probe';
 import { PcShortcutSheet } from '../ui/shortcut-sheet';
 import { ScreenWakeLock } from '../ui/wake-lock';
 
@@ -54,11 +56,24 @@ interface Ring {
  */
 @Component({
   selector: 'app-pc-mouse-page',
-  host: { '[attr.data-typing]': 'typing() ? "" : null' },
-  imports: [PcActionBar, PcKeyPanel, PcLiveKeyboard, PcPadSettingsSheet, PcShortcutSheet],
+  host: {
+    '[attr.data-typing]': 'typing() ? "" : null',
+    '[class.screen-probe]': 'screenProbe()',
+  },
+  imports: [
+    PcActionBar,
+    PcKeyPanel,
+    PcLiveKeyboard,
+    PcPadSettingsSheet,
+    PcScreenProbe,
+    PcShortcutSheet,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="stage">
+      @if (screenProbe()) {
+        <app-pc-screen-probe />
+      }
       <div
         #pad
         class="pad"
@@ -263,6 +278,13 @@ export class MousePage {
   /** O PC entende as teclas novas (`pc.key.v2`): o painel mostra os dígitos e o "Trocar janela". */
   protected readonly moreKeys = computed(() => this.store.supportsKey('D0'));
   private readonly route = inject(ActivatedRoute);
+  private readonly queryParams = toSignal(this.route.queryParamMap, {
+    initialValue: this.route.snapshot.queryParamMap,
+  });
+  protected readonly screenProbe = computed(
+    () => this.queryParams().get('medirTela') === '1' && this.session.role() === 'owner',
+  );
+  private readonly probe = viewChild(PcScreenProbe);
   private readonly session = inject(SessionState);
   private readonly doc = inject(DOCUMENT);
   private readonly padRef = viewChild.required<ElementRef<HTMLElement>>('pad');
@@ -336,10 +358,13 @@ export class MousePage {
       this.doc.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
   });
 
+  private tapReleasedAt = 0;
+
   private readonly gesture = new PadGesture({
     move: (dx, dy, elapsedMs) => this.store.movePointer(dx, dy, elapsedMs),
     scroll: (dx, dy, elapsedMs) => this.store.scrollPointer(dx, dy, elapsedMs),
     tap: (button, at, gapMs) => {
+      this.probe()?.markTouch(this.tapReleasedAt);
       this.press(button, gapMs);
       this.showRing(button, at);
     },
@@ -465,6 +490,7 @@ export class MousePage {
   protected onUp(event: PointerEvent): void {
     if (this.swallowed.delete(event.pointerId)) return;
     if (!this.active()) return;
+    this.tapReleasedAt = event.timeStamp;
     this.gesture.up(event.pointerId, event.timeStamp);
     if (!this.gesture.active) this.finish();
   }
