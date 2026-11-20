@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { UnsavedWork } from '../../../core/pwa/unsaved-work';
 import { RestTimerService } from '../data/session-live/rest-timer.service';
@@ -19,7 +20,10 @@ import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { TrainingHeaderActions } from '../shell/training-header-actions';
 import { DOUBLE_TAP_MS } from './live-store';
+import { addDays, civilDateOf, deviceTimeZone, startOfDay } from '../domain/progress/calendar';
 import { TodayPage } from './today.page';
+import { TodayHome } from './today-home';
+import { TodayStore } from './today-store';
 import { WorkoutDay } from './workout-day';
 import { WorkoutExercise } from './workout-exercise';
 
@@ -58,6 +62,12 @@ const openHeaderMenu = (id: string) => {
     .find((item) => item.id === id);
   expect(action?.label).toBe('Opções do treino');
   action!.run();
+};
+const dayMs = 86_400_000;
+/** Quanto falta, a partir de `now`, para a próxima meia-noite no fuso do aparelho. */
+const untilNextMidnight = (now: number) => {
+  const zone = deviceTimeZone();
+  return startOfDay(addDays(civilDateOf(now, zone), 1), zone) - now;
 };
 const text = (el: Element) => el.textContent?.replace(/\s+/g, ' ') ?? '';
 const buttons = (el: ParentNode) => Array.from(el.querySelectorAll<HTMLButtonElement>('button'));
@@ -193,6 +203,45 @@ describe('TodayPage', () => {
       expect(navigate).toHaveBeenCalledWith(['/treino'], {
         queryParams: { resumo: `supino-reto-treino-${day}`, historico: '1' },
       });
+    });
+
+    it('turns to the new day at local midnight with the screen open and visible, with no focus or visibility event', async () => {
+      const kit = await open();
+      await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
+      const dayMs = 86_400_000;
+      const day = (kit.runtime.now() - dayMs - HISTORY_START) / dayMs;
+      await seedHistory(kit.trainingDb, 'supino-reto', [[day, 40, 10]]);
+      const { el, fixture } = await show(kit);
+      await eventually(fixture, () => expect(text(el)).toContain('Treino de Ontem'));
+
+      // Só o relógio anda: passa da meia-noite local e o treino de ontem vira o de anteontem.
+      kit.runtime.advance(untilNextMidnight(kit.runtime.now()) + 1);
+
+      await eventually(fixture, () => expect(text(el)).toContain('Último Treino'));
+      expect(text(el)).not.toContain('Treino de Ontem');
+    });
+
+    it('keeps turning the day on the following midnights, and leaves no timer behind once the screen is gone', async () => {
+      const kit = await open();
+      await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
+      const { fixture } = await show(kit);
+      await eventually(fixture, () =>
+        expect(fixture.debugElement.query(By.directive(TodayHome))).not.toBeNull(),
+      );
+      const store = fixture.debugElement.query(By.directive(TodayHome)).injector.get(TodayStore);
+      await fixture.whenStable();
+      const reads = vi.spyOn(store, 'loadHome');
+
+      kit.runtime.advance(untilNextMidnight(kit.runtime.now()) + 1);
+      expect(reads).toHaveBeenCalled();
+      reads.mockClear();
+      kit.runtime.advance(dayMs);
+      expect(reads).toHaveBeenCalled();
+
+      reads.mockClear();
+      fixture.destroy();
+      kit.runtime.advance(2 * dayMs);
+      expect(reads).not.toHaveBeenCalled();
     });
 
     it('names an older workout "Último Treino" with its date', async () => {
