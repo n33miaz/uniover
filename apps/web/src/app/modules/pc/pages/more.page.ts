@@ -97,7 +97,6 @@ import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
       text-decoration: none;
       cursor: pointer;
       touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
     }
     .row:active {
       background: var(--a-accent-soft);

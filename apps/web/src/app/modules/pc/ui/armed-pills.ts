@@ -64,7 +64,6 @@ import { tick } from '../input/haptics';
       font-weight: 650;
       cursor: pointer;
       touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
     }
     .pill:focus-visible {
       outline: 3px solid var(--a-accent);

@@ -26,7 +26,6 @@
   text-align: left;
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
   transition: transform var(--dur-fast) var(--ease-out);
 }
 .action:active:not(:disabled) {

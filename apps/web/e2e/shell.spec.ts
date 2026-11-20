@@ -210,10 +210,13 @@ test.describe('início e navegação', () => {
       const editable = document.createElement('div');
       editable.setAttribute('contenteditable', 'true');
       const copyable = document.createElement('pre');
-      copyable.className = 'ui-selectable';
       copyable.textContent = 'registro';
       const copyableChild = document.createElement('span');
       copyable.append(copyableChild);
+      const editableChild = document.createElement('span');
+      const nonEditable = document.createElement('span');
+      nonEditable.contentEditable = 'false';
+      editable.append(editableChild, nonEditable);
       document.body.append(input, textarea, editable, copyable);
 
       // Nem todo motor devolve o realce do toque no estilo calculado (o WebKit de bancada não devolve): sem ele, lê a
@@ -252,6 +255,8 @@ test.describe('início e navegação', () => {
         input: read(input),
         textarea: read(textarea),
         editable: read(editable),
+        editableChild: read(editableChild),
+        nonEditable: read(nonEditable),
         copyable: read(copyable),
         copyableChild: read(copyableChild),
         bodyTouchCallout,
@@ -265,17 +270,18 @@ test.describe('início e navegação', () => {
       return result;
     });
 
-    for (const blocked of [styles.text, styles.button, styles.link]) {
-      expect(blocked).toMatchObject({ userSelect: 'none', webkitUserSelect: 'none' });
-    }
-    // Só campos de digitação e o texto marcado para copiar aceitam seleção.
-    for (const allowed of [
-      styles.input,
-      styles.textarea,
-      styles.editable,
+    for (const blocked of [
+      styles.text,
+      styles.button,
+      styles.link,
       styles.copyable,
       styles.copyableChild,
+      styles.nonEditable,
     ]) {
+      expect(blocked).toMatchObject({ userSelect: 'none', webkitUserSelect: 'none' });
+    }
+    // Só os campos de digitação e o conteúdo editável aceitam seleção.
+    for (const allowed of [styles.input, styles.textarea, styles.editable, styles.editableChild]) {
       expect(allowed).toMatchObject({ userSelect: 'text', webkitUserSelect: 'text' });
     }
     // O realce azul do toque some em toda a interface (transparente: o navegador devolve rgba com alfa 0).

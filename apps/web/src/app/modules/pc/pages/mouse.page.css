@@ -142,7 +142,6 @@
   color: var(--a-ink2);
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 .settings svg {
   width: 22px;
@@ -245,7 +244,6 @@
   color: var(--a-ink3);
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 .echo-toggle svg {
   width: 20px;

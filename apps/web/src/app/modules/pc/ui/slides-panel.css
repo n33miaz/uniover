@@ -31,7 +31,6 @@
   font-weight: 650;
   cursor: pointer;
   touch-action: pan-y;
-  -webkit-tap-highlight-color: transparent;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;

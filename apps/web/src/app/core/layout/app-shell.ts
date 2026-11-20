@@ -61,16 +61,14 @@ const HOME_BACK: ShellBack = {
       flex-direction: column;
       min-height: 100dvh;
     }
-    /* Respiro em cima, como o da Início e o do controle da TV (o main dá o mesmo à margem de baixo). */
-    app-page-top-bar {
-      padding-top: var(--gutter);
-    }
     main {
       flex: 1 1 auto;
     }
     /* Sem cabeçalho (Início) o conteúdo começa abaixo da área segura do aparelho. */
     main.no-header {
-      padding-top: calc(var(--gutter) + env(safe-area-inset-top));
+      padding-top: var(--module-top);
+      padding-left: var(--module-left);
+      padding-right: var(--module-right);
     }
     main.training-main {
       padding: 0;

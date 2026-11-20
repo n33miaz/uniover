@@ -33,7 +33,6 @@
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  -webkit-tap-highlight-color: transparent;
 }
 .num {
   font-size: clamp(1.3rem, 3.6dvh, 1.8rem);

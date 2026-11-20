@@ -1168,13 +1168,7 @@ html[data-boot='settings-devices'] .bs-settings-data-content .bs-chip,
   max-width: 760px;
   margin: 0 auto;
   box-sizing: border-box;
-  padding: calc(var(--space-3) + env(safe-area-inset-top, 0px))
-    max(var(--gutter), env(safe-area-inset-right)) var(--space-1)
-    max(var(--gutter), env(safe-area-inset-left));
-}
-/* Telas de Configurações e outras com a casca padrão: o respiro a mais que a casca põe acima da barra. */
-.bs-topbar.bs-shell {
-  padding-top: calc(var(--gutter) + var(--space-3) + env(safe-area-inset-top, 0px));
+  padding: var(--module-top) var(--module-right) 0 var(--module-left);
 }
 .bs-topbar .bs-back {
   width: var(--tap);
@@ -1215,7 +1209,7 @@ html[data-boot='settings-devices'] .bs-settings-data-content .bs-chip,
 /* ---- Início ---- */
 .bs-page.bs-home {
   max-width: calc(46rem + 2 * var(--gutter));
-  padding-top: calc(var(--gutter) + env(safe-area-inset-top, 0px));
+  padding-top: var(--module-top);
   padding-bottom: calc(var(--gutter) + var(--safe-bottom));
 }
 .bs-home-hero {
@@ -1323,8 +1317,8 @@ html[data-boot='settings-devices'] .bs-settings-data-content .bs-chip,
   max-width: calc(36rem + 2 * var(--gutter));
   margin-inline: auto;
   box-sizing: border-box;
-  padding: calc(var(--gutter) + env(safe-area-inset-top, 0px)) var(--gutter)
-    calc(var(--gutter) + var(--safe-bottom));
+  padding: var(--module-top) var(--module-right) calc(var(--gutter) + var(--safe-bottom))
+    var(--module-left);
 }
 /* Cabeçalho: voltar e três pontos à esquerda, título no meio, ponto de estado e desligar à direita. */
 .bs-tv-head {

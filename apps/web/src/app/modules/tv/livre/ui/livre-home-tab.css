@@ -58,7 +58,6 @@
   color: var(--a-ink2);
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .move svg,

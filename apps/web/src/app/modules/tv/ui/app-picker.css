@@ -52,7 +52,6 @@
   text-align: start;
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 .option app-tv-app-icon {
   --tile: 40px;

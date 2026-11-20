@@ -7,7 +7,6 @@
   display: block;
   width: 100%;
   height: var(--figure-height, 300px);
-  -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;

@@ -399,7 +399,7 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
           }
           @case ('settings') {
             <div class="bs-variant bs-settings bs-draw" aria-hidden="true">
-              <div class="bs-topbar bs-shell">
+              <div class="bs-topbar">
                 <span class="bone ui-skeleton bs-back"></span>
                 <span class="bone ui-skeleton bs-title"></span>
                 <span class="bs-end"></span>
@@ -427,7 +427,7 @@ export const PAGE_READY_TIMEOUT_MS = 8_000;
           }
           @case ('detail') {
             <div class="bs-variant bs-detail bs-draw" aria-hidden="true">
-              <div class="bs-topbar bs-shell">
+              <div class="bs-topbar">
                 <span class="bone ui-skeleton bs-back"></span>
                 <span class="bone ui-skeleton bs-title"></span>
                 <span class="bs-end"></span>

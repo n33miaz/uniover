@@ -25,7 +25,6 @@
   color: var(--a-ink);
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 .icon.on {
   border-color: var(--a-accent);

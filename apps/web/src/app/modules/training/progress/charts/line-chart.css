@@ -54,5 +54,4 @@ app-progress-line-chart .u-axis {
 app-progress-line-chart .u-over {
   cursor: pointer;
   touch-action: pan-y;
-  -webkit-tap-highlight-color: transparent;
 }

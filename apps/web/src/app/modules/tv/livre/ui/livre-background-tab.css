@@ -30,7 +30,6 @@
   font-weight: 650;
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .kind.on {
@@ -93,7 +92,6 @@
   border-radius: 50%;
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .preset[aria-pressed='true'] {

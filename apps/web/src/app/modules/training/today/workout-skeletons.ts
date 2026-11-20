@@ -179,8 +179,7 @@ export class WorkoutDaySkeleton {
     /* A mesma altura mínima da tela pronta: a ilustração toma o que sobra, como lá. */
     .sk-first {
       --sk-top-offset: calc(
-        env(safe-area-inset-top) + var(--space-3) + var(--tap) + var(--space-3) + var(--tap) +
-          var(--space-2)
+        var(--module-top) + var(--tap) + var(--space-3) + var(--tap) + var(--space-2)
       );
       display: flex;
       flex-direction: column;

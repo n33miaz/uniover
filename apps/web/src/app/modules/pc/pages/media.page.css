@@ -27,7 +27,6 @@
   white-space: nowrap;
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 .mode[aria-selected='true'] {
   background: var(--a-accent);
@@ -69,7 +68,6 @@
   font-weight: 650;
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
   transition: transform var(--dur-fast) var(--ease-out);
 }
 .extra:active:not(:disabled) {

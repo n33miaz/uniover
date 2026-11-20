@@ -55,7 +55,6 @@
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  -webkit-tap-highlight-color: transparent;
 }
 
 /* Cada setor é um triângulo com o vértice no centro; o recorte também vale para o toque. */
@@ -137,7 +136,6 @@
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .ok.pressed {

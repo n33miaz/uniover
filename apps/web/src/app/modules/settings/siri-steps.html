@@ -22,7 +22,7 @@
             <ul class="values">
               <li class="value">
                 <span class="label" i18n="@@settings.siri.field.url">URL</span>
-                <span class="text ui-selectable">{{ url() }}</span>
+                <span class="text">{{ url() }}</span>
                 <button
                   type="button"
                   class="secondary ui-btn copy"
@@ -38,7 +38,7 @@
               </li>
               <li class="value">
                 <span class="label" i18n="@@settings.siri.field.header">Cabeçalho</span>
-                <span class="text ui-selectable">{{ header }}</span>
+                <span class="text">{{ header }}</span>
                 <button
                   type="button"
                   class="secondary ui-btn copy"
@@ -50,7 +50,7 @@
               </li>
               <li class="value">
                 <span class="label" i18n="@@settings.siri.field.token">Valor do cabeçalho</span>
-                <span class="text ui-selectable">{{ tokenText() }}</span>
+                <span class="text">{{ tokenText() }}</span>
                 @if (token()) {
                   <button
                     type="button"
@@ -69,7 +69,7 @@
               @for (field of card.fields; track field.name) {
                 <li class="value">
                   <span class="label">{{ field.name }}</span>
-                  <span class="text ui-selectable">{{ field.value }}</span>
+                  <span class="text">{{ field.value }}</span>
                   <button
                     type="button"
                     class="secondary ui-btn copy"

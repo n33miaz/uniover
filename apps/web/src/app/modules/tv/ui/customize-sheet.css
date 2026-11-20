@@ -134,7 +134,6 @@ h2 {
   font-weight: 650;
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
   transition:
     background-color var(--dur-fast) linear,
     color var(--dur-fast) linear;
@@ -169,7 +168,6 @@ h2 {
   font-weight: 650;
   cursor: pointer;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 .chip[aria-pressed='true'] {
   border-color: var(--a-accent);

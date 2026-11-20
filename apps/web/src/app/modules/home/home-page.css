@@ -92,7 +92,6 @@
 
 /* Cartões de módulo compartilham raio e toque. */
 .card {
-  -webkit-tap-highlight-color: transparent;
   border-radius: var(--radius);
 }
 

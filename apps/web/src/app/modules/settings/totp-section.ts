@@ -22,7 +22,13 @@ import { SessionState } from '../../core/session/session-state';
         <ul aria-label="Códigos de recuperação" i18n-aria-label="@@settings.totp.codes-label">
           @for (code of recoveryCodes(); track code) {
             <li>
-              <code>{{ code }}</code>
+              <input
+                class="recovery-code"
+                readonly
+                [value]="code"
+                aria-label="Código de recuperação"
+                i18n-aria-label="@@settings.totp.recovery-code"
+              />
             </li>
           }
         </ul>
@@ -139,9 +145,9 @@ import { SessionState } from '../../core/session/session-state';
       break-inside: avoid;
       margin-block: var(--space-2);
     }
-    code {
-      user-select: all;
-      overflow-wrap: anywhere;
+    .recovery-code {
+      width: 100%;
+      font-family: monospace;
     }
     button {
       min-height: 44px;
