@@ -3,6 +3,7 @@ import { actionLabel, actionTitle } from './step-up-dialog';
 describe('actionLabel', () => {
   it.each([
     ['devices.pair-approve', 'aprovar o pareamento de um aparelho'],
+    ['devices.pc-power', 'desligar ou reiniciar o PC, ou encerrar a sessão do Windows'],
     ['identity.passkey-remove', 'remover uma passkey'],
     ['identity.guest-invite', 'criar um convite de convidado'],
     ['identity.password-change', 'trocar a senha'],

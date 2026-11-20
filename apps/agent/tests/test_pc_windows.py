@@ -2,6 +2,7 @@
 
 import subprocess
 import sys
+import threading
 from collections.abc import Callable, Sequence
 from typing import NoReturn
 
@@ -58,26 +59,78 @@ def exits_with(code: int, calls: list[list[str]] | None = None) -> Callable[[lis
     return run
 
 
-def test_power_runs_shutdown_with_a_countdown_and_a_notice() -> None:
+class FakeTimer:
+    def __init__(self, interval: float, callback: Callable[[], None]) -> None:
+        self.interval = interval
+        self.callback = callback
+        self.daemon = False
+        self.started = False
+        self.cancelled = False
+
+    def start(self) -> None:
+        self.started = True
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+@pytest.fixture
+def power_timers(monkeypatch: pytest.MonkeyPatch) -> list[FakeTimer]:
+    timers: list[FakeTimer] = []
+
+    def timer(interval: float, callback: Callable[[], None]) -> FakeTimer:
+        pending = FakeTimer(interval, callback)
+        timers.append(pending)
+        return pending
+
+    monkeypatch.setattr(threading, "Timer", timer)
+    return timers
+
+
+@pytest.mark.parametrize(
+    ("method", "flag", "delay", "interval"),
+    [
+        ("shutdown", "/s", 0, 10),
+        ("restart", "/r", 30, 30),
+    ],
+)
+def test_power_waits_before_asking_windows_without_force(
+    power_timers: list[FakeTimer], method: str, flag: str, delay: int, interval: int
+) -> None:
     calls: list[list[str]] = []
     power = WindowsPcPower(run=exits_with(0, calls))
-    power.shutdown(30)
-    power.cancel_shutdown()
-    assert calls[0][:3] == ["/s", "/t", "30"]
-    assert "/c" in calls[0]
-    assert calls[1] == ["/a"]
+    schedule = power.shutdown if method == "shutdown" else power.restart
+    schedule(delay)
+    (timer,) = power_timers
+    assert timer.started and timer.daemon and timer.interval == interval
+    assert calls == []
+    timer.callback()
+    assert calls == [[flag, "/t", "0"]]
 
 
-def test_restart_runs_shutdown_with_a_countdown_and_a_notice() -> None:
+def test_cancel_prevents_even_a_stale_timer_from_asking_windows(
+    power_timers: list[FakeTimer],
+) -> None:
     calls: list[list[str]] = []
-    WindowsPcPower(run=exits_with(0, calls)).restart(30)
-    assert calls[0][:3] == ["/r", "/t", "30"]
-    assert "/c" in calls[0]
-    calls.clear()
-    WindowsPcPower(run=exits_with(0, calls)).restart(0)
-    assert calls[0][2] == "10"
-    with pytest.raises(OSError, match=r"agendar o reinício.*5"):
-        WindowsPcPower(run=exits_with(5)).restart(30)
+    power = WindowsPcPower(run=exits_with(0, calls))
+    power.cancel_shutdown()
+    power.restart(30)
+    power.cancel_shutdown()
+    power.shutdown(30)
+    assert power_timers[0].cancelled
+    power_timers[0].callback()
+    assert calls == []
+    power_timers[1].callback()
+    assert calls == [["/s", "/t", "0"]]
+
+
+def test_a_refusal_after_the_countdown_is_logged(
+    power_timers: list[FakeTimer], caplog: pytest.LogCaptureFixture
+) -> None:
+    power = WindowsPcPower(run=exits_with(5))
+    power.shutdown(30)
+    power_timers[0].callback()
+    assert "O Windows recusou a ação de energia /s (código 5)." in caplog.text
 
 
 def test_hibernate_and_log_off_use_the_system_tool_and_report_a_refusal() -> None:
@@ -181,26 +234,6 @@ def test_the_test_suite_can_never_reach_a_real_power_action(
         WindowsPcPower().hibernation_available()
     with pytest.raises(AssertionError, match="energia"):
         WindowsPcPower().monitor_off()
-
-
-def test_shutdown_countdown_never_goes_below_ten_seconds() -> None:
-    calls: list[list[str]] = []
-    WindowsPcPower(run=exits_with(0, calls)).shutdown(0)
-    assert calls[0][2] == "10"
-
-
-def test_a_shutdown_the_system_refused_is_a_failure_not_a_success() -> None:
-    # Política, UAC ou erro do Windows: saída diferente de zero é falha (sem auditoria de sucesso).
-    with pytest.raises(OSError, match=r"agendar o desligamento.*5"):
-        WindowsPcPower(run=exits_with(5)).shutdown(30)
-
-
-def test_cancelling_with_no_countdown_running_is_fine_but_any_other_error_is_not() -> None:
-    WindowsPcPower(run=exits_with(1116)).cancel_shutdown()
-    with pytest.raises(OSError, match=r"cancelar o desligamento.*5"):
-        WindowsPcPower(run=exits_with(5)).cancel_shutdown()
-    with pytest.raises(OSError, match=r"cancelar o desligamento.*1"):
-        WindowsPcPower(run=exits_with(1)).cancel_shutdown()
 
 
 def test_the_real_runner_reports_the_exit_code_of_the_process(

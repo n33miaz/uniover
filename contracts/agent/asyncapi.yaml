@@ -663,7 +663,7 @@ operations:
     action: send
     channel:
       $ref: '#/channels/agentCommands'
-    summary: A API pede bloquear, suspender ou desligar o PC (com a contagem do Windows) ou cancelar o desligamento; com a capacidade pc.power.v2, também reiniciar, encerrar a sessão, hibernar e apagar o monitor.
+    summary: A API pede bloquear, suspender ou desligar o PC (com uma contagem cancelável no agente) ou cancelar o desligamento; com a capacidade pc.power.v2, também reiniciar, encerrar a sessão, hibernar e apagar o monitor.
     messages:
       - $ref: '#/channels/agentCommands/messages/pcPower'
       - $ref: '#/channels/agentCommands/messages/pcPowerV2'

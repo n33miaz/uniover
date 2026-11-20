@@ -312,7 +312,7 @@ arquivo vale o layout de sempre (`app` + `runtime\venv`). O supervisor, o lança
 ## Controle do PC
 
 Com `pc-control on` o app passa a mexer neste PC: touchpad (mover, clicar, rolar), teclado (texto e teclas especiais),
-mídia (tocar, faixa, volume, mudo), energia (bloquear, suspender, desligar com a contagem do Windows e cancelar) e os
+mídia (tocar, faixa, volume, mudo), energia (bloquear, suspender, desligar ou reiniciar depois de uma contagem cancelável no próprio agente, sem forçar o fechamento dos programas) e os
 favoritos de `pc_apps`. Tudo é a API do Windows pelo `ctypes` (`SendInput`, `LockWorkStation`, `SetSuspendState`,
 `shutdown.exe`), sem dependência nova, e só roda no Windows. O agente continua só discando para fora: nada escuta porta.
 

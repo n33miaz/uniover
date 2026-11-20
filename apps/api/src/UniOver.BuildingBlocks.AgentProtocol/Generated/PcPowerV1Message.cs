@@ -17,9 +17,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
     /// <summary>
     /// API para agente: energia do PC. `LOCK` bloqueia a sessão; `SLEEP` suspende; `SHUTDOWN`
-    /// agenda o desligamento com a contagem do Windows (aviso na tela do PC) e `CANCEL_SHUTDOWN`
-    /// cancela essa contagem. Quem confirma com a pessoa é o app e a API; o agente não repete
-    /// nem adia nada.
+    /// agenda o desligamento com uma contagem cancelável no agente, que ao fim pede ao Windows
+    /// sem forçar o fechamento dos programas, e `CANCEL_SHUTDOWN` cancela essa contagem. Quem
+    /// confirma com a pessoa é o app e a API; fora essa contagem, o agente não repete nem adia
+    /// nada.
     /// </summary>
     public partial class PcPowerV1Message
     {

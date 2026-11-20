@@ -5,6 +5,7 @@ using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
 using UniOver.BuildingBlocks.Web;
 using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Devices.Transport;
@@ -12,6 +13,8 @@ using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Devices;
 using UniOver.Modules.Devices.Features.PcControl;
+using UniOver.Modules.Identity.Domain;
+using UniOver.Modules.Identity.Persistence;
 
 namespace UniOver.IntegrationTests.Devices.PcControl;
 
@@ -1628,6 +1631,50 @@ public sealed class PcControlTests(PostgresFixture postgres)
 
     // ---- energia ----
 
+    private static async Task ConfirmPcPowerAsync(TransportApp app, string action, TimeSpan? lifetime = null)
+    {
+        if (action is not ("SHUTDOWN" or "RESTART" or "LOGOFF"))
+        {
+            return;
+        }
+
+        var token = new JsonWebTokenHandler().ReadJsonWebToken(app.Login.AccessToken);
+        await using var scope = app.App.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+        db.StepUpConfirmations.Add(StepUpConfirmation.Create(
+            Guid.Parse(token.Subject), Guid.Parse(token.GetClaim("sid").Value), "devices.pc-power",
+            app.App.Time.GetUtcNow(), lifetime ?? TimeSpan.FromMinutes(5)));
+        await db.SaveChangesAsync(Ct);
+    }
+
+    [Theory]
+    [InlineData("SHUTDOWN")]
+    [InlineData("RESTART")]
+    [InlineData("LOGOFF")]
+    public async Task Power_WithoutRecentPasskey_Returns403BeforeSending(string action)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerV2);
+
+        using var response = await Within(PostAsync(app, "power", new { action, confirm = true }));
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var details = await DevicesApp.JsonAsync(response);
+        details.GetProperty("type").GetString().Should().EndWith("/step-up-required");
+        details.GetProperty("action").GetString().Should().Be("devices.pc-power");
+
+        // Uma confirmação vencida vale tanto quanto nenhuma.
+        await ConfirmPcPowerAsync(app, action, TimeSpan.FromSeconds(1));
+        app.App.Time.Advance(TimeSpan.FromSeconds(2));
+        using var expired = await Within(PostAsync(app, "power", new { action, confirm = true }));
+        expired.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var next = PostAsync(app, "key", new { key = "A" });
+        var command = await AnswerAsync(agent);
+        using var nextResponse = await Within(next);
+        nextResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.key.v1");
+    }
+
     [Theory]
     [InlineData("SLEEP")]
     [InlineData("SHUTDOWN")]
@@ -1658,6 +1705,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
         await using var app = await TransportApp.StartAsync(postgres);
         await using var agent = await ConnectPcAsync(app);
 
+        await ConfirmPcPowerAsync(app, action);
         var http = app.App.SendAsync(
             HttpMethod.Post, "/api/v1/pc/power", new { action, confirm }, app.Login.AccessToken, userAgent: "painel/1.0");
         var command = await AnswerAsync(agent);
@@ -1684,6 +1732,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
         await using var app = await TransportApp.StartAsync(postgres);
         await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerV2, Hibernate);
 
+        await ConfirmPcPowerAsync(app, action);
         var http = app.App.SendAsync(
             HttpMethod.Post, "/api/v1/pc/power", confirm ? new { action, confirm } : new { action }, app.Login.AccessToken, userAgent: "painel/1.0");
         var command = await AnswerAsync(agent);
@@ -1724,6 +1773,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
         await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2);
         app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
 
+        await ConfirmPcPowerAsync(app, action);
         using var response = await PostAsync(app, "power", new { action, confirm = true });
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
@@ -2010,6 +2060,22 @@ public sealed class PcControlTests(PostgresFixture postgres)
         }
 
         return (agent, slug, guest);
+    }
+
+    /// <summary>O convidado não tem passkey: no próprio PC, desligar segue só com a confirmação da folha.</summary>
+    [Fact]
+    public async Task AGuestShutsDownHisOwnPc_WithoutPasskey()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var (pc, _, guest) = await GuestWithOwnPcAsync(app, "Alice");
+        await using var agent = pc;
+
+        var http = PostAsync(app, "power", new { action = "SHUTDOWN", confirm = true }, guest.Login.AccessToken);
+        var command = await AnswerAsync(agent);
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("body").GetProperty("action").GetString().Should().Be("SHUTDOWN");
     }
 
     // ---- qual PC ----

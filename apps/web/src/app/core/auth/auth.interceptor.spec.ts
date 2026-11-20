@@ -158,6 +158,29 @@ describe('authInterceptor', () => {
     expect(stepUp.confirm).toHaveBeenCalledWith('identity.passkey-remove');
   });
 
+  it.each(['SHUTDOWN', 'RESTART', 'LOGOFF'])(
+    'confirms %s before retrying PC power',
+    async (action) => {
+      stepUp.confirm.mockResolvedValue(true);
+      const url = '/api/v1/pc/power';
+      const command = { action, confirm: true };
+      const result = firstValueFrom(http.post(url, command));
+      (await pending(url)).flush(
+        {
+          type: 'https://uniover.app/problems/step-up-required',
+          code: 'step_up_required',
+          action: 'devices.pc-power',
+        },
+        { status: 403, statusText: 'Forbidden' },
+      );
+      const retry = await pending(url);
+      expect(stepUp.confirm).toHaveBeenCalledExactlyOnceWith('devices.pc-power');
+      expect(retry.request.body).toEqual(command);
+      retry.flush(null, { status: 204, statusText: 'No Content' });
+      await result;
+    },
+  );
+
   it('does not repeat and does not loop when step-up is declined or still required', async () => {
     const body = {
       type: 'https://uniover.app/problems/step-up-required',

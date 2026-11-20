@@ -19,12 +19,13 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     /// API para agente: energia do PC, com as ações do `pc.power.v1` e mais quatro. `LOCK`
     /// bloqueia a sessão; `SLEEP` suspende; `HIBERNATE` hiberna; `MONITOR_OFF` apaga a tela (o
     /// PC segue ligado e qualquer toque no mouse a acende); `SHUTDOWN` e `RESTART` agendam o
-    /// desligamento ou o reinício com a contagem do Windows (aviso na tela do PC) e
+    /// desligamento ou o reinício com uma contagem cancelável no agente, que ao fim pede ao
+    /// Windows sem forçar o fechamento dos programas (eles podem pedir para salvar), e
     /// `CANCEL_SHUTDOWN` cancela essa contagem; `LOGOFF` encerra a sessão do Windows: os
-    /// programas abertos são chamados a fechar (o que não foi salvo pode ser perdido) e o agente
-    /// cai com a sessão, só voltando quando alguém entrar de novo. Só vai a quem declara a
-    /// capacidade `pc.power.v2`. Quem confirma com a pessoa é o app e a API; o agente não repete
-    /// nem adia nada.
+    /// programas abertos são chamados a fechar e podem pedir para salvar e o agente cai com a
+    /// sessão, só voltando quando alguém entrar de novo. Só vai a quem declara a capacidade
+    /// `pc.power.v2`. Quem confirma com a pessoa é o app e a API; fora essa contagem, o agente
+    /// não repete nem adia nada.
     /// </summary>
     public partial class PcPowerV2Message
     {

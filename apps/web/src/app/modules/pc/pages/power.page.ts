@@ -15,7 +15,7 @@ import { tick } from '../input/haptics';
 /** As ações que pedem confirmação numa folha (e a API só aceita com ela): perdem trabalho ou derrubam a conexão. */
 type Confirmed = 'SLEEP' | 'HIBERNATE' | 'SHUTDOWN' | 'RESTART' | 'LOGOFF';
 
-/** As duas que abrem a contagem do Windows, que dá para cancelar. */
+/** As duas que abrem a contagem do agente, que dá para cancelar. */
 type Countdown = 'SHUTDOWN' | 'RESTART';
 
 /** Quanto tempo o botão de cancelar a contagem fica à vista (a contagem do PC é menor que isto). */
@@ -181,17 +181,17 @@ export class PowerPage {
     },
     SHUTDOWN: {
       title: $localize`:@@pc.power.shutdown-title:Desligar o PC?`,
-      text: $localize`:@@pc.power.shutdown-text:O Windows avisa na tela e conta alguns segundos. Dá para cancelar aqui antes do fim.`,
+      text: $localize`:@@pc.power.shutdown-text:O agente espera alguns segundos antes de pedir ao Windows. Dá para cancelar aqui antes do fim.`,
       confirm: $localize`:@@pc.power.shutdown-confirm:Desligar`,
     },
     RESTART: {
       title: $localize`:@@pc.power.restart-title:Reiniciar o PC?`,
-      text: $localize`:@@pc.power.restart-text:O Windows avisa na tela e conta alguns segundos. Dá para cancelar aqui antes do fim. O que não foi salvo pode ser perdido, e o controle volta quando o Windows abrir de novo.`,
+      text: $localize`:@@pc.power.restart-text:O agente espera alguns segundos antes de pedir ao Windows. Dá para cancelar aqui antes do fim. O Windows pode pedir para salvar o trabalho aberto. O controle volta quando o Windows abrir de novo.`,
       confirm: $localize`:@@pc.power.restart-confirm:Reiniciar`,
     },
     LOGOFF: {
       title: $localize`:@@pc.power.logoff-title:Encerrar a sessão do Windows?`,
-      text: $localize`:@@pc.power.logoff-text:Os programas abertos são fechados e o que não foi salvo pode ser perdido. O controle só volta depois que alguém entrar no Windows de novo.`,
+      text: $localize`:@@pc.power.logoff-text:O Windows pode pedir para salvar o trabalho aberto. O controle só volta depois que alguém entrar no Windows de novo.`,
       confirm: $localize`:@@pc.power.logoff-confirm:Encerrar Sessão`,
     },
   };
