@@ -412,6 +412,25 @@ def test_an_edit_erases_then_types_then_presses_the_key_in_one_batch() -> None:
     assert pc_inputs.held_keys_after({}, events) == {}
 
 
+def test_line_breaks_and_tabs_in_the_text_are_enter_and_tab_in_place() -> None:
+    # A `pc.text.v3` traz o texto colado com as linhas: cada quebra é a tecla Enter e cada
+    # tabulação a tecla Tab, no lugar delas e soltas logo depois de apertadas.
+    events = pc_inputs.edit_inputs(0, "a\n\tb", "ENTER")
+    assert [(e.vk, e.scan, e.flags) for e in events] == [
+        (0, ord("a"), KEY_UNICODE),
+        (0, ord("a"), KEY_UNICODE | KEY_UP),
+        (0x0D, 0, 0),
+        (0x0D, 0, KEY_UP),
+        (0x09, 0, 0),
+        (0x09, 0, KEY_UP),
+        (0, ord("b"), KEY_UNICODE),
+        (0, ord("b"), KEY_UNICODE | KEY_UP),
+        (0x0D, 0, 0),
+        (0x0D, 0, KEY_UP),
+    ]
+    assert pc_inputs.held_keys_after({}, events) == {}
+
+
 def test_an_edit_can_be_only_the_erase_only_the_text_or_only_the_key() -> None:
     assert len(pc_inputs.edit_inputs(3, "")) == 6
     assert [e.scan for e in pc_inputs.edit_inputs(0, "x")] == [ord("x"), ord("x")]

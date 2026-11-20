@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/pc.clipboard.v1.schema.json",
+  "title": "pc.clipboard.v1",
+  "description": "Agente para API: o texto da área de transferência do PC (`text`, vazio quando não há texto) e quando foi lido (`at`). Responde a `pc.clipboard.query.v1`: `correlationId` é o do pedido. Pode ser uma senha: a API o repassa uma vez a quem pediu e o descarta, sem registrar, auditar nem guardar. O agente só o manda a uma API que listou `pc.clipboard.v1` em `features`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "pc.clipboard.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "at"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 5000
+        },
+        "at": {
+          "$ref": "../envelope.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  }
+}

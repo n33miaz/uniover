@@ -10,6 +10,7 @@ from uniover_agent.core.domain import TvState, WireConnection
 from uniover_agent.core.envelope_gate import EnvelopeGate
 from uniover_agent.ports import AppIcon, Clock
 from uniover_agent.ports.diagnostics import DiagnosticEvent
+from uniover_agent.ports.pc_media import NowPlaying
 
 INVALID_MESSAGE = "invalid_message"
 
@@ -59,9 +60,10 @@ class EnvelopeFactory:
         update: dict[str, Any] | None = None,
         instance_id: str | None = None,
         handover: bool = False,
+        pc_mouse: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """`agent.hello.v1`. `os_description`, `tv` (tipo, endereço) e `update` (estado da
-        auto-atualização) são só informativos."""
+        """`agent.hello.v1`. `os_description`, `tv` (tipo, endereço), `update` (estado da
+        auto-atualização) e `pc_mouse` (ajustes do mouse do Windows) são só informativos."""
         body: dict[str, Any] = {"agentVersion": agent_version, "capabilities": list(capabilities)}
         if instance_id is not None:
             body["instanceId"] = instance_id
@@ -73,6 +75,8 @@ class EnvelopeFactory:
             body["tv"] = {"kind": tv[0], "host": tv[1]}
         if update is not None:
             body["update"] = update
+        if pc_mouse is not None:
+            body["pcMouse"] = pc_mouse
         return self._build("agent.hello.v1", body, None)
 
     def agent_update_status(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -294,6 +298,24 @@ class EnvelopeFactory:
         """`pc.volume.state.v1`: o volume de agora do PC (nível de 0 a 100 e mudo)."""
         body: dict[str, Any] = {"level": level, "muted": muted, "at": self._utc_now()}
         return self._build("pc.volume.state.v1", body, None)
+
+    def pc_media_state(self, playing: NowPlaying, correlation_id: str) -> dict[str, Any]:
+        """`pc.media.state.v1`: o que o Windows diz estar tocando. Responde a `pc.media.query.v1`
+        (`correlationId` é o do pedido). O título nunca vai para o registro."""
+        body: dict[str, Any] = {
+            "status": playing.status,
+            "title": playing.title,
+            "artist": playing.artist,
+            "app": playing.app,
+            "at": self._utc_now(),
+        }
+        return self._build("pc.media.state.v1", body, correlation_id)
+
+    def pc_clipboard(self, text: str, correlation_id: str) -> dict[str, Any]:
+        """`pc.clipboard.v1`: o texto da área de transferência do PC. Responde a
+        `pc.clipboard.query.v1`. O texto nunca vai para o registro."""
+        body: dict[str, Any] = {"text": text, "at": self._utc_now()}
+        return self._build("pc.clipboard.v1", body, correlation_id)
 
     def pc_device_state(self, device_id: str, state: str) -> dict[str, Any]:
         """`pc.device.state.v1`: a decisão do dono do PC sobre um aparelho (pendente, recusado,

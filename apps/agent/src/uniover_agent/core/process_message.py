@@ -27,6 +27,8 @@ from uniover_agent.ports import LaneHost, PowerIdStore, Transport, TransportErro
 _log = logging.getLogger(__name__)
 
 _KEEPALIVE_TYPE = "api.keepalive.v1"
+# O texto do PC: o único `pc.*` cujo `id` repetido é ignorado (ver `_is_repeat`).
+_PC_TEXT_PREFIX = "pc.text."
 # Comandos do PC têm faixa própria: não esperam as teclas da TV nem as seguram.
 _PC_PREFIX = "pc."
 # O canal direto (`pc.rtc.*`) é sinalização, não comando de entrada: a oferta espera a biblioteca
@@ -251,8 +253,13 @@ class ProcessMessage:
         primeiro (que leva o mesmo id) serve aos dois. Ficam de fora o fluxo sem resposta (o
         movimento do mouse, dezenas por segundo, empurraria os outros ids para fora) e os `pc.*`,
         entrada que a API nunca reenvia e que a faixa do PC (outro laço) responde por conta própria.
+        A exceção é o texto (`pc.text.*`): poucos pedidos, e um trecho colado digitado duas vezes
+        estragaria o campo do PC. O repetido é só ignorado: a resposta do primeiro, que a faixa do
+        PC manda com o mesmo id, serve aos dois.
         """
-        if command.type in self._silent_types or command.type.startswith(_PC_PREFIX):
+        if command.type in self._silent_types or (
+            command.type.startswith(_PC_PREFIX) and not command.type.startswith(_PC_TEXT_PREFIX)
+        ):
             return False
         if _is_power(command):
             return self._is_power_repeat(command)

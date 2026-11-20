@@ -89,6 +89,49 @@ describe('MediaPage', () => {
     });
   });
 
+  describe('Now playing', () => {
+    it('appears in Music only for a PC that declared it', () => {
+      expect(root.querySelector('app-pc-now-playing .now')).toBeNull();
+      store.capabilities.set(['pc.media.state.v1']);
+      fixture.detectChanges();
+      expect(root.querySelector('app-pc-now-playing .now')).not.toBeNull();
+      tab('video').click();
+      fixture.detectChanges();
+      expect(root.querySelector('app-pc-now-playing')).toBeNull();
+    });
+
+    it('asks again shortly after the PC confirmed a track key, but not after the volume', async () => {
+      store.capabilities.set(['pc.media.state.v1']);
+      fixture.detectChanges();
+      await flush();
+      const asked = store.nowPlaying.mock.calls.length;
+      named('Mudo').click();
+      await flush();
+      vi.advanceTimersByTime(1000);
+      await flush();
+      expect(store.nowPlaying).toHaveBeenCalledTimes(asked);
+
+      named('Próxima faixa').click();
+      await flush();
+      vi.advanceTimersByTime(1000);
+      await flush();
+      expect(store.nowPlaying).toHaveBeenCalledTimes(asked + 1);
+    });
+
+    it('does not ask again after a key the PC refused', async () => {
+      store.capabilities.set(['pc.media.state.v1']);
+      fixture.detectChanges();
+      await flush();
+      const asked = store.nowPlaying.mock.calls.length;
+      store.sendMedia.mockResolvedValueOnce(FAILURE);
+      named('Próxima faixa').click();
+      await flush();
+      vi.advanceTimersByTime(1000);
+      await flush();
+      expect(store.nowPlaying).toHaveBeenCalledTimes(asked);
+    });
+  });
+
   describe('Music', () => {
     it('the transport buttons, mute and stop send the media commands', () => {
       named('Tocar ou pausar').click();

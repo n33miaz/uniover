@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { PcArmed } from '../data/pc-armed';
 import { PcStore } from '../data/pc-store';
 import { FakePcStore, createFakePcStore } from '../pc-test-kit';
@@ -16,7 +17,9 @@ describe('ShortcutsPage', () => {
   beforeEach(() => {
     localStorage.clear();
     store = createFakePcStore();
-    TestBed.configureTestingModule({ providers: [{ provide: PcStore, useValue: store }] });
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), { provide: PcStore, useValue: store }],
+    });
     fixture = TestBed.createComponent(ShortcutsPage);
     fixture.detectChanges();
     root = fixture.nativeElement;

@@ -15,6 +15,10 @@ export interface PcStatusBody {
   capabilities?: string[];
   /** O volume que o agente avisou (`pc.volume.v1`); sem isso, a API devolve `null` (sem leitura). */
   volume?: { level: number; muted: boolean } | null;
+  /** A família do sistema do PC (do `hello`): os rótulos Win, ⌘ ou Super. */
+  system?: 'windows' | 'macos' | 'linux';
+  /** Os ajustes do mouse do Windows do PC (`pc.mouse.v1`), só lidos. */
+  mouse?: { acceleration: boolean; speed: number };
 }
 
 export interface PcFailure {

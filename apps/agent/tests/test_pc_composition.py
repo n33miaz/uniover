@@ -24,7 +24,10 @@ from uniover_agent.composition.system import (
 )
 from uniover_agent.config import Settings
 from uniover_agent.core import Command, EnvelopeFactory, EnvelopeGate
+from uniover_agent.core.pc.direct import INPUT_TYPES
 from uniover_agent.main import main
+from uniover_agent.ports.pc import PcUnsupported
+from uniover_agent.ports.pc_media import NowPlaying
 
 from .support import AGENT_ID, TOKEN, FakeApi, FakeAudio, dump, envelope
 
@@ -73,8 +76,9 @@ class FakeInput:
 
 
 class FakePower:
-    def __init__(self) -> None:
+    def __init__(self, hibernation: bool | Exception = True) -> None:
         self.calls: list[tuple[object, ...]] = []
+        self.hibernation = hibernation
 
     def lock(self) -> None:
         self.calls.append(("lock",))
@@ -92,7 +96,9 @@ class FakePower:
         self.calls.append(("restart", delay_seconds))
 
     def hibernation_available(self) -> bool:
-        return True
+        if isinstance(self.hibernation, Exception):
+            raise self.hibernation
+        return self.hibernation
 
     def hibernate(self) -> None:
         self.calls.append(("hibernate",))
@@ -170,9 +176,14 @@ def test_turned_on_declares_the_capability_and_every_command() -> None:
         "pc.control.v1",
         "pc.key.v2",
         "pc.text.v2",
+        "pc.text.v3",
+        "pc.mouse.v1",
         "pc.click.v2",
         "pc.pointer.zoom.v1",
         "pc.power.v2",
+        "pc.power.hibernate.v1",
+        "pc.media.state.v1",
+        "pc.clipboard.v1",
         "pc.volume.v1",
         "pc.op.v1",
         "pc.target.v1",
@@ -181,8 +192,10 @@ def test_turned_on_declares_the_capability_and_every_command() -> None:
         "pc.app.launch.v1",
         "pc.click.v1",
         "pc.click.v2",
+        "pc.clipboard.set.v1",
         "pc.key.v1",
         "pc.key.v2",
+        "pc.media.query.v1",
         "pc.media.v1",
         "pc.pointer.v1",
         "pc.pointer.zoom.v1",
@@ -190,9 +203,81 @@ def test_turned_on_declares_the_capability_and_every_command() -> None:
         "pc.power.v2",
         "pc.text.v1",
         "pc.text.v2",
+        "pc.text.v3",
         "pc.volume.v1",
     ]
     assert [app.id for app in pc.apps] == ["notas"]
+
+
+@pytest.mark.parametrize(
+    "hibernation", [False, OSError("sem resposta"), PcUnsupported("só no Windows")]
+)
+def test_hibernate_is_declared_only_with_hibernation_on_in_this_pc(
+    hibernation: bool | Exception,
+) -> None:
+    settings, transport, envelopes = parts(Settings(pc_control=True))
+    pc = build_pc(
+        settings,
+        transport,
+        envelopes,
+        platform="win32",
+        pc_input=FakeInput(),
+        power=FakePower(hibernation),
+        launcher=FakeLauncher(),
+        audio=FakeAudio(),
+    )
+    assert pc is not None
+    # Sem a hibernação (ou sem como saber) o app nem mostra o botão; o resto da v2 segue.
+    assert pc.present("pc.power.v2")
+    assert not pc.present("pc.power.hibernate.v1")
+    assert "pc.power.v2" in pc.handlers
+
+
+def test_hibernation_is_asked_only_when_a_hello_needs_it_and_only_once() -> None:
+    asked: list[str] = []
+
+    def probe() -> bool:
+        asked.append("hibernação")
+        return True
+
+    settings, transport, envelopes = parts(Settings(pc_control=True))
+    power = FakePower()
+    pc = build_pc(
+        settings,
+        transport,
+        envelopes,
+        platform="win32",
+        pc_input=FakeInput(),
+        power=power,
+        launcher=FakeLauncher(),
+        audio=FakeAudio(),
+        hibernation_probe=probe,
+    )
+    assert pc is not None
+    # Montar o controle não pergunta nada ao sistema, e as outras capacidades não perguntam.
+    assert asked == []
+    assert pc.present("pc.power.v2")
+    assert asked == []
+    # Vários `hello` (reconexões) reusam a primeira resposta; nenhuma ação de energia sai.
+    assert all(pc.present("pc.power.hibernate.v1") for _ in range(3))
+    assert asked == ["hibernação"]
+    assert power.calls == []
+
+
+def test_without_a_probe_the_power_adapter_answers_about_hibernation() -> None:
+    settings, transport, envelopes = parts(Settings(pc_control=True))
+    pc = build_pc(
+        settings,
+        transport,
+        envelopes,
+        platform="win32",
+        pc_input=FakeInput(),
+        power=FakePower(hibernation=False),
+        launcher=FakeLauncher(),
+        audio=FakeAudio(),
+    )
+    assert pc is not None
+    assert not pc.present("pc.power.hibernate.v1")
 
 
 async def test_the_favorites_list_is_announced_with_ids_and_labels_only() -> None:
@@ -379,10 +464,110 @@ async def test_run_serves_the_pc_commands_without_any_tv(
     assert launcher.opened == ["notepad"]
 
 
+class FakeMediaSession:
+    def read(self) -> NowPlaying:
+        return NowPlaying("playing", "Faixa", "Artista", "Spotify.exe")
+
+
+class FakeClipboard:
+    def __init__(self) -> None:
+        self.text = "copiado no PC"
+
+    def read(self) -> str:
+        return self.text
+
+    def write(self, text: str) -> None:
+        self.text = text
+
+
+@pytest.mark.parametrize("input_thread", [True, False])
+async def test_the_data_goes_out_before_the_result_of_the_command_that_asked_for_it(
+    monkeypatch: pytest.MonkeyPatch, input_thread: bool
+) -> None:
+    # A API entrega o texto e o que toca a quem pediu ao ver o resultado: se o resultado saísse
+    # antes do dado, ela responderia vazio (e a leitura da área entraria na trilha como feita).
+    clipboard = FakeClipboard()
+    monkeypatch.setattr(
+        connection_module,
+        "build_pc",
+        partial(
+            build_pc,
+            platform="win32",
+            pc_input=FakeInput(),
+            power=FakePower(),
+            launcher=FakeLauncher(),
+            audio=FakeAudio(),
+            media_session=FakeMediaSession(),
+            clipboard=clipboard,
+        ),
+    )
+    ids = [f"0192f1e4-0000-7000-8000-0000000000c{n}" for n in range(3)]
+
+    async def script(connection: ServerConnection) -> None:
+        now = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        await connection.send(dump(envelope("pc.media.query.v1", {}, ts=now, id=ids[0])))
+        await connection.send(dump(envelope("pc.clipboard.query.v1", {}, ts=now, id=ids[1])))
+        await connection.send(
+            dump(envelope("pc.clipboard.set.v1", {"text": "do celular"}, ts=now, id=ids[2]))
+        )
+        await asyncio.sleep(0.4)
+        await connection.close(4403, "revoked")
+
+    store = FakeSecretStore()
+    store.set(AGENT_ID, TOKEN)
+    silence_noisy_loggers()
+    async with FakeApi(script) as api:
+        settings = Settings(
+            api_url=api.http_url,
+            agent_id=AGENT_ID,
+            allow_insecure=True,
+            pc_control=True,
+            pc_input_thread=input_thread,
+            pc_clipboard_read=True,
+        )
+        assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
+
+    order = [(m["type"], m.get("correlationId")) for m in api.received]
+    for request, data in ((ids[0], "pc.media.state.v1"), (ids[1], "pc.clipboard.v1")):
+        assert order.index((data, request)) < order.index(("command.result.v1", request))
+    state = next(m for m in api.received if m["type"] == "pc.media.state.v1")
+    assert state["body"]["title"] == "Faixa"
+    copied = next(m for m in api.received if m["type"] == "pc.clipboard.v1")
+    assert copied["body"]["text"] == "copiado no PC"
+    results = {
+        m["correlationId"]: m["body"] for m in api.received if m["type"] == "command.result.v1"
+    }
+    assert all(results[request] == {"ok": True} for request in ids)
+    assert clipboard.text == "do celular"
+
+
+def test_the_commands_that_return_data_never_ride_the_direct_channel() -> None:
+    # O canal direto não passa pela API: sem ela não há trilha da leitura da área nem limite de
+    # pedidos, e o dado (que vai pela nuvem) não teria quem o esperasse.
+    returning = {"pc.media.query.v1", "pc.clipboard.query.v1", "pc.clipboard.set.v1"}
+    assert not returning & INPUT_TYPES
+
+
 async def hello_capabilities(
-    monkeypatch: pytest.MonkeyPatch, features: frozenset[str], *, handover: bool = False
+    monkeypatch: pytest.MonkeyPatch,
+    features: frozenset[str],
+    *,
+    handover: bool = False,
+    hibernation: bool = True,
 ) -> list[str]:
     """As capacidades do `hello` de um agente com o controle do PC, em API que lista `features`."""
+    body = await hello_body(monkeypatch, features, handover=handover, hibernation=hibernation)
+    return list(body["capabilities"])
+
+
+async def hello_body(
+    monkeypatch: pytest.MonkeyPatch,
+    features: frozenset[str],
+    *,
+    handover: bool = False,
+    hibernation: bool = True,
+) -> dict[str, Any]:
+    """O corpo do `hello` de um agente com o controle do PC, em API que lista `features`."""
 
     async def listed(base_url: str, wait_seconds: float = 10.0) -> frozenset[str]:
         return features
@@ -395,7 +580,7 @@ async def hello_capabilities(
             build_pc,
             platform="win32",
             pc_input=FakeInput(),
-            power=FakePower(),
+            power=FakePower(hibernation),
             launcher=FakeLauncher(),
             audio=FakeAudio(),
         ),
@@ -417,7 +602,7 @@ async def hello_capabilities(
             update_handover=handover,
         )
         assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
-    return list(api.received[0]["body"]["capabilities"])
+    return dict(api.received[0]["body"])
 
 
 async def test_the_hello_declares_pc_key_v2_only_when_the_api_lists_it(
@@ -452,6 +637,31 @@ async def test_the_hello_declares_pc_text_v2_and_click_v2_only_when_the_api_list
     assert capabilities[-4:] == ["pc.control.v1", "pc.key.v2", "pc.text.v2", "pc.click.v2"]
 
 
+async def test_the_hello_declares_pc_text_v3_only_when_the_api_lists_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    older_api = frozenset({"agent.diagnostics.v1", "tv.pair.v1", "pc.key.v2", "pc.text.v2"})
+    # Sem a v3 na lista, o app segue mandando as quebras de linha como a tecla Enter da v2.
+    assert "pc.text.v3" not in await hello_capabilities(monkeypatch, older_api)
+    capabilities = await hello_capabilities(monkeypatch, older_api | {"pc.text.v3"})
+    assert {"pc.text.v2", "pc.text.v3"} <= set(capabilities)
+
+
+async def test_the_hello_carries_the_windows_mouse_settings_only_when_the_api_lists_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    older_api = frozenset({"agent.diagnostics.v1", "tv.pair.v1"})
+    body = await hello_body(monkeypatch, older_api)
+    # Uma API que não lista `pc.mouse.v1` recusaria o campo: ele nem vai.
+    assert "pc.mouse.v1" not in body["capabilities"]
+    assert "pcMouse" not in body
+
+    body = await hello_body(monkeypatch, older_api | {"pc.mouse.v1"})
+    assert "pc.mouse.v1" in body["capabilities"]
+    # O `conftest` fixa a leitura do Windows (aceleração ligada, velocidade 10).
+    assert body["pcMouse"] == {"acceleration": True, "speed": 10}
+
+
 async def test_the_hello_declares_the_restart_capability_only_when_the_api_lists_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -482,6 +692,38 @@ async def test_the_hello_declares_zoom_and_volume_only_when_the_api_lists_them(
         monkeypatch, older_api | {"pc.pointer.zoom.v1", "pc.volume.v1"}
     )
     assert capabilities[-2:] == ["pc.pointer.zoom.v1", "pc.volume.v1"]
+
+
+async def test_the_hello_declares_hibernate_only_when_the_api_lists_it_and_the_pc_has_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    older_api = frozenset({"agent.diagnostics.v1", "pc.key.v2", "pc.power.v2"})
+    # Uma API anterior recusaria o `hello` com a capacidade nova: sem a listagem, nada de hibernar.
+    capabilities = await hello_capabilities(monkeypatch, older_api)
+    assert "pc.power.v2" in capabilities
+    assert "pc.power.hibernate.v1" not in capabilities
+
+    listed = older_api | {"pc.power.hibernate.v1"}
+    capabilities = await hello_capabilities(monkeypatch, listed)
+    assert "pc.power.hibernate.v1" in capabilities
+    # Com a API listando, mas a hibernação desligada no PC, também não.
+    capabilities = await hello_capabilities(monkeypatch, listed, hibernation=False)
+    assert "pc.power.v2" in capabilities
+    assert "pc.power.hibernate.v1" not in capabilities
+
+
+async def test_the_hello_declares_now_playing_and_clipboard_only_when_the_api_lists_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    older_api = frozenset({"agent.diagnostics.v1", "pc.key.v2"})
+    capabilities = await hello_capabilities(monkeypatch, older_api)
+    assert "pc.media.state.v1" not in capabilities
+    assert "pc.clipboard.v1" not in capabilities
+
+    listed = older_api | {"pc.media.state.v1", "pc.clipboard.v1"}
+    capabilities = await hello_capabilities(monkeypatch, listed)
+    assert "pc.media.state.v1" in capabilities
+    assert "pc.clipboard.v1" in capabilities
 
 
 async def volume_session(

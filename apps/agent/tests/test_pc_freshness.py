@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from uniover_agent.core import Command, ResultStatus
+from uniover_agent.core import Command, CommandResult, Handler, ResultStatus
 from uniover_agent.core.pc import ClickPacer, ClockOffset, PcApp, PcUseTracker, pc_handlers
 from uniover_agent.core.pc.freshness import EXPIRED
 
@@ -117,6 +117,7 @@ class Lab:
         mono_origin: float = 5000.0,
         seeded: bool = True,
         paced: bool = False,
+        extra: dict[str, Handler] | None = None,
     ) -> None:
         self.elapsed = 0.0
         self.sleeps: list[float] = []
@@ -151,6 +152,7 @@ class Lab:
                 use=self.use,
                 pacer=self.pacer,
                 audio=self.audio,
+                extra=extra,
             )
         )
         if seeded:
@@ -672,3 +674,19 @@ async def test_an_edit_with_nothing_to_do_is_refused_not_reported_as_done() -> N
     assert await lab.run("pc.text.v2", {"text": ""}, 0.5) == ("rejected", "invalid_message")
     assert lab.pc.calls == []
     assert (await lab.run("pc.text.v2", {"key": "ENTER"}, 0.5))[0] == "ok"
+
+
+async def test_the_commands_that_return_data_expire_like_a_key() -> None:
+    # A troca da área de transferência pedida muito antes não acontece: o texto colado depois iria
+    # para onde a pessoa já não está olhando.
+    ran: list[str] = []
+
+    async def writes(command: Command) -> CommandResult:
+        ran.append(command.type)
+        return CommandResult(command.id, ResultStatus.OK)
+
+    lab = Lab(extra={"pc.clipboard.set.v1": writes})
+    assert await lab.run("pc.clipboard.set.v1", {"text": "x"}, 10.2) == ("rejected", EXPIRED)
+    assert ran == []
+    assert await lab.run("pc.clipboard.set.v1", {"text": "x"}, 0.3) == ("ok", "")
+    assert ran == ["pc.clipboard.set.v1"]

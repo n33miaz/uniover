@@ -3,6 +3,7 @@
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
+from typing import NoReturn
 
 import pytest
 
@@ -105,6 +106,68 @@ def test_hibernation_availability_and_monitor_off_come_from_the_system_calls() -
     assert called == ["off"]
     with pytest.raises(OSError, match="apagar o monitor"):
         WindowsPcPower(monitor_off=lambda: False).monitor_off()
+
+
+def test_asking_about_hibernation_never_runs_a_power_action() -> None:
+    actions: list[str] = []
+
+    def refused(name: str) -> Callable[..., NoReturn]:
+        def call(*args: object) -> NoReturn:
+            actions.append(name)
+            raise AssertionError(name)
+
+        return call
+
+    power = WindowsPcPower(
+        run=refused("run"),
+        lock=refused("lock"),
+        suspend=refused("suspend"),
+        monitor_off=refused("monitor_off"),
+        hibernation=lambda: True,
+    )
+    assert power.hibernation_available() is True
+    assert power.hibernation_available() is True
+    assert actions == []
+
+
+@pytest.mark.parametrize(
+    ("capabilities", "present"),
+    [
+        (bytes([1] * 8 + [1] + [0] * 20), True),
+        (bytes([1] * 8 + [0] + [1] * 20), False),
+        (bytes([1] * 8), False),
+        (b"", False),
+    ],
+)
+def test_hibernation_is_on_when_the_hibernation_file_exists(
+    capabilities: bytes, present: bool
+) -> None:
+    # `HiberFilePresent` é o nono byte; os oito antes dele (botões, tampa, estados S1 a S5) não
+    # contam, e uma estrutura curta demais não liga nada.
+    assert pc_windows.hiber_file_present(capabilities) is present
+
+
+@pytest.mark.parametrize(
+    ("parameters", "expected"),
+    [
+        ((1, 10), {"acceleration": True, "speed": 10}),
+        ((0, 20), {"acceleration": False, "speed": 20}),
+        ((2, 1), {"acceleration": True, "speed": 1}),
+        ((1, 0), None),
+        ((1, 21), None),
+    ],
+)
+def test_the_windows_mouse_settings_are_only_read_and_checked(
+    parameters: tuple[int, int], expected: dict[str, object] | None
+) -> None:
+    assert pc_windows.read_mouse_settings(lambda: parameters) == expected
+
+
+def test_a_failed_read_of_the_mouse_settings_leaves_them_out() -> None:
+    def broken() -> tuple[int, int]:
+        raise OSError("sem resposta")
+
+    assert pc_windows.read_mouse_settings(broken) is None
 
 
 def test_the_test_suite_can_never_reach_a_real_power_action() -> None:
@@ -517,13 +580,31 @@ def test_a_refused_release_of_a_held_modifier_is_retried_by_the_dead_man_timer()
     flaky.refuse_all = True
     pc.release_all()  # não levanta erro
     ((delay, _),) = timers.live()
-    assert delay == 30
+    assert delay == pytest.approx(0.1)
     flaky.refuse_all = False
     now[0] = 60
     timers.fire_last()
     assert flaky.batches[-1] == [ALT_UP]
     pc.release_all()
     assert flaky.batches[-1] == [ALT_UP] and len(flaky.batches) == 2
+
+
+def test_pointer_traffic_does_not_extend_the_deadline_for_a_cut_unicode_pair() -> None:
+    now = [0.0]
+    timers = Timers()
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    flaky.accept = [1, 0]
+    with pytest.raises(PartialSendError):
+        pc.type_text("o")
+    down = flaky.batches[-1][0]
+    now[0] = 29
+    flaky.accept = [0, None]
+    pc.move(1, 0)
+    now[0] = 30
+    timers.fire_last()
+    assert flaky.batches[-1] == [RawInput("keyboard", down.flags | KEY_UP, scan=down.scan)]
+    assert timers.live() == []
 
 
 def test_a_partial_batch_keeps_a_modifier_already_held_and_lets_go_of_what_it_pressed() -> None:
@@ -665,6 +746,29 @@ def test_a_lone_surrogate_is_refused_and_nothing_is_sent() -> None:
     assert sent.batches == []
 
 
+def test_long_text_uses_ordered_bounded_unicode_batches() -> None:
+    sent = Recorder()
+    pc = WindowsPcInput(sent, start_timer=Timers())
+    text = ("a" * 127 + "😀\nção") * 30
+    pc.type_text(text)
+
+    assert 1 < len(sent.batches)
+    units = bytearray()
+    for batch in sent.batches:
+        assert len(batch) <= 256
+        assert not 0xDC00 <= batch[0].scan <= 0xDFFF
+        for down, up in zip(batch[::2], batch[1::2], strict=True):
+            if down.vk == 0x0D:
+                # A quebra de linha (só a `pc.text.v3` a traz) é a tecla Enter, solta logo depois.
+                assert (down.flags, up.vk, up.flags) == (0, 0x0D, KEY_UP)
+                units.extend("\n".encode("utf-16-le"))
+                continue
+            assert (down.vk, down.flags) == (0, KEY_UNICODE)
+            assert (up.scan, up.flags) == (down.scan, KEY_UNICODE | KEY_UP)
+            units.extend(down.scan.to_bytes(2, "little"))
+    assert units.decode("utf-16-le") == text
+
+
 def test_a_partial_key_batch_releases_every_key_that_went_down() -> None:
     flaky = Flaky()
     pc = WindowsPcInput(flaky, start_timer=Timers())
@@ -700,7 +804,7 @@ def test_a_key_release_the_system_refused_is_retried_by_the_dead_man_timer() -> 
     with pytest.raises(PartialSendError):
         pc.key("T", ["CTRL"])
     ((delay, _),) = timers.live()
-    assert delay == 30
+    assert delay == pytest.approx(0.1)
     now[0] = 30
     timers.fire_last()
     assert [e.vk for e in flaky.batches[-1]] == [ord("T"), 0x11]
@@ -874,6 +978,28 @@ def test_a_partial_edit_batch_releases_the_key_that_went_down() -> None:
     with pytest.raises(PartialSendError):
         pc.edit_text(2, "ab", None)
     assert flaky.batches[-1] == [RawInput("keyboard", flags=KEY_UP, vk=0x08)]
+
+
+def test_a_cut_long_text_retries_a_refused_unicode_release_before_idle_timeout() -> None:
+    now = [0.0]
+    timers = Timers()
+    flaky = Flaky()
+    pc = WindowsPcInput(flaky, monotonic=lambda: now[0], dead_man_seconds=30, start_timer=timers)
+    flaky.accept = [None, 1, 0]  # segundo lote cortado após o aperto, soltura recusada
+    text = "linha\tcom texto\n" * 50
+    with pytest.raises(PartialSendError):
+        pc.type_text(text)
+    assert len(flaky.batches) == 2
+    [down] = flaky.batches[-1]
+    assert down.flags == KEY_UNICODE
+    assert down.scan == ord(text[len(flaky.batches[0]) // 2])
+
+    ((delay, _),) = timers.live()
+    assert 0 < delay <= 0.1
+    now[0] += delay
+    timers.fire_last()
+    assert flaky.batches[-1] == [RawInput("keyboard", flags=KEY_UNICODE | KEY_UP, scan=down.scan)]
+    assert timers.live() == []
 
 
 WHEEL_UP = RawInput("mouse", 0x0800, data=120)

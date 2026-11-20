@@ -62,6 +62,23 @@ def no_real_power_actions(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(pc_windows, name, refuse)
     # Só leitura, mas também fora dos testes: a resposta vem sempre de quem monta o cenário.
     monkeypatch.setattr(pc_windows, "_hibernation_enabled", refuse)
+    # Os ajustes do mouse do Windows (só leitura): fixos nos testes, iguais em qualquer máquina.
+    monkeypatch.setattr(pc_windows, "_mouse_parameters", lambda: (1, 10))
+
+
+@pytest.fixture(autouse=True)
+def no_real_media_or_clipboard(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nenhum teste lê a sessão de mídia nem lê ou troca a área de transferência de quem roda os
+    testes (o texto copiado pode ser uma senha, e a troca apagaria o que a pessoa copiou): o
+    PowerShell do "Tocando agora" e a API da área viram funções que reprovam o teste. Quem precisa
+    de uma resposta injeta a sua (`run` na sessão de mídia, `api` na área de transferência)."""
+    from uniover_agent.adapters import pc_clipboard, pc_media_session  # noqa: PLC0415
+
+    def refuse(*args: object, **kwargs: object) -> object:
+        raise AssertionError("um teste tentou ler a mídia ou a área de transferência de verdade")
+
+    monkeypatch.setattr(pc_media_session, "run_hidden", refuse)
+    monkeypatch.setattr(pc_clipboard, "_system_api", refuse)
 
 
 @pytest.fixture(autouse=True)

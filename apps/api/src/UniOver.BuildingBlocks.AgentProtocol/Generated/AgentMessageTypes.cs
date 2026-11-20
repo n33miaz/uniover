@@ -49,6 +49,15 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>pc.click.v2</c>.</summary>
     public const string PcClickV2 = "pc.click.v2";
 
+    /// <summary>Tipo de mensagem <c>pc.clipboard.query.v1</c>.</summary>
+    public const string PcClipboardQueryV1 = "pc.clipboard.query.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.clipboard.set.v1</c>.</summary>
+    public const string PcClipboardSetV1 = "pc.clipboard.set.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.clipboard.v1</c>.</summary>
+    public const string PcClipboardV1 = "pc.clipboard.v1";
+
     /// <summary>Tipo de mensagem <c>pc.device.state.v1</c>.</summary>
     public const string PcDeviceStateV1 = "pc.device.state.v1";
 
@@ -57,6 +66,12 @@ public static class AgentMessageTypes
 
     /// <summary>Tipo de mensagem <c>pc.key.v2</c>.</summary>
     public const string PcKeyV2 = "pc.key.v2";
+
+    /// <summary>Tipo de mensagem <c>pc.media.query.v1</c>.</summary>
+    public const string PcMediaQueryV1 = "pc.media.query.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.media.state.v1</c>.</summary>
+    public const string PcMediaStateV1 = "pc.media.state.v1";
 
     /// <summary>Tipo de mensagem <c>pc.media.v1</c>.</summary>
     public const string PcMediaV1 = "pc.media.v1";
@@ -99,6 +114,9 @@ public static class AgentMessageTypes
 
     /// <summary>Tipo de mensagem <c>pc.text.v2</c>.</summary>
     public const string PcTextV2 = "pc.text.v2";
+
+    /// <summary>Tipo de mensagem <c>pc.text.v3</c>.</summary>
+    public const string PcTextV3 = "pc.text.v3";
 
     /// <summary>Tipo de mensagem <c>pc.volume.state.v1</c>.</summary>
     public const string PcVolumeStateV1 = "pc.volume.state.v1";
@@ -201,9 +219,14 @@ public static class AgentMessageTypes
         PcAppsV1,
         PcClickV1,
         PcClickV2,
+        PcClipboardQueryV1,
+        PcClipboardSetV1,
+        PcClipboardV1,
         PcDeviceStateV1,
         PcKeyV1,
         PcKeyV2,
+        PcMediaQueryV1,
+        PcMediaStateV1,
         PcMediaV1,
         PcPointerV1,
         PcPointerZoomV1,
@@ -218,6 +241,7 @@ public static class AgentMessageTypes
         PcRtcReconciledV1,
         PcTextV1,
         PcTextV2,
+        PcTextV3,
         PcVolumeStateV1,
         PcVolumeV1,
         TvAdbRebindV1,

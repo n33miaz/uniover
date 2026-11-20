@@ -10,6 +10,7 @@ using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Infrastructure;
+using UniOver.Modules.Devices;
 using UniOver.Modules.Devices.Features.PcControl;
 
 namespace UniOver.IntegrationTests.Devices.PcControl;
@@ -29,9 +30,16 @@ public sealed class PcControlTests(PostgresFixture postgres)
     private const string Zoom = "pc.pointer.zoom.v1";
     private const string Volume = "pc.volume.v1";
     private const string PowerV2 = "pc.power.v2";
+    private const string Hibernate = "pc.power.hibernate.v1";
+    private const string MediaState = "pc.media.state.v1";
+    private const string Clipboard = "pc.clipboard.v1";
 
     private static readonly string[] Ctrl = ["CTRL"];
     private static readonly string[] CtrlShift = ["CTRL", "SHIFT"];
+    private static readonly DevicesAppOptions ClipboardReadEnabled = new()
+    {
+        ConfigureServices = services => services.PostConfigure<DevicesModuleOptions>(options => options.PcClipboardRead = true),
+    };
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -182,6 +190,30 @@ public sealed class PcControlTests(PostgresFixture postgres)
 
         body.GetProperty("capabilities").EnumerateArray().Select(c => c.GetString()).Should().Equal(KeyV2);
     }
+
+    [Theory]
+    [InlineData("Windows 11 (10.0.26200)", "windows")]
+    [InlineData("Darwin 24.0.0", "macos")]
+    [InlineData("Linux 6.12.0", "linux")]
+    public async Task Status_ReportsOnlyTheSystemFamilyFromHello(string os, string family)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAsync();
+        await agent.SendTextAsync(agent.Envelope("agent.hello.v1", new System.Text.Json.Nodes.JsonObject
+        {
+            ["agentVersion"] = "0.1.0",
+            ["capabilities"] = new System.Text.Json.Nodes.JsonArray(Capability),
+            ["os"] = os,
+        }));
+        await TransportApp.WaitUntilAsync(
+            () => app.Presence.Get(app.Agent.Slug)?.Host?.Os == os, "sistema recebido no hello");
+
+        using var response = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: app.Login.AccessToken);
+        var body = await DevicesApp.JsonAsync(response);
+
+        body.GetProperty("system").GetString().Should().Be(family);
+    }
+
 
     [Fact]
     public async Task Status_HasNoVolume_UntilTheAgentAnnouncesIt_AndThenShowsTheLastOne()
@@ -723,10 +755,32 @@ public sealed class PcControlTests(PostgresFixture postgres)
         SameJson(keyCommand.GetProperty("body"), "{\"key\":\"TAB\"}");
     }
 
+    [Fact]
+    public async Task Text_WithLinesAndTabs_GoesAsV3_ToAnAgentThatDeclaredIt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, KeyV2, TextV2, "pc.text.v3");
+
+        // O texto colado com várias linhas vai inteiro, com as quebras e as tabulações no lugar.
+        var pasted = PostAsync(app, "text", new { erase = 1, text = "- item\n\tdetalhe\n" });
+        var command = await AnswerAsync(agent);
+        using var response = await Within(pasted);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.text.v3");
+        SameJson(command.GetProperty("body"), "{\"erase\":1,\"text\":\"- item\\n\\tdetalhe\\n\"}");
+
+        // CR continua proibido: o app troca CRLF por LF antes de mandar.
+        using var invalid = await PostAsync(app, "text", new { text = "a\r\nb" });
+        invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [Theory]
     [InlineData("{\"erase\":3,\"text\":\"a\"}")]
     [InlineData("{\"text\":\"a\",\"key\":\"ENTER\"}")]
     [InlineData("{\"erase\":1}")]
+    // Quebra de linha no texto só vai pela v3: o agente sem ela recebe a recusa, e o app manda a quebra como tecla.
+    [InlineData("{\"text\":\"a\\nb\"}")]
     public async Task Text_ThatNeedsTheV2_Returns409Unsupported_ForAnOlderAgent_AndNothingIsSent(string json)
     {
         await using var app = await TransportApp.StartAsync(postgres);
@@ -1044,7 +1098,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
     [InlineData("text", "{\"erase\":\"3\"}")]
     [InlineData("text", "{\"text\":\"a\",\"key\":\"ESCAPE\"}")]
     [InlineData("text", "{\"erase\":0}")]
-    [InlineData("text", "{\"erase\":2,\"text\":\"a\\nb\"}")]
+    [InlineData("text", "{\"erase\":2,\"text\":\"a\\rb\"}")]
     public async Task AV2BodyOutsideTheContract_Returns400_AndAsksTheAgentNothing(string path, string json)
     {
         await using var app = await TransportApp.StartAsync(postgres);
@@ -1129,7 +1183,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
     [InlineData("key", "{\"key\":\"C\",\"modifiers\":[\"CTRL\",\"CTRL\"]}")]
     [InlineData("key", "{\"key\":\"C\",\"modifiers\":[\"META\"]}")]
     [InlineData("text", "{\"text\":\"\"}")]
-    [InlineData("text", "{\"text\":\"linha1\\nlinha2\"}")]
+    [InlineData("text", "{\"text\":\"linha1\\rlinha2\"}")]
     [InlineData("media", "{\"action\":\"EJECT\"}")]
     [InlineData("media", "{\"action\":\"VOLUME_UP\",\"steps\":11}")]
     [InlineData("power", "{\"action\":\"REBOOT\"}")]
@@ -1376,6 +1430,202 @@ public sealed class PcControlTests(PostgresFixture postgres)
         body.GetRawText().Should().NotContain("texto livre do agente");
     }
 
+    // ---- tocando agora e área de transferência ----
+
+    /// <summary>
+    /// O agente simulado atende um comando que devolve dados como o de verdade: manda a mensagem com o dado (com o <c>correlationId</c> do
+    /// pedido, ou outro, para simular um texto que não é deste pedido) e só depois o resultado.
+    /// </summary>
+    private static async Task<JsonElement> AnswerWithDataAsync(FakeAgent agent, string type, JsonObject body, Guid? correlationId = null)
+    {
+        var command = (await agent.ReceiveAsync())!.Value;
+        var id = command.GetProperty("id").GetGuid();
+        await agent.SendTextAsync(agent.Envelope(type, body, correlationId ?? id));
+        await agent.SendTextAsync(agent.Envelope("command.result.v1", new JsonObject { ["ok"] = true }, id));
+        return command;
+    }
+
+    private static JsonObject NowPlaying(string status, string title) => new()
+    {
+        ["status"] = status,
+        ["title"] = title,
+        ["artist"] = "Elis Regina",
+        ["app"] = "Spotify.exe",
+        ["at"] = "2026-11-14T12:00:00Z",
+    };
+
+    private static JsonObject ClipboardText(string text) => new() { ["text"] = text, ["at"] = "2026-11-14T12:00:00Z" };
+
+    [Fact]
+    public async Task NowPlaying_AsksTheAgent_AndReturnsWhatItSent_WithoutCacheOrAudit()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, MediaState);
+
+        var http = app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/now-playing", bearer: app.Login.AccessToken);
+        var command = await AnswerWithDataAsync(agent, "pc.media.state.v1", NowPlaying("playing", "Águas de Março"));
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        command.GetProperty("type").GetString().Should().Be("pc.media.query.v1");
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        var body = await DevicesApp.JsonAsync(response);
+        body.GetProperty("status").GetString().Should().Be("playing");
+        body.GetProperty("title").GetString().Should().Be("Águas de Março");
+        body.GetProperty("artist").GetString().Should().Be("Elis Regina");
+        body.GetProperty("app").GetString().Should().Be("Spotify.exe");
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event.StartsWith("pc_"), Ct)).Should().Be(0, "só leitura: fora da trilha");
+    }
+
+    [Fact]
+    public async Task NowPlaying_Returns409Unsupported_ForAnAgentWithoutTheCapability_AndNothingIsSent()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+
+        using var response = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/now-playing", bearer: app.Login.AccessToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-key-unsupported");
+    }
+
+    [Fact]
+    public async Task NowPlaying_ReadFailedOnThePc_Returns502_WithTheAgentCode()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, MediaState);
+
+        var http = app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/now-playing", bearer: app.Login.AccessToken);
+        await AnswerAsync(agent, Failed("failed"));
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+    }
+
+    [Fact]
+    public async Task ClipboardRead_ReturnsTheTextOnce_AndAuditsTheReadWithoutTheText()
+    {
+        await using var app = await TransportApp.StartAsync(postgres, ClipboardReadEnabled);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, Clipboard);
+
+        var http = PostAsync(app, "clipboard/read", null, userAgent: "painel/1.0");
+        var command = await AnswerWithDataAsync(agent, "pc.clipboard.v1", ClipboardText("senha-super-secreta"));
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        command.GetProperty("type").GetString().Should().Be("pc.clipboard.query.v1");
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        (await DevicesApp.JsonAsync(response)).GetProperty("text").GetString().Should().Be("senha-super-secreta");
+        app.App.Services.GetRequiredService<PcClipboardInbox>().Count.Should().Be(0, "entregue uma vez e esquecido");
+        await using var db = app.App.Db();
+        var audit = await db.PairingAudit.SingleAsync(a => a.Event == "pc_clipboard_read", Ct);
+        audit.AgentId.Should().Be(app.Agent.Id);
+        audit.UserAgent.Should().Be("painel/1.0");
+    }
+
+    [Fact]
+    public async Task ClipboardRead_NeverHandsOverATextSentForAnotherRequest()
+    {
+        await using var app = await TransportApp.StartAsync(postgres, ClipboardReadEnabled);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, Clipboard);
+
+        var http = PostAsync(app, "clipboard/read", null);
+        await AnswerWithDataAsync(agent, "pc.clipboard.v1", ClipboardText("de outro pedido"), correlationId: Guid.CreateVersion7());
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await DevicesApp.JsonAsync(response)).GetProperty("text").GetString().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ClipboardRead_RefusedByTheAgent_IsAuditedAsAFailedAttempt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres, ClipboardReadEnabled);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, Clipboard);
+
+        var http = PostAsync(app, "clipboard/read", null);
+        await AnswerAsync(agent, Failed("failed"));
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_clipboard_read", Ct)).Should().Be(0);
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_clipboard_read_failed", Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ClipboardRead_IsDisabledByDefault()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, Clipboard);
+
+        using var response = await Within(PostAsync(app, "clipboard/read", null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task ClipboardWrite_SendsTheText_AndAuditsTheWriteAfterTheAgentConfirmed()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, Clipboard);
+
+        var http = PostAsync(app, "clipboard/write", new { text = "linha 1\r\nlinha 2\tfim" });
+        var command = await AnswerAsync(agent);
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be("pc.clipboard.set.v1");
+        command.GetProperty("body").GetProperty("text").GetString().Should().Be("linha 1\r\nlinha 2\tfim");
+        await using var db = app.App.Db();
+        (await db.PairingAudit.SingleAsync(a => a.Event == "pc_clipboard_write", Ct)).AgentId.Should().Be(app.Agent.Id);
+    }
+
+    [Theory]
+    [InlineData(null, 1)]
+    [InlineData("", 1)]
+    [InlineData("a\u0000b", 1)]
+    [InlineData("a\u001bb", 1)]
+    [InlineData("x", 5001)]
+    public async Task ClipboardWrite_OutsideTheContract_Returns400_AndNothingIsSent(string? piece, int times)
+    {
+        // `times` repete o pedaço: o texto longo demais não cabe num atributo.
+        var text = piece is null ? null : string.Concat(Enumerable.Repeat(piece, times));
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, Clipboard);
+
+        using var response = await PostAsync(app, "clipboard/write", new { text });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event.StartsWith("pc_"), Ct)).Should().Be(0);
+
+        // Nada saiu: o próximo comando é o primeiro que o agente recebe.
+        var next = PostAsync(app, "key", new { key = "A" });
+        var command = await AnswerAsync(agent);
+        using var nextResponse = await Within(next);
+        command.GetProperty("type").GetString().Should().Be("pc.key.v1");
+    }
+
+    [Theory]
+    [InlineData("clipboard/read")]
+    [InlineData("clipboard/write")]
+    public async Task Clipboard_Returns409Unsupported_ForAnAgentWithoutTheCapability(string path)
+    {
+        // A leitura ligada na API: o que se confere aqui é a capacidade do agente (desligada, a leitura é 403 antes de tudo).
+        await using var app = await TransportApp.StartAsync(postgres, ClipboardReadEnabled);
+        await using var agent = await ConnectPcAsync(app);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+
+        using var response = await PostAsync(app, path, path.EndsWith("write", StringComparison.Ordinal) ? new { text = "x" } : null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event.StartsWith("pc_"), Ct)).Should().Be(0);
+    }
+
     // ---- energia ----
 
     [Theory]
@@ -1432,7 +1682,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
         string action, bool confirm, string expectedEvent)
     {
         await using var app = await TransportApp.StartAsync(postgres);
-        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerV2);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerV2, Hibernate);
 
         var http = app.App.SendAsync(
             HttpMethod.Post, "/api/v1/pc/power", confirm ? new { action, confirm } : new { action }, app.Login.AccessToken, userAgent: "painel/1.0");
@@ -1489,10 +1739,45 @@ public sealed class PcControlTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Hibernate_Returns409Unsupported_ForAnAgentWithTheV2ButHibernationOff_AndNothingIsSentOrAudited()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        // O agente só declara a capacidade de hibernar com a hibernação ligada no PC: sem ela o pedido nem sai.
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerV2);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+
+        using var response = await PostAsync(app, "power", new { action = "HIBERNATE", confirm = true });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-key-unsupported");
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event.StartsWith("pc_"), Ct)).Should().Be(0);
+
+        // As outras ações da v2 seguem valendo para o mesmo agente.
+        var next = PostAsync(app, "power", new { action = "MONITOR_OFF" });
+        var command = await AnswerAsync(agent);
+        using var nextResponse = await Within(next);
+        nextResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("body").GetProperty("action").GetString().Should().Be("MONITOR_OFF");
+    }
+
+    [Fact]
+    public async Task TheStatus_ListsTheHibernateCapability_OnlyWhenTheAgentDeclaredIt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerV2, Hibernate);
+
+        using var response = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: app.Login.AccessToken);
+
+        var capabilities = (await DevicesApp.JsonAsync(response)).GetProperty("capabilities").EnumerateArray().Select(c => c.GetString()).ToList();
+        capabilities.Should().Contain([PowerV2, Hibernate]);
+    }
+
+    [Fact]
     public async Task ARestartRefusedByTheAgent_IsAuditedAsAFailedAttempt_NotAsDone()
     {
         await using var app = await TransportApp.StartAsync(postgres);
-        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerV2);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerV2, Hibernate);
 
         var http = PostAsync(app, "power", new { action = "HIBERNATE", confirm = true });
         await AnswerAsync(agent, Failed("hibernation_unavailable"));
@@ -1951,8 +2236,8 @@ public sealed class PcControlTests(PostgresFixture postgres)
         using var timedOut = await Within(silent);
         bodies.Add(await timedOut.Content.ReadAsStringAsync(Ct));
 
-        // 4. O pedido é inválido (quebra de linha): recusado antes de sair da API.
-        using var invalid = await PostAsync(app, "text", new { text = secret + "\n" });
+        // 4. O pedido é inválido (retorno de carro, CR): recusado antes de sair da API.
+        using var invalid = await PostAsync(app, "text", new { text = secret + "\r" });
         invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         bodies.Add(await invalid.Content.ReadAsStringAsync(Ct));
 

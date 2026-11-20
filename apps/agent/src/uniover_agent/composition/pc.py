@@ -5,7 +5,7 @@ import contextlib
 import logging
 import sys
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +13,7 @@ from uniover_agent.adapters import windows_scheduling
 from uniover_agent.adapters.local_config import update_config
 from uniover_agent.adapters.loop_lag import LoopLagMonitor
 from uniover_agent.adapters.pc_audio import WindowsPcAudio
+from uniover_agent.adapters.pc_clipboard import WindowsPcClipboard
 from uniover_agent.adapters.pc_direct_aiortc import aiortc_installed, build_peer
 from uniover_agent.adapters.pc_input_thread import (
     ExceptionHandler,
@@ -20,11 +21,13 @@ from uniover_agent.adapters.pc_input_thread import (
     MainLoopSender,
     PcInputThread,
 )
+from uniover_agent.adapters.pc_media_session import WindowsPcMediaSession
 from uniover_agent.adapters.pc_windows import (
     WindowsPcForeground,
     WindowsPcInput,
     WindowsPcLauncher,
     WindowsPcPower,
+    read_mouse_settings,
 )
 from uniover_agent.adapters.stall_dump import StallDumper
 from uniover_agent.adapters.system_clock import SystemClock
@@ -32,11 +35,16 @@ from uniover_agent.composition.system import EXIT_OK
 from uniover_agent.config import Settings, config_path
 from uniover_agent.core import (
     PC_CLICK_V2_CAPABILITY,
+    PC_CLIPBOARD_CAPABILITY,
     PC_CONTROL_CAPABILITY,
+    PC_HIBERNATE_CAPABILITY,
     PC_KEY_V2_CAPABILITY,
+    PC_MEDIA_STATE_CAPABILITY,
+    PC_MOUSE_CAPABILITY,
     PC_POWER_V2_CAPABILITY,
     PC_RTC_CAPABILITY,
     PC_TEXT_V2_CAPABILITY,
+    PC_TEXT_V3_CAPABILITY,
     PC_VOLUME_CAPABILITY,
     PC_ZOOM_CAPABILITY,
     ClickPacer,
@@ -54,7 +62,10 @@ from uniover_agent.core import (
     TvDirectBridge,
     parse_favorites,
     pc_apps_announcer,
+    pc_clipboard_query_handler,
+    pc_clipboard_set_handler,
     pc_handlers,
+    pc_media_query_handler,
     pc_rtc_handlers,
     volume_after_hello,
 )
@@ -82,6 +93,8 @@ from uniover_agent.ports import (
     Transport,
     TransportError,
 )
+from uniover_agent.ports.pc import PcUnsupported
+from uniover_agent.ports.pc_media import PcClipboard, PcMediaSession
 
 _log = logging.getLogger("uniover_agent")
 
@@ -134,6 +147,17 @@ class PcSetup:
     # Solta os modificadores e botões que a execução anterior do agente deixou apertados (a que esta
     # substitui numa passagem sem queda); roda no laço da entrada, por `on_lane`.
     release_orphans: Callable[[], None] | None = None
+    # As capacidades que dependem do que este PC tem (hoje, só a hibernação ligada): cada uma só vai
+    # ao `hello` se a sua pergunta responde sim (ver `present`).
+    conditions: dict[str, Callable[[], bool]] = field(default_factory=dict)
+    # Os ajustes do mouse do Windows (só lidos), para o `hello` (`pcMouse`); `None` sem leitor.
+    mouse_settings: Callable[[], dict[str, Any] | None] | None = None
+
+    def present(self, capability: str) -> bool:
+        """Este PC tem o que a capacidade pede? Quem monta o `hello` só pergunta depois de a API
+        listá-la: a pergunta ao sistema não acontece à toa."""
+        condition = self.conditions.get(capability)
+        return condition is None or condition()
 
     def start(self) -> None:
         """Sobe o laço da entrada (se há) e pede a proteção da memória. Chamado uma vez, já no laço
@@ -242,6 +266,82 @@ class PcSetup:
             await asyncio.to_thread(self.host.stop)
 
 
+def _hibernation_on(read: Callable[[], bool]) -> bool:
+    """A resposta do sistema sobre a hibernação. Sem resposta conta como desligada: melhor esconder
+    "Hibernar" que oferecê-lo em vão."""
+    try:
+        return read()
+    except PcUnsupported, OSError:
+        _log.info("não deu para saber se a hibernação está ligada; Hibernar fica de fora")
+        return False
+
+
+class HibernationProbe:
+    """A hibernação está ligada neste PC? O `hello` só declara `pc.power.hibernate.v1` com ela, e o
+    app só mostra "Hibernar" com a capacidade.
+
+    A pergunta (só leitura: nunca hiberna nem chama nada de energia) sai na primeira vez que um
+    `hello` precisa da resposta, e não antes: montar o controle do PC não toca no sistema, e uma API
+    que não lista a capacidade nunca a faz perguntar. A resposta fica guardada para os `hello`
+    seguintes (reconexões) até o agente reiniciar; ligada ou desligada depois, vale a conferência
+    de cada pedido de hibernar (`hibernation_unavailable`), que pergunta de novo na hora."""
+
+    def __init__(self, read: Callable[[], bool]) -> None:
+        self._read = read
+        self._answer: bool | None = None
+
+    def __call__(self) -> bool:
+        if self._answer is None:
+            self._answer = _hibernation_on(self._read)
+        return self._answer
+
+
+def _capabilities() -> list[str]:
+    """O que este agente sabe fazer no PC. As `v2`, `pc.rtc.v1` e as outras novas aqui são só o que
+    ele sabe; o `hello` só as declara depois de a API listá-las (`declarable_capabilities`), e a da
+    hibernação, além disso, só com ela ligada no PC (`PcSetup.present`)."""
+    return [
+        PC_CONTROL_CAPABILITY,
+        PC_KEY_V2_CAPABILITY,
+        PC_TEXT_V2_CAPABILITY,
+        PC_TEXT_V3_CAPABILITY,
+        PC_MOUSE_CAPABILITY,
+        PC_CLICK_V2_CAPABILITY,
+        PC_ZOOM_CAPABILITY,
+        PC_POWER_V2_CAPABILITY,
+        PC_HIBERNATE_CAPABILITY,
+        PC_MEDIA_STATE_CAPABILITY,
+        PC_CLIPBOARD_CAPABILITY,
+        PC_VOLUME_CAPABILITY,
+        PC_OP_CAPABILITY,
+        PC_TARGET_CAPABILITY,
+    ]
+
+
+def _reply_handlers(  # noqa: PLR0913 - portas e opção de leitura
+    media_session: PcMediaSession,
+    clipboard: PcClipboard,
+    sender: Sender,
+    envelopes: EnvelopeFactory,
+    use: PcUseTracker,
+    *,
+    clipboard_read: bool,
+) -> dict[str, Handler]:
+    """Os comandos que devolvem dados ("Tocando agora" e área de transferência). A resposta sai
+    pela faixa do PC, com o seu próprio remetente e a sua fábrica de envelopes. Só a área de
+    transferência é uso de verdade e conta para a atualização do agente; a pergunta periódica do
+    que toca não."""
+    handlers = {
+        "pc.media.query.v1": pc_media_query_handler(media_session, sender, envelopes),
+        "pc.clipboard.set.v1": use.noting(pc_clipboard_set_handler(clipboard)),
+    }
+    if clipboard_read:
+        handlers["pc.clipboard.query.v1"] = use.noting(
+            pc_clipboard_query_handler(clipboard, sender, envelopes)
+        )
+    return handlers
+
+
 def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com padrão
     settings: Settings,
     transport: Transport,
@@ -253,6 +353,10 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     launcher: PcLauncher | None = None,
     audio: PcAudio | None = None,
     foreground: PcForeground | None = None,
+    media_session: PcMediaSession | None = None,
+    clipboard: PcClipboard | None = None,
+    hibernation_probe: Callable[[], bool] | None = None,
+    mouse_settings: Callable[[], dict[str, Any] | None] | None = None,
     clock_source: Clock | None = None,
     on_clock_skew: Callable[[float], None] | None = None,
     on_expired: Callable[[float], None] | None = None,
@@ -276,7 +380,9 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     `isolate_input` (precisa de um laço rodando: o do agente) põe a faixa do PC e o canal direto
     num laço de eventos próprio, numa thread com prioridade acima do normal: quem vem de lá para cá
     (resultados, avisos de diagnóstico, o aviso do volume) volta ao laço do agente sem nunca prender
-    a entrada. A thread só sobe em `PcSetup.start()`."""
+    a entrada. A thread só sobe em `PcSetup.start()`. `hibernation_probe` responde se a hibernação
+    está ligada (só leitura; padrão: a pergunta do adaptador de energia), feita uma vez e só quando
+    o `hello` precisa (ver `HibernationProbe`)."""
     if not settings.pc_control:
         return None
     if platform != "win32":
@@ -336,7 +442,8 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     )
     handlers = pc_handlers(
         pc_input,
-        power or WindowsPcPower(),
+        # O mesmo adaptador responde, mais abaixo, se a hibernação está ligada.
+        (power_port := power or WindowsPcPower()),
         launcher or WindowsPcLauncher(),
         apps,
         shutdown_delay_seconds=settings.pc_shutdown_delay_seconds,
@@ -346,20 +453,16 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         audio=audio,
         volume_changed=volume_changed,
         foreground=foreground or WindowsPcForeground(),
+        extra=_reply_handlers(
+            media_session or WindowsPcMediaSession(),
+            clipboard or WindowsPcClipboard(),
+            sender,
+            lane_envelopes,
+            use,
+            clipboard_read=settings.pc_clipboard_read,
+        ),
     )
-    # As capacidades `v2` e `pc.rtc.v1` aqui são só o que este agente sabe; o `hello` só as declara
-    # depois de a API listá-las (`declarable_capabilities`).
-    capabilities = [
-        PC_CONTROL_CAPABILITY,
-        PC_KEY_V2_CAPABILITY,
-        PC_TEXT_V2_CAPABILITY,
-        PC_CLICK_V2_CAPABILITY,
-        PC_ZOOM_CAPABILITY,
-        PC_POWER_V2_CAPABILITY,
-        PC_VOLUME_CAPABILITY,
-        PC_OP_CAPABILITY,
-        PC_TARGET_CAPABILITY,
-    ]
+    capabilities = _capabilities()
     approvals = devices
     if approvals is not None:
         capabilities.append(PC_DEVICE_CAPABILITY)
@@ -427,6 +530,12 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
         sender.send,
         main_call,
         release_orphans=pc_input.release_orphans,
+        conditions={
+            PC_HIBERNATE_CAPABILITY: HibernationProbe(
+                hibernation_probe or power_port.hibernation_available
+            )
+        },
+        mouse_settings=mouse_settings or read_mouse_settings,
     )
 
 

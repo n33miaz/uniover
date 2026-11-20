@@ -10,6 +10,8 @@ export interface PcFavorite {
   readonly label: string;
 }
 
+export type PcSystem = 'windows' | 'macos' | 'linux';
+
 /** O que a API sabe do controle do PC desta conta. */
 export interface PcStatus {
   /** Existe um computador com o controle do PC ligado (mesmo que esteja desconectado agora). */
@@ -27,6 +29,27 @@ export interface PcStatus {
    * volume, ou ainda sem leitura). A API só o manda com o PC conectado.
    */
   readonly volume: PcVolumeLevel | null;
+  readonly system?: PcSystem;
+  /**
+   * Os ajustes do mouse do Windows do PC, só lidos pelo agente (`pc.mouse.v1`): o "aprimorar a precisão do ponteiro" e a
+   * velocidade (1 a 20). Sem eles (agente anterior, PC fora do ar) o campo não vem.
+   */
+  readonly mouse?: PcMouseSettings;
+}
+
+/** Os ajustes do mouse do Windows do PC. */
+export interface PcMouseSettings {
+  readonly acceleration: boolean;
+  readonly speed: number;
+}
+
+function parseMouse(dto: unknown): PcMouseSettings | null {
+  if (!dto || typeof dto !== 'object') return null;
+  const body = dto as Record<string, unknown>;
+  const speed = body['speed'];
+  if (typeof body['acceleration'] !== 'boolean' || typeof speed !== 'number') return null;
+  if (!Number.isInteger(speed) || speed < 1 || speed > 20) return null;
+  return { acceleration: body['acceleration'], speed };
 }
 
 /** O nível e o mudo do volume do PC. */
@@ -43,6 +66,8 @@ export function parsePcStatus(dto: unknown): PcStatus | null {
   const body = dto as Record<string, unknown>;
   if (typeof body['available'] !== 'boolean' || typeof body['online'] !== 'boolean') return null;
   const apps = Array.isArray(body['apps']) ? body['apps'] : [];
+  const system = body['system'];
+  const mouse = parseMouse(body['mouse']);
   return {
     available: body['available'],
     online: body['online'],
@@ -57,6 +82,8 @@ export function parsePcStatus(dto: unknown): PcStatus | null {
       ? body['capabilities'].filter((item): item is string => typeof item === 'string')
       : [],
     volume: parseVolume(body['volume']),
+    ...(system === 'windows' || system === 'macos' || system === 'linux' ? { system } : {}),
+    ...(mouse ? { mouse } : {}),
   };
 }
 

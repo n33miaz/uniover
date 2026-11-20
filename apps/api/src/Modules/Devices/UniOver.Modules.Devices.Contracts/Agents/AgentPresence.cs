@@ -9,7 +9,13 @@ namespace UniOver.Modules.Devices.Contracts.Agents;
 /// <param name="Os">Sistema do PC, texto curto (por exemplo <c>Windows 11 (10.0.26200)</c>).</param>
 /// <param name="TvKind"><c>android</c> ou <c>samsung</c>.</param>
 /// <param name="TvHost">Endereço da TV na rede do PC.</param>
-public sealed record AgentHostInfo(string? Os, string? TvKind, string? TvHost);
+/// <param name="PcMouse">Os ajustes do mouse do Windows (<c>pcMouse</c>, só lidos pelo agente): só em memória, para o controle do PC.</param>
+public sealed record AgentHostInfo(string? Os, string? TvKind, string? TvHost, PcMouseInfo? PcMouse = null);
+
+/// <summary>Os ajustes do mouse do Windows que o agente leu (nunca alterou).</summary>
+/// <param name="Acceleration">"Aprimorar a precisão do ponteiro" ligado.</param>
+/// <param name="Speed">Velocidade do ponteiro, de 1 a 20 (10 é o padrão do Windows).</param>
+public sealed record PcMouseInfo(bool Acceleration, int Speed);
 
 /// <summary>
 /// O que o agente conta da própria auto-atualização (<c>update</c> do <c>hello</c> e <c>agent.update.status.v1</c>). Só

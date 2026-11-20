@@ -5,7 +5,7 @@ import type { TabItem } from '../../shared/ui/tab-bar/tab-bar';
 import { PcPage } from './pc-page';
 
 // As abas do módulo ficam aqui; a barra de baixo as lê pelo `data.tabs` da rota (o título do cabeçalho vem da rota `pc`).
-// A Energia mora dentro de "Mais": a aba segue marcada nela.
+// A Energia e a área de transferência moram dentro de "Mais": a aba segue marcada nelas.
 const TABS: readonly TabItem[] = [
   { link: '/pc', label: $localize`:@@pc.tab.mouse:Mouse`, icon: 'mouse' },
   { link: '/pc/atalhos', label: $localize`:@@pc.tab.shortcuts:Atalhos`, icon: 'shortcuts' },
@@ -14,7 +14,7 @@ const TABS: readonly TabItem[] = [
     link: '/pc/mais',
     label: $localize`:@@pc.tab.more:Mais`,
     icon: 'more',
-    also: ['/pc/energia', '/pc/controles'],
+    also: ['/pc/energia', '/pc/controles', '/pc/area-de-transferencia'],
   },
 ];
 
@@ -65,6 +65,10 @@ export const PC_ROUTES: Routes = [
       {
         path: 'energia',
         loadComponent: () => import('./pages/power.page').then((m) => m.PowerPage),
+      },
+      {
+        path: 'area-de-transferencia',
+        loadComponent: () => import('./pages/clipboard.page').then((m) => m.ClipboardPage),
       },
       {
         path: 'controles',

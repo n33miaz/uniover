@@ -88,13 +88,174 @@ internal sealed class PcVolumeStore : IAgentPresenceListener
 }
 
 /// <summary>
+/// O último "tocando agora" que cada agente avisou (<c>pc.media.state.v1</c>). Em memória e da instância, como o volume: o título é
+/// conteúdo da pessoa, nunca vai para o banco nem para o registro, e some quando o agente cai ou reconecta (era de outra sessão).
+/// </summary>
+internal sealed class PcMediaStates : IAgentPresenceListener
+{
+    private readonly object _gate = new();
+    private readonly Dictionary<string, PcNowPlaying> _states = new(StringComparer.Ordinal);
+
+    public void Set(string agentSlug, PcNowPlaying state)
+    {
+        lock (_gate)
+        {
+            _states[agentSlug] = state;
+        }
+    }
+
+    public PcNowPlaying? Get(string agentSlug)
+    {
+        lock (_gate)
+        {
+            return _states.GetValueOrDefault(agentSlug);
+        }
+    }
+
+    public void OnPresenceChanged(AgentPresenceInfo info)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        if (!info.Connected || info.HelloAt is null)
+        {
+            lock (_gate)
+            {
+                _states.Remove(info.AgentId);
+            }
+        }
+    }
+}
+
+/// <summary>
+/// O texto da área de transferência do PC que o agente acabou de mandar (<c>pc.clipboard.v1</c>), à espera do pedido que o leu. Pode ser
+/// uma senha: fica preso ao agente e ao <c>correlationId</c> daquele pedido (duas leituras ao mesmo tempo nunca trocam de texto), é entregue
+/// UMA vez (<see cref="Take"/> apaga), só vale por <see cref="Lifetime"/>, só existe em memória, nunca é registrado, e some quando o agente
+/// cai ou reconecta.
+/// </summary>
+internal sealed class PcClipboardInbox(TimeProvider time) : IAgentPresenceListener
+{
+    /// <summary>Quanto o texto espera por quem o pediu; depois disso foi esquecido.</summary>
+    public static readonly TimeSpan Lifetime = TimeSpan.FromSeconds(30);
+
+    private readonly object _gate = new();
+    private readonly HashSet<(string Agent, Guid Request)> _expected = [];
+    private readonly Dictionary<(string Agent, Guid Request), (string Text, DateTimeOffset At, ITimer Timer)> _texts = [];
+
+    public IDisposable Expect(string agentSlug, Guid requestId, CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            _expected.Add((agentSlug, requestId));
+        }
+        return new PendingRead(() => Cancel(agentSlug, requestId), cancellationToken);
+    }
+
+    private void Cancel(string agentSlug, Guid requestId)
+    {
+        lock (_gate)
+        {
+            var key = (agentSlug, requestId);
+            _expected.Remove(key);
+            Discard(key);
+        }
+    }
+
+    private sealed class PendingRead(Action cancel, CancellationToken cancellationToken) : IDisposable
+    {
+        private readonly CancellationTokenRegistration _registration = cancellationToken.Register(cancel);
+
+        public void Dispose()
+        {
+            _registration.Dispose();
+            cancel();
+        }
+    }
+
+    private void Discard((string Agent, Guid Request) key)
+    {
+        if (_texts.Remove(key, out var entry))
+        {
+            entry.Timer.Dispose();
+        }
+    }
+
+    public void Set(string agentSlug, Guid requestId, string text)
+    {
+        var now = time.GetUtcNow();
+        lock (_gate)
+        {
+            var key = (agentSlug, requestId);
+            if (!_expected.Remove(key))
+            {
+                return;
+            }
+
+            ITimer? timer = null;
+            timer = time.CreateTimer(_ =>
+            {
+                lock (_gate)
+                {
+                    if (_texts.TryGetValue(key, out var current) && ReferenceEquals(current.Timer, timer))
+                    {
+                        Discard(key);
+                    }
+                }
+            }, null, Lifetime, Timeout.InfiniteTimeSpan);
+            _texts[key] = (text, now, timer);
+        }
+    }
+
+    /// <summary>O texto do pedido <paramref name="requestId"/>, uma única vez; nulo se não há (ou se esperou demais).</summary>
+    public string? Take(string agentSlug, Guid requestId)
+    {
+        lock (_gate)
+        {
+            if (!_texts.Remove((agentSlug, requestId), out var entry))
+            {
+                return null;
+            }
+
+            entry.Timer.Dispose();
+            return time.GetUtcNow() - entry.At >= Lifetime ? null : entry.Text;
+        }
+    }
+
+    /// <summary>Quantos textos esperam agora (só para os testes conferirem que nada sobra).</summary>
+    public int Count
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _texts.Count;
+            }
+        }
+    }
+
+    public void OnPresenceChanged(AgentPresenceInfo info)
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        if (!info.Connected || info.HelloAt is null)
+        {
+            lock (_gate)
+            {
+                _expected.RemoveWhere(key => string.Equals(key.Agent, info.AgentId, StringComparison.Ordinal));
+                foreach (var key in _texts.Keys.Where(k => string.Equals(k.Agent, info.AgentId, StringComparison.Ordinal)).ToList())
+                {
+                    Discard(key);
+                }
+            }
+        }
+    }
+}
+
+/// <summary>
 /// O computador que atende o pedido: o agente, se está conectado agora e o que ele declarou no último <c>hello</c> (a
 /// presença é lida a cada pedido: a lista acompanha uma atualização do agente sem esperar nada). <c>HelloAt</c> é quando
 /// chegou o <c>hello</c> da sessão de agora; nulo = as capacidades não são desta sessão (agente "esperado de volta" depois de
 /// uma queda ou de a API reiniciar guarda as de antes), e nada se decide por elas.
 /// </summary>
 internal sealed record PcTarget(
-    Guid AgentId, string Slug, bool Connected, IReadOnlyList<string> Capabilities, DateTimeOffset? HelloAt);
+    Guid AgentId, string Slug, bool Connected, IReadOnlyList<string> Capabilities, DateTimeOffset? HelloAt, string? Os = null, PcMouseInfo? Mouse = null);
 
 /// <summary>Um agente ativo com a capacidade do controle do PC, como o resolvedor o vê.</summary>
 internal sealed record PcCandidate(
@@ -104,7 +265,9 @@ internal sealed record PcCandidate(
     DateTimeOffset CreatedAt,
     bool Connected,
     IReadOnlyList<string> Capabilities,
-    DateTimeOffset? HelloAt = null);
+    DateTimeOffset? HelloAt = null,
+    string? Os = null,
+    PcMouseInfo? Mouse = null);
 
 /// <summary>Um agente ativo de uma pessoa, como o banco o devolve (a presença nunca entra aqui: é lida a cada pedido).</summary>
 internal sealed record PcAgentRow(Guid Id, string Slug, Guid PairedBy, DateTimeOffset CreatedAt);
@@ -204,7 +367,9 @@ internal sealed class PcAgentResolver(DevicesDbContext db, IAgentPresenceReader 
             .Where(x => x.Info is not null && x.Info.Capabilities.Contains(PcMessages.Capability, StringComparer.Ordinal))
             .Select(x => new PcCandidate(x.Agent.Id, x.Agent.Slug, x.Agent.PairedBy, x.Agent.CreatedAt, x.Info!.Connected, x.Info.Capabilities,
                 // Só vale o `hello` de uma sessão viva: quem está "esperado de volta" ainda não mandou o desta conexão.
-                x.Info.Connected && x.Info.ConnectedSince is not null ? x.Info.HelloAt : null));
+                x.Info.Connected && x.Info.ConnectedSince is not null ? x.Info.HelloAt : null,
+                x.Info.Host?.Os,
+                x.Info.Host?.PcMouse));
 
         return Choose(candidates, userId);
     }
@@ -237,7 +402,7 @@ internal sealed class PcAgentResolver(DevicesDbContext db, IAgentPresenceReader 
             .OrderByDescending(c => c.Connected)
             .ThenBy(c => c.CreatedAt)
             .FirstOrDefault();
-        return chosen is null ? null : new PcTarget(chosen.AgentId, chosen.Slug, chosen.Connected, chosen.Capabilities, chosen.HelloAt);
+        return chosen is null ? null : new PcTarget(chosen.AgentId, chosen.Slug, chosen.Connected, chosen.Capabilities, chosen.HelloAt, chosen.Os, chosen.Mouse);
     }
 }
 
@@ -535,10 +700,12 @@ internal sealed class PcAgentMessageHandler(
     PcRtcClosures closures,
     PcVolumeStore volume,
     PcDeviceStates deviceStates,
-    PcRtcReconciler? reconciler = null) : IAgentMessageHandler
+    PcRtcReconciler? reconciler = null,
+    PcMediaStates? media = null,
+    PcClipboardInbox? clipboard = null) : IAgentMessageHandler
 {
     public IReadOnlyCollection<string> HandledTypes { get; } =
-        [AgentMessageTypes.PcAppsV1, AgentMessageTypes.PcRtcAnswerV1, AgentMessageTypes.PcRtcClosedV1, AgentMessageTypes.PcRtcReconcileV1, AgentMessageTypes.PcVolumeStateV1, AgentMessageTypes.PcDeviceStateV1];
+        [AgentMessageTypes.PcAppsV1, AgentMessageTypes.PcRtcAnswerV1, AgentMessageTypes.PcRtcClosedV1, AgentMessageTypes.PcRtcReconcileV1, AgentMessageTypes.PcVolumeStateV1, AgentMessageTypes.PcDeviceStateV1, AgentMessageTypes.PcMediaStateV1, AgentMessageTypes.PcClipboardV1];
 
     public async Task HandleAsync(InboundMessage message, CancellationToken cancellationToken)
     {
@@ -593,6 +760,32 @@ internal sealed class PcAgentMessageHandler(
             volume.Set(
                 message.AgentId,
                 new PcVolumeState(message.Body.GetProperty("level").GetInt32(), message.Body.GetProperty("muted").GetBoolean()));
+            return;
+        }
+
+        // O que toca agora: só o último fica, só em memória, e o título nunca é registrado.
+        if (string.Equals(message.Type, AgentMessageTypes.PcMediaStateV1, StringComparison.Ordinal))
+        {
+            media?.Set(
+                message.AgentId,
+                new PcNowPlaying(
+                    message.Body.GetProperty("status").GetString()!,
+                    message.Body.GetProperty("title").GetString()!,
+                    message.Body.GetProperty("artist").GetString()!,
+                    message.Body.GetProperty("app").GetString()!,
+                    message.Body.GetProperty("at").GetDateTimeOffset()));
+            return;
+        }
+
+        // O texto da área de transferência, à espera do pedido que o leu (entregue uma vez, nunca registrado). Sem o pedido de origem não há
+        // a quem entregar: descartado.
+        if (string.Equals(message.Type, AgentMessageTypes.PcClipboardV1, StringComparison.Ordinal))
+        {
+            if (message.CorrelationId is { } requestId)
+            {
+                clipboard?.Set(message.AgentId, requestId, message.Body.GetProperty("text").GetString()!);
+            }
+
             return;
         }
 

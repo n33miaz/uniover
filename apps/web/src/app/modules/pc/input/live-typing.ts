@@ -141,7 +141,8 @@ export function textSteps(insert: string): TextStep[] {
  * quando o apagar passa de `PC_TEXT_ERASE_CHUNK`, quando o texto passa de `MAX_TEXT`, ou quando depois de uma tecla ainda há
  * texto (o pedido não digita depois de apertar a tecla do fim).
  */
-export function editRequests(diff: TextDiff): PcTextEdit[] {
+export function editRequests(diff: TextDiff, lines = false): PcTextEdit[] {
+  if (lines) return lineEditRequests(diff);
   const requests: PcTextEdit[] = [];
   let erase = diff.erase;
   while (erase > PC_TEXT_ERASE_CHUNK) {
@@ -173,6 +174,52 @@ export function editRequests(diff: TextDiff): PcTextEdit[] {
   return requests;
 }
 
+/**
+ * O texto como a `pc.text.v3` o leva: CRLF e CR viram uma quebra de linha (LF) só, a tabulação fica, e os outros caracteres
+ * de controle saem.
+ */
+export function lineText(insert: string): string {
+  return insert
+    .replace(/\r\n?/g, '\n')
+    .replace(/[^\P{Cc}\n\t]/gu, '');
+}
+
+/**
+ * Uma diferença do campo em pedidos `pc.text.v3` (PC que a declarou): as quebras de linha e as tabulações ficam dentro do
+ * texto, então um texto colado com muitas linhas sai em poucos pedidos, em ordem, e nenhum deles termina com uma tecla presa
+ * esperando o próximo. Cada pedido leva até `MAX_TEXT` pontos de código e no máximo `PC_TEXT_ERASE_CHUNK` apertos de tecla
+ * (cada apagado, quebra de linha e tabulação é um), o mesmo teto do apagar grande.
+ */
+function lineEditRequests(diff: TextDiff): PcTextEdit[] {
+  const requests: PcTextEdit[] = [];
+  let erase = diff.erase;
+  while (erase > PC_TEXT_ERASE_CHUNK) {
+    requests.push({ erase: PC_TEXT_ERASE_CHUNK });
+    erase -= PC_TEXT_ERASE_CHUNK;
+  }
+  let text: string[] = [];
+  let presses = erase;
+  const flush = () => {
+    if (erase > 0 || text.length > 0) {
+      requests.push({
+        ...(erase > 0 ? { erase } : {}),
+        ...(text.length > 0 ? { text: text.join('') } : {}),
+      });
+    }
+    erase = 0;
+    text = [];
+    presses = 0;
+  };
+  for (const char of lineText(diff.insert)) {
+    const isKey = char === '\n' || char === '\t';
+    if (text.length === MAX_TEXT || (isKey && presses >= PC_TEXT_ERASE_CHUNK)) flush();
+    text.push(char);
+    if (isKey) presses++;
+  }
+  flush();
+  return requests;
+}
+
 /** O que a digitação ao vivo pede ao PC (o `PcStore` já guarda a ordem e o prazo de cada pedido). */
 export interface TyperSender {
   /** `options` só vai quando a tecla leva `repeat` ou `action` (um toque comum chama como sempre). */
@@ -188,6 +235,11 @@ export interface TyperSender {
   edit?(edit: PcTextEdit): Promise<PcFailure | null>;
   /** O PC entende `pc.text.v2` agora? Sem isso (agente anterior) cada apagar e cada trecho saem como sempre. */
   canEdit?(): boolean;
+  /**
+   * O PC entende `pc.text.v3` agora? Então a quebra de linha e a tabulação vão dentro do texto (o texto colado chega inteiro,
+   * em ordem); sem isso viram as teclas Enter e Tab da `pc.text.v2`, como sempre.
+   */
+  canEditLines?(): boolean;
 }
 
 export interface TyperEvents {
@@ -326,7 +378,8 @@ export class LiveTyper {
         : this.sender.key(op.key, op.modifiers, op.options);
     }
     if (this.sender.edit !== undefined && this.sender.canEdit?.() === true) {
-      for (const request of editRequests(op.diff)) {
+      const lines = this.sender.canEditLines?.() === true;
+      for (const request of editRequests(op.diff, lines)) {
         if (generation !== this.generation) return null;
         const failure = await this.sendEdit(
           this.sender.edit.bind(this.sender),

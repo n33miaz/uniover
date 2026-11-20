@@ -20,7 +20,11 @@ public sealed record OutboundMessage(
     AgentDelivery Delivery = AgentDelivery.WaitForReconnect,
     string? OperationId = null,
     string? DeviceId = null,
-    string? DeviceName = null);
+    string? DeviceName = null)
+{
+    /// <summary>Identificador reservado quando o chamador precisa correlacionar dados antes do envio.</summary>
+    public Guid? RequestId { get; init; }
+}
 
 /// <summary>Como o gateway trata a mensagem quando não há sessão viva com o agente.</summary>
 public enum AgentDelivery

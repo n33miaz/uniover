@@ -1,9 +1,17 @@
-import { ChangeDetectionStrategy, Component, ElementRef, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { PcInput } from '../data/pc-input';
 import { PcStore } from '../data/pc-store';
 import type { PcMediaAction } from '../data/pc-types';
 import { tick } from '../input/haptics';
 import { PcFavorites } from '../ui/favorites';
+import { PcNowPlayingPanel } from '../ui/now-playing';
 import { PcSlidesPanel } from '../ui/slides-panel';
 import { PcTransport } from '../ui/transport';
 import { PcVideoPanel } from '../ui/video-panel';
@@ -19,11 +27,20 @@ const MODES: readonly MediaMode[] = ['music', 'video', 'slides'];
  * segundos, tela cheia, legendas) e Slides (anterior e próximo ocupando a tela, iniciar, ir ao slide, cronômetro). Música e
  * Vídeo dividem o volume (relativo: arrastar, ou os botões, que repetem segurando), o mudo e o parar. Embaixo, nos três, os
  * favoritos que o próprio PC deixa abrir. Os comandos de mídia saem por `sendMedia` e as teclas pela fila de entrada
- * compartilhada: os dois pelo mesmo `PcApi`, então o canal direto e a nuvem valem para tudo.
+ * compartilhada: os dois pelo mesmo `PcApi`, então o canal direto e a nuvem valem para tudo. Na Música, em cima, o "Tocando
+ * agora" do Windows do PC, para um PC que o declara.
  */
 @Component({
   selector: 'app-pc-media-page',
-  imports: [PcFavorites, PcSlidesPanel, PcTransport, PcVideoPanel, PcVolume, PcVolumeLevelControl],
+  imports: [
+    PcFavorites,
+    PcNowPlayingPanel,
+    PcSlidesPanel,
+    PcTransport,
+    PcVideoPanel,
+    PcVolume,
+    PcVolumeLevelControl,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="modes" role="tablist" aria-label="Modo" i18n-aria-label="@@pc.media.modes">
@@ -54,6 +71,7 @@ const MODES: readonly MediaMode[] = ['music', 'video', 'slides'];
     >
       @switch (mode()) {
         @case ('music') {
+          <app-pc-now-playing />
           <app-pc-transport
             previousLabel="Faixa anterior"
             i18n-previousLabel="@@pc.media.previous"
@@ -140,8 +158,21 @@ export class MediaPage {
     );
   }
 
+  private readonly nowPlaying = viewChild(PcNowPlayingPanel);
+
   protected press(action: PcMediaAction): void {
     tick();
-    void this.store.sendMedia(action);
+    const sent = this.store.sendMedia(action);
+    // A faixa e a pausa mudam o que toca: o "Tocando agora" pergunta de novo assim que o PC confirmou.
+    if (
+      action === 'PLAY_PAUSE' ||
+      action === 'NEXT' ||
+      action === 'PREVIOUS' ||
+      action === 'STOP'
+    ) {
+      void sent.then((failure) => {
+        if (failure === null) this.nowPlaying()?.refreshSoon();
+      });
+    }
   }
 }

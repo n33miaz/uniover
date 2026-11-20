@@ -118,6 +118,7 @@ INPUT_TYPES: Final = frozenset(
         "pc.key.v2",
         "pc.text.v1",
         "pc.text.v2",
+        "pc.text.v3",
         "pc.media.v1",
         # O zoom da pinça e o volume absoluto: a mesma validação, idade, taxa e fila das demais.
         "pc.pointer.zoom.v1",
@@ -133,7 +134,7 @@ TV_TYPES: Final = TV_KEY_TYPES | {TV_TEXT_TYPE}
 TV_BLOCKED_KEY: Final = "POWER"
 # As mensagens v2 do canal de entrada: o `ready` as lista, e o app só as manda a quem as lista.
 CHANNEL_V2_TYPES: Final = frozenset(
-    {"pc.click.v2", "pc.text.v2", "pc.pointer.zoom.v1", "pc.volume.v1"}
+    {"pc.click.v2", "pc.text.v2", "pc.text.v3", "pc.pointer.zoom.v1", "pc.volume.v1"}
 )
 # O que, chegando pela nuvem, fecha o canal em uso: os comandos de entrada (clique, tecla, texto,
 # mídia e segurar). O movimento do mouse NÃO está aqui: ele chega sem espera (a API responde antes
@@ -159,7 +160,8 @@ MAX_KEY_REPEAT: Final = 50
 MAX_ERASE: Final = 200
 # O pedido mais pesado que o contrato aceita em apertos de tecla: apagar o máximo e apertar a tecla
 # do fim. O balde das teclas nunca é menor que isto, ou um pedido válido seria recusado só
-# pelo canal.
+# pelo canal. Na `pc.text.v3` cada quebra de linha e tabulação também conta; o app nunca manda
+# mais de 81 apertos num pedido (ver `PC_TEXT_ERASE_CHUNK` no app), então ela cabe sempre.
 MAX_PRESSES_PER_REQUEST: Final = MAX_ERASE + 1
 # O maior `seq` que o contrato aceita nos pedidos de entrada da nuvem.
 MAX_CLOUD_SEQ: Final = 2_147_483_647
@@ -446,12 +448,16 @@ def _is_release(message_type: str, body: dict[str, Any]) -> bool:
 
 def _press_cost(message_type: str, body: dict[str, Any]) -> int:
     """Quantas teclas o comando aperta: `repeat` conta cada aperto, e na edição de texto cada
-    Backspace (`erase`) e a tecla do fim (o mesmo orçamento da nuvem; o texto puro paga um)."""
-    if message_type == "pc.text.v2":
+    Backspace (`erase`) e a tecla do fim (o mesmo orçamento da nuvem; o texto puro paga um). Na
+    `pc.text.v3` cada quebra de linha e cada tabulação do texto também é uma tecla."""
+    if message_type in ("pc.text.v2", "pc.text.v3"):
         erase = _as_int(body.get("erase"))
         presses = (max(0, min(MAX_ERASE, erase)) if erase is not None else 0) + (
             1 if body.get("key") is not None else 0
         )
+        text = body.get("text")
+        if message_type == "pc.text.v3" and isinstance(text, str):
+            presses += text.count("\n") + text.count("\t")
         return max(1, presses)
     if message_type != "pc.key.v2":
         return 1

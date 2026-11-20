@@ -7,7 +7,7 @@ não é conferido de novo; o que depende do PC (um favorito que sumiu da configu
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import Any, Final
 
@@ -47,6 +47,11 @@ PC_CONTROL_CAPABILITY: Final = "pc.control.v1"
 PC_KEY_V2_CAPABILITY: Final = "pc.key.v2"
 # Idem: apagar, digitar e apertar uma tecla numa mensagem só.
 PC_TEXT_V2_CAPABILITY: Final = "pc.text.v2"
+# Idem: a mesma edição, com quebra de linha e tabulação dentro do texto (o texto colado com várias
+# linhas vai inteiro, em ordem, em vez de um pedido por linha).
+PC_TEXT_V3_CAPABILITY: Final = "pc.text.v3"
+# Idem: o `hello` leva os ajustes do mouse do Windows (`pcMouse`, só lidos) para o app mostrá-los.
+PC_MOUSE_CAPABILITY: Final = "pc.mouse.v1"
 # Idem: clique com modificadores e com o intervalo do toque anterior (duplo clique confiável).
 PC_CLICK_V2_CAPABILITY: Final = "pc.click.v2"
 # Idem: zoom pela roda do mouse com o Ctrl apertado (a pinça).
@@ -55,6 +60,10 @@ PC_ZOOM_CAPABILITY: Final = "pc.pointer.zoom.v1"
 PC_VOLUME_CAPABILITY: Final = "pc.volume.v1"
 # Idem: reiniciar, encerrar a sessão, hibernar e apagar o monitor (`pc.power.v2`).
 PC_POWER_V2_CAPABILITY: Final = "pc.power.v2"
+# Idem, e só com a hibernação ligada neste PC: sem ela o app nem mostra "Hibernar". O pedido
+# ainda confere na hora (`hibernation_unavailable`): a hibernação pode ser desligada depois do
+# `hello`.
+PC_HIBERNATE_CAPABILITY: Final = "pc.power.hibernate.v1"
 # Idem: o `operationId` do pedido HTTP no envelope dos comandos (liga os registros).
 PC_OP_CAPABILITY: Final = "pc.op.v1"
 # Idem: o aparelho do app (`deviceId`, `deviceName`) no envelope, para o dono aprová-lo no PC.
@@ -341,8 +350,10 @@ def pc_text_handler(pc: PcInput) -> Handler:
 
 
 def pc_text_v2_handler(pc: PcInput) -> Handler:
-    """`pc.text.v2`: apagar `erase` caracteres, digitar `text` e apertar `key` (Enter ou Tab), nesta
-    ordem e no mesmo toque no sistema. O texto nunca vai para o registro: pode ser uma senha."""
+    """`pc.text.v2` e `pc.text.v3`: apagar `erase` caracteres, digitar `text` e apertar `key` (Enter
+    ou Tab), nesta ordem e no mesmo toque no sistema. Na v3 o texto pode trazer quebra de linha e
+    tabulação (o contrato de cada uma é que limita). O texto nunca vai para o registro: pode ser
+    uma senha."""
 
     def handle(command: Command) -> CommandResult:
         body = command.body
@@ -494,6 +505,7 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     audio: PcAudio | None = None,
     volume_changed: Callable[[], None] | None = None,
     foreground: PcForeground | None = None,
+    extra: Mapping[str, Handler] | None = None,
 ) -> dict[str, Handler]:
     """Todos os comandos `pc.*` que este agente executa quando o controle está ligado.
 
@@ -506,7 +518,8 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     a nuvem e o canal direto, que entregam ao mesmo conjunto de manipuladores). `audio` é o áudio do
     PC (sem ele não há `pc.volume.v1`); `volume_changed` é avisado depois de um comando mudar o
     volume (o aviso do nível sai atrás dele). `foreground` lê o programa da frente: com ele, a tecla
-    e o texto que trazem `target` só saem com aquele programa na frente (ver `focus`).
+    e o texto que trazem `target` só saem com aquele programa na frente (ver `focus`). `extra` são
+    comandos que devolvem dados (ver `replies`), já prontos: aqui só ganham a validade dos comandos.
     """
     offset = clock or ClockOffset()
     clicks = pacer or ClickPacer()
@@ -563,6 +576,7 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
         ),
         "pc.text.v1": fresh(noted(focused(pc_text_handler(pc))), MAX_COMMAND_AGE_SECONDS),
         "pc.text.v2": fresh(noted(focused(pc_text_v2_handler(pc))), MAX_COMMAND_AGE_SECONDS),
+        "pc.text.v3": fresh(noted(focused(pc_text_v2_handler(pc))), MAX_COMMAND_AGE_SECONDS),
         # O zoom é um lote só (Ctrl, roda, Ctrl): um zoom velho cairia em outra janela, então
         # vale só dentro da validade dos comandos.
         "pc.pointer.zoom.v1": fresh(noted(pc_zoom_handler(pc)), MAX_COMMAND_AGE_SECONDS),
@@ -577,6 +591,8 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
             noted(pc_app_launch_handler(launcher, apps)), MAX_COMMAND_AGE_SECONDS
         ),
     }
+    for message_type, handle in (extra or {}).items():
+        handlers[message_type] = fresh(handle, MAX_COMMAND_AGE_SECONDS)
     if audio is not None:
         handlers["pc.volume.v1"] = fresh(
             noted(pc_volume_handler(audio, changed=volume_changed)), MAX_COMMAND_AGE_SECONDS

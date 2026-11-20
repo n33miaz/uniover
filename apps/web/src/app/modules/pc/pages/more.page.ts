@@ -1,10 +1,11 @@
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { PcStore } from '../data/pc-store';
 import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
 
 /**
  * Mais: uma linha larga por assunto, sem texto explicativo. Energia leva à tela dela (as confirmações continuam lá) e
- * Ajustes abre a folha de ajustes do mouse.
+ * Ajustes abre a folha de ajustes do mouse. A área de transferência só aparece para um PC que a declara.
  */
 @Component({
   selector: 'app-pc-more-page',
@@ -34,6 +35,19 @@ import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
           </svg>
         </a>
       </li>
+      @if (store.supportsClipboard()) {
+        <li>
+          <a class="row" routerLink="/pc/area-de-transferencia">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path [attr.d]="'M9 4h6v3H9zM7 5.5H5.5v15h13v-15H17M8.5 11h7M8.5 15h5'" />
+            </svg>
+            <span i18n="@@pc.more.clipboard">Área de Transferência</span>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
+              <path [attr.d]="'M9 6l6 6-6 6'" />
+            </svg>
+          </a>
+        </li>
+      }
       <li>
         <button type="button" class="row" (click)="settingsOpen.set(true)">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -112,5 +126,6 @@ import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
   `,
 })
 export class MorePage {
+  protected readonly store = inject(PcStore);
   protected readonly settingsOpen = signal(false);
 }

@@ -36,6 +36,7 @@ from uniover_agent.core.pc.direct import (
     RTC_TYPES,
     DirectRefused,
     _Bucket,
+    _press_cost,
     _Rate,
 )
 from uniover_agent.ports import (
@@ -2152,7 +2153,27 @@ async def test_clicks_queued_behind_a_release_do_not_start_a_new_wait() -> None:
 async def test_the_ready_message_lists_the_v2_commands_this_agent_accepts(lab: Lab) -> None:
     peer = await lab.open_authenticated()
     ready = [m for c, m in peer.sent if c == INPUT_CHANNEL and m.get("k") == "ready"]
-    assert ready[0]["caps"] == ["pc.click.v2", "pc.pointer.zoom.v1", "pc.text.v2", "pc.volume.v1"]
+    assert ready[0]["caps"] == [
+        "pc.click.v2",
+        "pc.pointer.zoom.v1",
+        "pc.text.v2",
+        "pc.text.v3",
+        "pc.volume.v1",
+    ]
+
+
+async def test_the_v3_text_with_lines_goes_through_the_channel_and_pays_each_line(
+    lab: Lab,
+) -> None:
+    peer = await lab.open_authenticated()
+    peer.phone(INPUT_CHANNEL, lab.command("pc.text.v3", {"text": "a\n\tb", "key": "ENTER"}, "t"))
+    await settle()
+
+    assert peer.acks() == [{"k": "ack", "i": "t", "ok": True}]
+    assert lab.pc.calls == [("edit", 0, "a\n\tb", "ENTER")]
+    assert _press_cost("pc.text.v3", {"text": "a\n\tb", "key": "ENTER"}) == 3
+    # Na v2 o texto não tem quebra: só o `erase` e o `key` contam.
+    assert _press_cost("pc.text.v2", {"erase": 2, "text": "ab"}) == 2
 
 
 # o balde das teclas: o pedido mais pesado do contrato nunca é recusado só pelo canal

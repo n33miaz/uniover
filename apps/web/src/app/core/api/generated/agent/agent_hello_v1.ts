@@ -52,13 +52,18 @@ export type AgentHelloV1BodyCapabilitiesItem =
   | 'tv.rtc.v1'
   | 'pc.rtc.reconcile.v1'
   | 'pc.text.v2'
+  | 'pc.text.v3'
   | 'pc.click.v2'
   | 'pc.pointer.zoom.v1'
   | 'pc.volume.v1'
   | 'pc.power.v2'
+  | 'pc.power.hibernate.v1'
+  | 'pc.media.state.v1'
+  | 'pc.clipboard.v1'
   | 'pc.op.v1'
   | 'pc.device.v1'
-  | 'pc.target.v1';
+  | 'pc.target.v1'
+  | 'pc.mouse.v1';
 export type AgentHelloV1BodyTvKind = 'android' | 'samsung';
 export type AgentHelloV1BodyUpdateOutcome =
   'not_checked' | 'updating' | 'updated' | 'up_to_date' | 'failed' | 'blocked' | 'rolled_back';
@@ -85,8 +90,16 @@ export interface AgentHelloV1Body {
   handover?: boolean;
   capabilities: AgentHelloV1BodyCapabilitiesItem[];
   os?: string;
+  pcMouse?: AgentHelloV1BodyPcMouse;
   tv?: AgentHelloV1BodyTv;
   update?: AgentHelloV1BodyUpdate;
+}
+/**
+ * Os ajustes do mouse do Windows deste PC, só lidos (nunca alterados): `acceleration` é o "aprimorar a precisão do ponteiro" e `speed` a velocidade do ponteiro (1 a 20; 10 é o padrão do Windows). O Windows já os aplica ao movimento que o agente manda; o app os mostra e segue a aceleração quando a pessoa não escolheu. Só vai com a capacidade `pc.mouse.v1` (que o agente só declara depois de a API listá-la em `features`).
+ */
+export interface AgentHelloV1BodyPcMouse {
+  acceleration: boolean;
+  speed: number;
 }
 export interface AgentHelloV1BodyTv {
   kind: AgentHelloV1BodyTvKind;
