@@ -5,14 +5,12 @@ import { AccountScope } from '../../../core/session/account-scope';
 import { OfflineQueue } from '../../../core/offline-queue/offline-queue';
 import { QUEUE_RUNTIME } from '../../../core/offline-queue/queue-ports';
 import { CatalogRepository } from '../data/catalog/catalog-repository';
-import type { LocalExercise } from '../data/catalog/exercise';
 import { ProgressRepository, type WeekSummary } from '../data/progress/progress-repository';
 import type { LocalRoutine } from '../data/routines/routine';
 import { RoutineRepository } from '../data/routines/routine-repository';
 import type { LocalSession } from '../data/sessions/session';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { TrainingSync } from '../data/sync/training-sync';
-import { summarizeLastSets } from '../exercises/last-set';
 import {
   addDays,
   civilDateOf,
@@ -40,23 +38,6 @@ export function programStartDismissedKey(accountId: string, day: string): string
 
 export const FORGOTTEN_AFTER_MS = 12 * 60 * 60 * 1000;
 
-/** Uma linha da rotina do dia, como a tela de Hoje a mostra. */
-export interface RoutineLine {
-  readonly key: string;
-  /** `null` quando o exercício já não está no catálogo. */
-  readonly name: string | null;
-  /** Para a miniatura da linha; `null` quando o exercício já não está no catálogo. */
-  readonly slug: string | null;
-  readonly sets: number;
-  readonly repMin: number;
-  readonly repMax: number;
-  readonly superset: boolean;
-  /** "40 kg × 10": a melhor série da última vez; `null` sem registro. */
-  readonly last: string | null;
-  /** Carga que a sugestão pede quando ela SOBE em relação à última vez; `null` quando a carga fica. */
-  readonly tryKg: number | null;
-}
-
 /** Treino aberto em outro aparelho, com há quanto tempo. */
 export interface OtherDevice {
   readonly session: LocalSession;
@@ -75,7 +56,8 @@ export interface PreviousWorkout {
 }
 
 /** O que acontece ao pedir para iniciar um treino. */
-export type StartOutcome = 'started' | 'resumed' | 'blocked' | 'storage-full' | 'program-choice';
+export type StartOutcome =
+  'started' | 'resumed' | 'blocked' | 'storage-full' | 'program-choice' | 'day-changed';
 
 const SESSION_URL = /\/sessions\/([^/?]+)(?:\/sets\/([^/?]+))?$/;
 
@@ -111,7 +93,6 @@ export class TodayStore {
   readonly week = signal<WeekSummary | null>(null);
   /** O treino de ontem (ou o último antes de hoje); `null` quando ainda não há nenhum para resumir. */
   readonly previousWorkout = signal<PreviousWorkout | null>(null);
-  readonly lines = signal<readonly RoutineLine[]>([]);
   readonly chosenRoutineId = signal<string | null>(null);
   /** A ficha do programa da semana para hoje, calculada no aparelho (vale sem rede). */
   readonly plan = signal<DayPlan>({ routineId: null, resting: false });
@@ -213,8 +194,6 @@ export class TodayStore {
     return id === undefined ? 0 : (this.pendingSetsBySession().get(id) ?? 0);
   });
 
-  private linesTicket = 0;
-
   constructor() {
     // Decide uma vez, quando o banco responde, se este aparelho é novo.
     effect(() => {
@@ -242,10 +221,6 @@ export class TodayStore {
       this.queue.pendingCount();
       this.queue.failedCount();
       untracked(() => void this.readQueue());
-    });
-    effect(() => {
-      const entry = this.selected();
-      untracked(() => void this.loadLines(entry));
     });
   }
 
@@ -435,6 +410,10 @@ export class TodayStore {
 
   /** Abre o treino de uma rotina (ou o treino livre, sem rotina). */
   async start(routineId: string | null): Promise<StartOutcome> {
+    if (this.lastDay !== '' && this.lastDay !== this.dayKey()) {
+      await this.loadHome();
+      return 'day-changed';
+    }
     if (this.needsProgramChoice()) return 'program-choice';
     const result = await this.sessions.start(routineId);
     switch (result.status) {
@@ -488,47 +467,5 @@ export class TodayStore {
     }
     this.pendingSetsBySession.set(new Map([...pending].map(([id, ids]) => [id, ids.size])));
     this.failedSessionIds.set([...failed]);
-  }
-
-  private async loadLines(entry: RoutineEntry | undefined): Promise<void> {
-    const ticket = ++this.linesTicket;
-    try {
-      await this.readLines(entry, ticket);
-    } catch {
-      // Sem banco local a rotina fica sem as linhas de "última vez": o cartão do dia segue valendo.
-      if (ticket === this.linesTicket) this.lines.set([]);
-    }
-  }
-
-  private async readLines(entry: RoutineEntry | undefined, ticket: number): Promise<void> {
-    if (entry === undefined) {
-      this.lines.set([]);
-      return;
-    }
-    const lines: RoutineLine[] = [];
-    for (const item of entry.routine.items) {
-      const exercise: LocalExercise | undefined = await this.catalog.get(item.exerciseId);
-      const [last, suggestion] = await Promise.all([
-        this.sessions.lastPerformance(item.exerciseId),
-        this.progress.lastLoadSuggestion(item),
-      ]);
-      const lastText = last && exercise ? summarizeLastSets(last.sets, exercise.recordType) : null;
-      const lastMax = Math.max(0, ...(last?.sets ?? []).map((set) => set.weightKg ?? 0));
-      lines.push({
-        key: item.id,
-        name: exercise?.name ?? null,
-        slug: exercise?.slug ?? null,
-        sets: item.targetSets,
-        repMin: item.repMin,
-        repMax: item.repMax,
-        superset: item.supersetGroup !== null,
-        last: lastText,
-        tryKg:
-          suggestion.weightKg !== null && suggestion.weightKg > lastMax
-            ? suggestion.weightKg
-            : null,
-      });
-    }
-    if (ticket === this.linesTicket) this.lines.set(lines);
   }
 }

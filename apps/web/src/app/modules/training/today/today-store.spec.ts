@@ -4,7 +4,7 @@ import { CatalogRepository } from '../data/catalog/catalog-repository';
 import { RoutineRepository } from '../data/routines/routine-repository';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { setupSessions } from '../data/sessions/session-data-test-kit';
-import { catalog, item, saveRoutine, seedHistory } from '../shell/screen-test-kit';
+import { catalog, item, saveRoutine } from '../shell/screen-test-kit';
 import { ExerciseHistory } from './exercise-history';
 import { DOUBLE_TAP_MS, LiveStore } from './live-store';
 import { EMPTY_FIELDS } from './set-draft';
@@ -204,6 +204,25 @@ describe('TodayStore', () => {
         expect(store.resting()).toBe(false);
       });
 
+      it('confere o dia antes de iniciar com o cartão de sexta ainda aberto', async () => {
+        const { t, ter, store } = await program();
+        const friday = await saveRoutine('Sexta · Peito', [item('c1', 'supino-reto', 0)]);
+        await t.trainingDb.routines.update(friday.id, { programId: 'p', weekdays: [5] });
+
+        t.runtime.time = day(4);
+        await store.loadHome();
+        expect(store.selected()?.routine.id).toBe(friday.id);
+
+        t.runtime.time = day(8);
+        expect(await store.start(friday.id)).toBe('day-changed');
+        expect(store.selected()?.routine.id).toBe(ter.id);
+        const sessions = TestBed.inject(SessionRepository);
+        expect(await sessions.activeSession()).toBeUndefined();
+
+        expect(await store.start(ter.id)).toBe('started');
+        expect((await sessions.activeSession())?.routineId).toBe(ter.id);
+      });
+
       it('rests on the weekend, offering no routine, and goes back to training on Monday', async () => {
         const { t, seg, store } = await program();
 
@@ -231,36 +250,6 @@ describe('TodayStore', () => {
         expect(store.chosenRoutineId()).toBeNull();
         expect(store.selected()).toBeUndefined();
       });
-    });
-
-    it('lines carry the last time and a higher load only when the suggestion goes up', async () => {
-      const t = await setup();
-      // Três séries no topo da faixa (10): a sugestão sobe um degrau de 2,5 kg. No agachamento a faixa não fechou.
-      await seedHistory(t.trainingDb, 'supino-reto', [
-        [1, 40, 10],
-        [1, 40, 10],
-        [1, 40, 10],
-      ]);
-      await seedHistory(t.trainingDb, 'agachamento', [[1, 60, 8]]);
-      await saveRoutine('Treino A', [
-        item('a1', 'supino-reto', 0, { targetSets: 3, repMin: 6, repMax: 10 }),
-        item('a2', 'agachamento', 1, { targetSets: 3, repMin: 6, repMax: 10, supersetGroup: 1 }),
-        item('a3', 'prancha', 2, { supersetGroup: 1 }),
-      ]);
-      const store = TestBed.inject(TodayStore);
-
-      await store.loadHome();
-      TestBed.tick();
-      await vi.waitFor(() => expect(store.lines()).toHaveLength(3));
-
-      const [bench, squat, plank] = store.lines();
-      expect(bench).toMatchObject({
-        name: 'Supino reto com barra',
-        last: '40 kg × 10',
-        tryKg: 42.5,
-      });
-      expect(squat).toMatchObject({ last: '60 kg × 8', tryKg: null, superset: true });
-      expect(plank).toMatchObject({ last: null, tryKg: null, superset: true });
     });
   });
 
@@ -318,20 +307,6 @@ describe('TodayStore', () => {
       expect(store.catalogCount()).toBe(0);
       expect(store.entries()).toEqual([]);
       expect(store.failedSessionIds()).toEqual([]);
-    });
-
-    it('keeps the routine of the day without the "last time" lines when the history cannot be read', async () => {
-      await setup();
-      await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
-      const read = vi.spyOn(TestBed.inject(CatalogRepository), 'get').mockRejectedValue(down);
-      const store = TestBed.inject(TodayStore);
-
-      await store.loadHome();
-      TestBed.tick();
-      await vi.waitFor(() => expect(read).toHaveBeenCalled());
-
-      expect(store.selected()?.routine.name).toBe('Treino A');
-      expect(store.lines()).toEqual([]);
     });
   });
 });

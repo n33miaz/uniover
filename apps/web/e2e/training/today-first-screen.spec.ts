@@ -105,7 +105,7 @@ test.describe('Hoje: a primeira tela', () => {
       const all = await page.evaluate(() =>
         Array.from(
           document.querySelectorAll(
-            '.routine, .routine-top, .routine-name, .meta, .go, .routine-toggle, .week, .week-head, .week-days, .week-bottom, .stats, .links li, .actions',
+            '.routine, .routine-top, .routine-name, .meta, .go, .week, .week-head, .week-days, .week-bottom, .stats, .links li, .actions',
           ),
         ).map((node) => {
           const r = node.getBoundingClientRect();
@@ -121,13 +121,12 @@ test.describe('Hoje: a primeira tela', () => {
     }
     expect(await page.evaluate(() => window.scrollY), 'a tela não rolou').toBe(0);
 
-    // O cartão do dia abre com o mesmo respiro das outras telas (12 px sob a folga do cabeçalho): nem colado ao círculo de
-    // voltar, nem com o vão que sobrava embaixo do cabeçalho.
+    // O calendário abre com o mesmo respiro das outras telas.
     const header = await box(page, 'app-page-top-bar');
-    const card = await box(page, '.routine');
+    const card = await box(page, '.week');
     const gap = card.y - (header.y + header.height);
-    expect(gap, 'vão entre o cabeçalho e o cartão do dia').toBeGreaterThanOrEqual(12);
-    expect(gap, 'vão entre o cabeçalho e o cartão do dia').toBeLessThanOrEqual(14);
+    expect(gap, 'vão entre o cabeçalho e o calendário').toBeGreaterThanOrEqual(12);
+    expect(gap, 'vão entre o cabeçalho e o calendário').toBeLessThanOrEqual(14);
     if (process.env['TOP_BAR_PRINTS_DIR']) {
       await screenshot(
         page,
@@ -138,7 +137,6 @@ test.describe('Hoje: a primeira tela', () => {
     // Os alvos de toque continuam com 44 px.
     for (const selector of [
       '.routine-settings',
-      '.routine-toggle',
       '.week-head .nav-button',
       '.calendar-link',
       '.links li:nth-child(1) .ui-row',

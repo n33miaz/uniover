@@ -78,7 +78,11 @@ describe('TodayPage', () => {
     }
 
     it('asks again when the network drops halfway, as soon as it is back', async () => {
-      const warm = vi.fn().mockResolvedValueOnce(1).mockResolvedValue(2);
+      let completeFirst: (stored: number) => void = () => undefined;
+      const first = new Promise<number>((resolve) => {
+        completeFirst = resolve;
+      });
+      const warm = vi.fn().mockReturnValueOnce(first).mockResolvedValue(2);
       const { fixture } = await openWarming(warm);
       await eventually(fixture, () => expect(warm).toHaveBeenCalledTimes(1));
       expect(warm.mock.calls[0][0]).toEqual(['supino-reto-com-barra']);
@@ -86,6 +90,8 @@ describe('TodayPage', () => {
       const connectivity = TestBed.inject(ConnectivityService);
       connectivity.online.set(false);
       fixture.detectChanges();
+      completeFirst(1);
+      await first;
       connectivity.online.set(true);
       await eventually(fixture, () => expect(warm).toHaveBeenCalledTimes(2));
     });
@@ -115,36 +121,6 @@ describe('TodayPage', () => {
       expect(button(el, 'Treino Livre')).toBeDefined();
     });
 
-    it('shows the exercise illustration in each line of the open routine, like the other lists, with the neutral frame as fallback', async () => {
-      const kit = await open();
-      await saveRoutine('Treino A', [
-        item('a1', 'supino-reto', 0),
-        item('a2', 'prancha', 1),
-        item('a3', 'removido-do-catalogo', 2),
-      ]);
-      const { el, fixture } = await show(kit);
-
-      await eventually(fixture, () =>
-        expect(el.querySelectorAll('.lines .ui-row')).toHaveLength(3),
-      );
-      button(el, 'Ver Rotina').click();
-      await eventually(fixture, () =>
-        expect(el.querySelector<HTMLElement>('.lines')?.hidden).toBe(false),
-      );
-      const rows = Array.from(el.querySelectorAll<HTMLElement>('.lines .ui-row'));
-      // A mesma miniatura de 64 px da biblioteca de exercícios, no começo da linha.
-      expect(rows[0].firstElementChild?.matches('app-exercise-thumb.thumb')).toBe(true);
-      expect(rows[0].querySelector('.thumb img')?.getAttribute('src')).toContain(
-        '/exercise-art/0042-relaxation.webp',
-      );
-      expect(getComputedStyle(rows[0].querySelector('.thumb')!).width).toBe('64px');
-      // Sem arte segura, ou com o exercício já fora do catálogo, o glifo neutro mantém a moldura.
-      for (const row of rows.slice(1)) {
-        expect(row.querySelector('.thumb img')).toBeNull();
-        expect(row.querySelector('.thumb .placeholder app-training-glyph')).not.toBeNull();
-      }
-    });
-
     it('offers the program choice when starting without a weekly program, and does not start until it is answered', async () => {
       const kit = await open();
       await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
@@ -160,7 +136,7 @@ describe('TodayPage', () => {
       expect(el.querySelector('app-live-session')).toBeNull();
     });
 
-    it('puts the routine of the day first and the week below it, with one main button above the list', async () => {
+    it('mostra o calendário antes da rotina e inicia sem a lista de exercícios', async () => {
       const kit = await open();
       await seedHistory(kit.trainingDb, 'supino-reto', [[1, 40, 10]]);
       await saveRoutine('Treino A', [
@@ -170,13 +146,10 @@ describe('TodayPage', () => {
       ]);
       const { el, fixture } = await show(kit);
 
-      await eventually(fixture, () =>
-        expect(el.querySelectorAll('.lines .ui-row')).toHaveLength(3),
-      );
+      await eventually(fixture, () => expect(el.querySelector('.routine .go')).not.toBeNull());
       const week = el.querySelector('.week')!;
       const routine = el.querySelector('.routine')!;
-      // A rotina do dia vem primeiro e a semana confirma o contexto depois; nada de busca nem de "Trocar rotina".
-      expect(routine.compareDocumentPosition(week) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(week.compareDocumentPosition(routine) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(el.querySelector('input[type="search"]')).toBeNull();
       expect(routine.querySelector('button.routine-settings')?.getAttribute('aria-label')).toBe(
         'Configurar Rotina',
@@ -190,22 +163,8 @@ describe('TodayPage', () => {
       expect(text(el)).not.toContain('Treino de Hoje');
       expect(routine.querySelector('.routine-top .routine-name')).not.toBeNull();
       expect(text(routine)).toMatch(/3 exercícios · 10 séries · cerca de \d+ min/);
-      const start = button(el, 'Iniciar Treino');
-      expect(start.compareDocumentPosition(el.querySelector('.lines')!)).toBe(
-        Node.DOCUMENT_POSITION_FOLLOWING,
-      );
-      // A lista vem recolhida atrás de "Ver Rotina" e abre num toque.
-      const toggle = button(el, 'Ver Rotina');
-      expect(toggle.getAttribute('aria-expanded')).toBe('false');
-      expect(el.querySelector<HTMLElement>('.lines')?.hidden).toBe(true);
-      toggle.click();
-      await eventually(fixture, () => {
-        expect(el.querySelector<HTMLElement>('.lines')?.hidden).toBe(false);
-        expect(toggle.getAttribute('aria-expanded')).toBe('true');
-      });
-      const rows = Array.from(el.querySelectorAll('.lines .ui-row')).map((row) => text(row));
-      expect(rows[0]).toContain('4 × 6–10 · última vez 40 kg × 10');
-      expect(rows[1]).toContain('supersérie');
+      expect(button(el, 'Iniciar Treino')).toBeDefined();
+      expect(el.querySelector('#routine-lines')).toBeNull();
       // O "?" do glossário fica ao lado da ação, sem ocupar uma linha própria.
       const glossary = el.querySelector<HTMLAnchorElement>('.actions a.glossary-link');
       expect(glossary?.getAttribute('href')).toBe('/treino/glossario');
@@ -504,7 +463,7 @@ describe('TodayPage', () => {
       // A lista dos exercícios é a própria tela: a linha que a abriria não aparece aqui.
       expect(
         buttons(document.body).some((node) => node.textContent?.includes('Exercícios do Treino')),
-      ).toBe(false);
+      ).toBe(true);
     });
 
     it('keeps a long exercise name in a title on the day card and live heading', async () => {

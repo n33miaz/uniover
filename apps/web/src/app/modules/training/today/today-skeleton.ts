@@ -3,10 +3,7 @@ import { LoadingFrame } from '../../../shared/ui/skeleton/loading-frame';
 import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
 
 /**
- * O esqueleto da aba Hoje, na ordem da tela pronta (`today-home`): o cartão do dia (a primeira linha com o nome e
- * os três pontos, o resumo, o botão de iniciar e o "Ver Rotina") e, com `withWeek`, o cartão da semana (título e
- * setas, os sete dias, o resumo e os três números) e a ação de baixo. A página usa tudo enquanto o módulo ainda não leu
- * nada; a Início do módulo usa só o cartão do dia quando a semana (que já tem as datas) é a verdadeira.
+ * O esqueleto da aba Hoje segue a ordem da tela pronta: semana, rotina do dia e ação de baixo.
  * `label` troca o que o leitor de tela ouve (a entrada do módulo diz que confirma a conta).
  *
  * As classes levam o prefixo `sk-` de propósito: nenhuma repete o nome de uma classe da tela pronta, para que quem procura
@@ -19,15 +16,6 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
   template: `
     <app-loading-frame [label]="label()">
       <div class="sk-home">
-        <div class="sk-card ui-card">
-          <div class="sk-top">
-            <span appSkeleton class="sk-name"></span>
-            <span appSkeleton class="sk-dots"></span>
-          </div>
-          <span appSkeleton class="sk-meta"></span>
-          <span appSkeleton class="sk-go"></span>
-          <span appSkeleton class="sk-toggle"></span>
-        </div>
         @if (withWeek()) {
           <div class="sk-week ui-card">
             <div class="sk-week-head">
@@ -46,6 +34,16 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
               }
             </div>
           </div>
+        }
+        <div class="sk-card ui-card">
+          <div class="sk-top">
+            <span appSkeleton class="sk-name"></span>
+            <span appSkeleton class="sk-dots"></span>
+          </div>
+          <span appSkeleton class="sk-meta"></span>
+          <span appSkeleton class="sk-go"></span>
+        </div>
+        @if (withWeek()) {
           <span appSkeleton class="sk-free"></span>
         }
       </div>
@@ -107,14 +105,6 @@ import { Skeleton } from '../../../shared/ui/skeleton/skeleton';
       height: 44px;
       min-height: 0;
       border-radius: var(--radius);
-    }
-    .sk-toggle {
-      display: block;
-      align-self: center;
-      width: 7rem;
-      height: 16px;
-      min-height: 0;
-      margin-block: calc((var(--tap) - 16px) / 2);
     }
     .sk-week {
       display: flex;
