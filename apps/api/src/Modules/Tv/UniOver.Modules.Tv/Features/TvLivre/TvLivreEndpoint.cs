@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
@@ -10,8 +11,9 @@ namespace UniOver.Modules.Tv.Features.TvLivre;
 
 /// <summary>
 /// As rotas do TV Livre da TV escolhida. São só do dono (política nomeada de administrador), com uma exceção: o Modo
-/// Dormir (<c>/livre/sleep</c>), que é de quem tem a permissão de controlar a TV. Todas as que escrevem ou falam com a TV
-/// levam o limite de comandos.
+/// Dormir (<c>/livre/sleep</c>), que é de quem tem a permissão de controlar a TV. Quando falta o launcher na TV, porém,
+/// dormir exige instalá-lo, e essa parte continua só do dono: o pedido de outra pessoa volta com o motivo e não instala.
+/// Todas as que escrevem ou falam com a TV levam o limite de comandos.
 /// </summary>
 internal static class TvLivreEndpoint
 {
@@ -34,8 +36,10 @@ internal static class TvLivreEndpoint
         group.MapPost("/livre/install", InstallAsync).Owner().RateLimited().Produces<TvLivreView>().Steps();
         group.MapPost("/livre/set-home", SetHomeAsync).Owner().RateLimited().Produces<TvLivreView>().Steps();
         group.MapPost("/livre/restore", RestoreAsync).Owner().RateLimited().Produces<TvLivreView>().Steps();
-        // O Modo Dormir é de quem tem o controle da TV (o pior que acontece é uma tela preta que sai com qualquer tecla);
-        // o resto do TV Livre segue só do dono.
+        // O Modo Dormir é de quem tem o controle da TV: com o launcher instalado ele só abre uma tela preta que sai com
+        // qualquer tecla. Sem o launcher, dormir pede a instalação do APK e a abertura dele na TV (mudança que fica no
+        // aparelho), e isso só o dono faz: para os outros o handler confere antes e responde 409 sem instalar. O resto do
+        // TV Livre segue só do dono.
         group.MapGet("/livre/sleep", SleepAvailableAsync).RequireAuthorization(TvAuth.Control).Produces<SleepAvailability>()
             .ProducesProblem(StatusCodes.Status401Unauthorized).ProducesProblem(StatusCodes.Status403Forbidden);
         group.MapPost("/livre/sleep", SleepAsync).RequireAuthorization(TvAuth.Control).RateLimited()
@@ -182,7 +186,12 @@ internal static class TvLivreEndpoint
         TypedResults.Ok(new SleepAvailability(await handler.SleepAvailableAsync(cancellationToken)));
 
     private static async Task<IResult> SleepAsync(
-        SleepRequest? request, ICurrentUser current, HttpContext http, TvLivreHandler handler, CancellationToken cancellationToken)
+        SleepRequest? request,
+        ICurrentUser current,
+        HttpContext http,
+        IAuthorizationService authorization,
+        TvLivreHandler handler,
+        CancellationToken cancellationToken)
     {
         if (request?.Minutes is < 0 or > LivreConfigValidator.MaxSleepMinutes)
         {
@@ -197,7 +206,10 @@ internal static class TvLivreEndpoint
             return TvProblems.Unauthenticated();
         }
 
-        return ToProblem(await handler.SleepAsync(origin, request?.Minutes, cancellationToken)) ?? TypedResults.NoContent();
+        // Instalar o launcher que falta é da mesma política da rota de instalar (a do dono), avaliada aqui no módulo.
+        var mayInstall = (await authorization.AuthorizeAsync(http.User, UniOverAuth.OwnerPolicy)).Succeeded;
+        return ToProblem(await handler.SleepAsync(origin, request?.Minutes, mayInstall, cancellationToken))
+            ?? TypedResults.NoContent();
     }
 
     private static async Task<IResult> VisibilityAsync(
@@ -231,6 +243,7 @@ internal static class TvLivreEndpoint
             LivreStepKind.Done => null,
             LivreStepKind.Unsupported => LivreProblems.Unsupported(),
             LivreStepKind.Busy => LivreProblems.Busy(),
+            LivreStepKind.OwnerRequired => LivreProblems.OwnerRequired(),
             _ => LivreProblems.Fail(step.Outcome!),
         };
     }

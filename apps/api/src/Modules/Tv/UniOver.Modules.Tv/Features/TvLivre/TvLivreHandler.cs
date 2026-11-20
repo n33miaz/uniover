@@ -14,13 +14,17 @@ using UniOver.SharedKernel;
 
 namespace UniOver.Modules.Tv.Features.TvLivre;
 
-/// <summary>Como terminou um passo: não há o que fazer nesta TV, a vez estava ocupada, deu certo ou falhou (com o resultado do envio).</summary>
+/// <summary>
+/// Como terminou um passo: não há o que fazer nesta TV, a vez estava ocupada, deu certo, falhou (com o resultado do envio)
+/// ou dependia de instalar o launcher, o que só o dono pode pedir.
+/// </summary>
 internal enum LivreStepKind
 {
     Done,
     Unsupported,
     Busy,
     Failed,
+    OwnerRequired,
 }
 
 internal sealed record LivreStep(LivreStepKind Kind, TvSendOutcome? Outcome = null)
@@ -30,6 +34,8 @@ internal sealed record LivreStep(LivreStepKind Kind, TvSendOutcome? Outcome = nu
     public static LivreStep Unsupported { get; } = new(LivreStepKind.Unsupported);
 
     public static LivreStep Busy { get; } = new(LivreStepKind.Busy);
+
+    public static LivreStep OwnerRequired { get; } = new(LivreStepKind.OwnerRequired);
 
     public static LivreStep Failed(TvSendOutcome outcome) => new(LivreStepKind.Failed, outcome);
 }
@@ -81,9 +87,10 @@ internal sealed class TvLivreHandler(
 
     /// <summary>
     /// Se há como mandar a TV dormir agora: o agente da TV está ao alcance com o TV Livre e a TV não foi lida como
-    /// incompatível. Não depende de o launcher já estar na TV: o agente o instala no próprio pedido de dormir (o estado
-    /// guardado pode ser de antes de um PC reinstalado, ou nem existir). É o que a folha de energia do controle consulta
-    /// (o <c>GET /livre</c> inteiro é só do dono, e quem tem o controle não o lê).
+    /// incompatível. Não depende de o launcher já estar na TV: no pedido do dono o agente o instala antes de dormir, e o de
+    /// um convidado sem launcher volta com o motivo (o estado guardado pode ser de antes de um PC reinstalado, ou nem
+    /// existir, então só o próprio pedido sabe). É o que a folha de energia do controle consulta (o <c>GET /livre</c>
+    /// inteiro é só do dono, e quem tem o controle não o lê).
     /// </summary>
     public async Task<bool> SleepAvailableAsync(CancellationToken cancellationToken)
     {
@@ -169,14 +176,61 @@ internal sealed class TvLivreHandler(
             TvLivreAction.SetApps, longTimeout: true, cancellationToken, disable: disable, enable: enable);
 
     /// <summary>
-    /// O Modo Dormir abre a tela preta; o estado não muda, então não espera por ele. Tem o tempo longo do TV Livre porque,
-    /// sem o launcher na TV, o agente o instala antes de abrir (download e cópia levam segundos). O tempo até acordar vai
-    /// no pedido, mas só a agente que entende (um anterior recusaria o campo): sem ele o launcher usa o da configuração.
+    /// O Modo Dormir abre a tela preta; o estado não muda, então não espera por ele. Sem o launcher na TV o agente o
+    /// instala antes de abrir (download, cópia e uma abertura do app na tela: segundos e uma mudança que fica no aparelho),
+    /// por isso o tempo é o longo do TV Livre e essa instalação é só do dono, como a rota de instalar.
+    /// <para>
+    /// Para quem não é o dono (<paramref name="mayInstall"/> falso) o pedido confere antes, na mesma vez da TV, se o
+    /// launcher está lá: um <c>status</c> sem linha própria na trilha e o estado que ele traz. O estado guardado não serve
+    /// para isso, porque pode ser de antes de a TV ser restaurada. Sem o launcher (ou sem a confirmação dele) o dormir não
+    /// sai e a resposta diz que é o dono quem prepara a TV.
+    /// </para>
+    /// <para>
+    /// O tempo até acordar vai no pedido, mas só a agente que entende (um anterior recusaria o campo): sem ele o launcher
+    /// usa o da configuração.
+    /// </para>
     /// </summary>
-    public Task<LivreStep> SleepAsync(TvCommandOrigin origin, int? minutes, CancellationToken cancellationToken) =>
-        SingleAsync(
-            origin, TvCommandNames.LivreSleep, null, TvLivreAction.Sleep, longTimeout: true, cancellationToken,
+    public async Task<LivreStep> SleepAsync(
+        TvCommandOrigin origin, int? minutes, bool mayInstall, CancellationToken cancellationToken)
+    {
+        if (RefusesToRun())
+        {
+            return LivreStep.Unsupported;
+        }
+
+        await using var ticket = await requests.TryBeginAsync(TvId, cancellationToken);
+        if (ticket is null)
+        {
+            return LivreStep.Busy;
+        }
+
+        if (!mayInstall)
+        {
+            var status = await runner.RunAsync(
+                origin,
+                TvCommandNames.LivreRefresh,
+                null,
+                TvMessages.TvLivre(ticket.RequestId, TvLivreAction.Status),
+                waitForReply: true,
+                cancellationToken,
+                auditCommand: false);
+            if (!status.IsDelivered)
+            {
+                // Na trilha fica a leitura que falhou, com o motivo: nenhum dormir chegou a ser enviado.
+                await runner.RecordAsync(origin, TvCommandNames.LivreRefresh, "sleep-check", status);
+                return LivreStep.Failed(status);
+            }
+
+            if (!await LauncherConfirmedAsync(ticket.RequestId, cancellationToken))
+            {
+                return LivreStep.OwnerRequired;
+            }
+        }
+
+        return await RunStepAsync(
+            ticket, origin, TvCommandNames.LivreSleep, null, TvLivreAction.Sleep, longTimeout: true, cancellationToken,
             waitForState: false, minutes: IsExtended() ? minutes : null);
+    }
 
     /// <summary>
     /// Aplica a configuração guardada: se o fundo é uma foto e há foto guardada, ela vai antes em pedaços (cada um é um
@@ -291,6 +345,27 @@ internal sealed class TvLivreHandler(
             return LivreStep.Busy;
         }
 
+        return await RunStepAsync(
+            ticket, origin, command, detail, action, longTimeout, cancellationToken, waitForState, disableFactory, uninstall,
+            disable, enable, minutes);
+    }
+
+    /// <summary>Manda um passo com a vez da TV já tomada e, quando pedido, espera o estado dele.</summary>
+    private async Task<LivreStep> RunStepAsync(
+        ITvLivreTicket ticket,
+        TvCommandOrigin origin,
+        string command,
+        string? detail,
+        TvLivreAction action,
+        bool longTimeout,
+        CancellationToken cancellationToken,
+        bool waitForState = true,
+        bool? disableFactory = null,
+        bool? uninstall = null,
+        IReadOnlyList<string>? disable = null,
+        IReadOnlyList<string>? enable = null,
+        int? minutes = null)
+    {
         var outcome = await runner.RunAsync(
             origin,
             command,
@@ -334,6 +409,32 @@ internal sealed class TvLivreHandler(
             if (time.GetUtcNow() >= until)
             {
                 return;
+            }
+
+            await Task.Delay(StatePollInterval, time, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// O estado deste pedido chegou dentro da folga e diz que o launcher está na TV. Sem o estado do pedido a resposta é
+    /// não: o estado mais antigo não prova que o launcher ainda está lá.
+    /// </summary>
+    private async Task<bool> LauncherConfirmedAsync(Guid requestId, CancellationToken cancellationToken)
+    {
+        var tvId = TvId;
+        var until = time.GetUtcNow() + StateGrace;
+        while (true)
+        {
+            var entry = await db.TvLivre.AsNoTracking()
+                .SingleOrDefaultAsync(e => e.TvId == tvId && e.StateRequestId == requestId, cancellationToken);
+            if (entry is not null)
+            {
+                return TvLivreView.From(entry, available: true).Installed;
+            }
+
+            if (time.GetUtcNow() >= until)
+            {
+                return false;
             }
 
             await Task.Delay(StatePollInterval, time, cancellationToken);

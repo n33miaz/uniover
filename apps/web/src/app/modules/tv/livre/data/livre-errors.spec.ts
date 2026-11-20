@@ -81,6 +81,12 @@ describe('describeLivreFailure', () => {
     expect(failure.code).toBe('unsupported');
   });
 
+  it('asks a guest to call the owner when sleeping would need to install the launcher', () => {
+    const failure = describeLivreFailure(http(409, 'tv-livre-owner-required'));
+    expect(failure.message).toBe('O TV Livre não está na TV. Peça ao dono para preparar a TV.');
+    expect(failure.message).not.toContain('ocupada');
+  });
+
   it('does not mix up the 404 and 409 of the TV with the ones of the shortcuts', () => {
     expect(describeLivreFailure(http(404, 'not-found')).message).not.toContain('atalho');
     expect(describeLivreFailure(http(409, 'conflict')).message).not.toContain('instalado na TV');

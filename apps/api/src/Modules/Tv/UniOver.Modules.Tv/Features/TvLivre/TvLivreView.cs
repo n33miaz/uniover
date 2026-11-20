@@ -110,6 +110,7 @@ internal static class LivreProblems
 {
     public const string UnsupportedType = "tv-livre-unsupported";
     public const string BusyType = "tv-livre-busy";
+    public const string OwnerRequiredType = "tv-livre-owner-required";
     public const string PhotoTooLargeType = "tv-livre-photo-too-large";
     public const string PhotoDimensionsType = "tv-livre-photo-dimensions";
 
@@ -127,6 +128,12 @@ internal static class LivreProblems
         statusCode: StatusCodes.Status409Conflict,
         title: "Já há um passo do TV Livre em andamento nesta TV.",
         type: ProblemDetailsExtensions.TypeBase + BusyType);
+
+    /// <summary>O pedido dependia de instalar o launcher na TV, e isso só o dono faz (o Modo Dormir de um convidado sem launcher).</summary>
+    public static IResult OwnerRequired() => Results.Problem(
+        statusCode: StatusCodes.Status409Conflict,
+        title: "O TV Livre não está na TV, e só o dono pode instalá-lo.",
+        type: ProblemDetailsExtensions.TypeBase + OwnerRequiredType);
 
     public static IResult PhotoTooLarge() => Results.Problem(
         statusCode: StatusCodes.Status413PayloadTooLarge,

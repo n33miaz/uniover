@@ -1351,7 +1351,11 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         using var read = await app.SendAsync(HttpMethod.Get, $"{Base}/sleep", null, bearer: controller.Login.AccessToken);
         read.StatusCode.Should().Be(HttpStatusCode.OK);
 
+        // Para quem não é o dono o pedido confere antes que o launcher está na TV; com ele lá, dorme.
         var request = app.SendAsync(HttpMethod.Post, $"{Base}/sleep", new { minutes = 30 }, bearer: controller.Login.AccessToken);
+        var check = await NextAsync(agent, "tv.livre.v1");
+        ActionOf(check).Should().Be("status");
+        await StateThenReplyAsync(agent, check, StateBody(check, installed: true));
         var command = await NextAsync(agent, "tv.livre.v1");
         await TvApp.ReplyAsync(agent, command);
         using var sent = await Within(request);
@@ -1361,6 +1365,50 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         command.GetProperty("body").GetProperty("minutes").GetInt32().Should().Be(30);
         await using var db = app.Db();
         (await db.CommandAudit.SingleAsync(Ct)).Command.Should().Be("tv.livre.sleep");
+    }
+
+    [Fact]
+    public async Task Sleep_WithoutTheLauncher_NeverReachesTheTvForAGuest_AndAnswersThatTheOwnerPreparesIt()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, extended: true);
+        var controller = await app.NewGuestAsync("Sala", ["module:tv", "tv:control"], 64);
+
+        var request = app.SendAsync(HttpMethod.Post, $"{Base}/sleep", null, bearer: controller.Login.AccessToken);
+        var check = await NextAsync(agent, "tv.livre.v1");
+        ActionOf(check).Should().Be("status");
+        await StateThenReplyAsync(agent, check, StateBody(check, installed: false));
+        using var refused = await Within(request);
+
+        refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await TvApp.JsonAsync(refused)).GetProperty("type").GetString().Should().EndWith("tv-livre-owner-required");
+        // Nada além da leitura chegou ao agente: a mensagem seguinte é a do próximo pedido (do dono), não um dormir que
+        // instalaria o launcher.
+        var next = app.PostAsync($"{Base}/refresh");
+        var after = await NextAsync(agent, "tv.livre.v1");
+        ActionOf(after).Should().Be("status");
+        await StateThenReplyAsync(agent, after, StateBody(after, installed: false));
+        (await Within(next)).Dispose();
+        await using var db = app.Db();
+        (await db.CommandAudit.Select(a => a.Command).ToListAsync(Ct)).Should().NotContain("tv.livre.sleep");
+    }
+
+    [Fact]
+    public async Task Sleep_WithoutTheLauncher_GoesStraightToTheAgentForTheOwner_WhoMayInstallIt()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, extended: true);
+        var refresh = app.PostAsync($"{Base}/refresh");
+        var status = await NextAsync(agent, "tv.livre.v1");
+        await StateThenReplyAsync(agent, status, StateBody(status, installed: false));
+        (await Within(refresh)).Dispose();
+
+        var request = app.PostAsync($"{Base}/sleep");
+        var command = await NextAsync(agent, "tv.livre.v1");
+        ActionOf(command).Should().Be("sleep", "o dono pode instalar o launcher que falta, então o pedido vai direto ao agente");
+        await TvApp.ReplyAsync(agent, command);
+        using var sent = await Within(request);
+        sent.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
     [Fact]
