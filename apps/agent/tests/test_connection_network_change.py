@@ -208,7 +208,7 @@ async def test_a_probe_that_never_returns_counts_as_a_dead_channel(
     assert await until(lambda: len(scene.transport.sent) == 1)  # o hello saiu: sessão aberta
     await asyncio.sleep(0)
     scene.change()
-    # A sonda espera de verdade (0,01 s): num CI lento a troca pode levar bem mais que um segundo de relógio.
+    # A sonda espera de verdade (0,01 s): num CI lento a troca leva mais que um segundo.
     for _ in range(1000):
         if scene.transport.connects >= 2:
             break
