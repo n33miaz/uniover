@@ -27,6 +27,9 @@ $ErrorActionPreference = 'Stop'
 # O uv.lock manda em todo comando do uv do instalador (`uv run` incluido): um uv anterior a 0.9.8 nao entende o
 # `exclude-dependencies` do pyproject e, sem isto, refaria a resolucao trazendo o pacote `av` (uns 70 MB, bibliotecas GPL).
 $env:UV_FROZEN = '1'
+# O grupo `dev` do pyproject (pytest, mypy, ruff...) e so do repositorio: no PC nunca entra. Cada `uv sync` e `uv run`
+# do instalador leva `--no-dev` (aceito desde o uv 0.4). A variavel e so reforco: uv antigos a ignoram.
+$env:UV_NO_DEV = '1'
 # Bytecode compilado no preparo (`uv sync`): sem ele, a primeira partida depois de uma atualizacao ou de uma paginacao
 # compila uns 800 modulos (medido: 4,4 s contra 1,1 s; ate 12 s no PC do dono). Custa +1,2 s no sync novo e +0,4 s no que
 # nao muda nada; o codigo do proprio agente e compilado pelo auto-diagnostico da candidata, que importa tudo.
@@ -981,7 +984,7 @@ function Get-BaseConfig {
 function Invoke-Prepare([string]$Uv) {
     # --frozen: instala exatamente o que o uv.lock diz, sem reescreve-lo nem reclamar se uma versao nova do uv o veria
     # diferente (o --locked faria o PC falhar por isso). A saida vai para o registro.
-    $output = & $Uv sync --frozen --project $source 2>&1 | Out-String
+    $output = & $Uv sync --frozen --project $source --no-dev 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) {
         Write-InstallLog ('uv sync falhou (codigo ' + $LASTEXITCODE + '): ' + $output)
         throw 'Nao consegui preparar o UniOver neste computador. Confira a internet e tente de novo.'
@@ -996,12 +999,12 @@ function Test-Candidate([string]$Uv, [string]$Candidate) {
     try {
         Remove-Item -LiteralPath $candidateEnvironment -Recurse -Force -ErrorAction SilentlyContinue
         $env:UV_PROJECT_ENVIRONMENT = $candidateEnvironment
-        $output = & $Uv sync --frozen --project $Candidate 2>&1 | Out-String
+        $output = & $Uv sync --frozen --project $Candidate --no-dev 2>&1 | Out-String
         if ($LASTEXITCODE -ne 0) {
             Write-InstallLog ('uv sync da candidata falhou (codigo ' + $LASTEXITCODE + '): ' + $output)
             throw 'Nao consegui preparar a versao nova do UniOver. Confira a internet e tente de novo; a instalacao atual ficou como estava.'
         }
-        $output = & $Uv run --no-sync --project $Candidate python -m uniover_agent.selfcheck 2>&1 | Out-String
+        $output = & $Uv run --no-sync --project $Candidate --no-dev python -m uniover_agent.selfcheck 2>&1 | Out-String
         if ($LASTEXITCODE -ne 0) {
             Write-InstallLog ('auto-diagnostico da candidata falhou: ' + $output)
             throw 'A versao baixada nao funciona neste computador. A instalacao atual ficou como estava; tente de novo mais tarde.'
@@ -1014,7 +1017,7 @@ function Test-Candidate([string]$Uv, [string]$Candidate) {
 }
 
 function Invoke-SelfCheck([string]$Uv) {
-    $output = & $Uv run --no-sync --project $source python -m uniover_agent.selfcheck 2>&1 | Out-String
+    $output = & $Uv run --no-sync --project $source --no-dev python -m uniover_agent.selfcheck 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) {
         Write-InstallLog ('auto-diagnostico da versao falhou: ' + $output)
         throw 'A versao baixada nao funciona neste computador. A instalacao anterior, se havia, volta a funcionar; tente de novo mais tarde.'
@@ -1023,7 +1026,7 @@ function Invoke-SelfCheck([string]$Uv) {
 
 function Write-InstallDiagnosis([string]$Uv) {
     try {
-        $output = & $Uv run --no-sync --project $source uniover-agent diagnose 2>&1 | Out-String
+        $output = & $Uv run --no-sync --project $source --no-dev uniover-agent diagnose 2>&1 | Out-String
         Write-InstallLog ('Exame final da instalacao:' + [Environment]::NewLine + $output)
     }
     catch { }
@@ -1080,7 +1083,7 @@ function Invoke-AutomaticInstall {
     # A pagina ja esta aberta: o agente so a reescreve (--no-browser evita uma segunda aba).
     $script:currentStep = 'phone'
     Show-Step 'phone' 'Quase l&aacute;: o QR para o seu celular aparece aqui em instantes.'
-    & $uv run --project $source uniover-agent pair --if-needed --no-browser --installing
+    & $uv run --project $source --no-dev uniover-agent pair --if-needed --no-browser --installing
     if ($LASTEXITCODE -ne 0) {
         Write-InstallLog "pair terminou com codigo $LASTEXITCODE"
         throw 'Este computador nao foi ligado a sua conta: o codigo venceu ou foi recusado. Abra o conector de novo para ganhar um codigo novo.'
@@ -1090,7 +1093,7 @@ function Invoke-AutomaticInstall {
     # na tela da TV. Na Android TV o codigo que a TV mostra e digitado no app do celular: nenhuma janela no PC.
     $script:currentStep = 'tv'
     Show-Step 'tv' 'Procurando a TV na rede. Deixe a TV ligada.'
-    $findArguments = @('run', '--project', $source, 'uniover-agent', 'tv-find')
+    $findArguments = @('run', '--project', $source, '--no-dev', 'uniover-agent', 'tv-find')
     if ($tvKindGiven) {
         $findArguments += @('--kind', $TvKind)
     }
@@ -1102,7 +1105,7 @@ function Invoke-AutomaticInstall {
         if ($kind -eq 'samsung') {
             Show-Step 'tv' 'TV encontrada. Na tela da TV, escolha Permitir.'
         }
-        & $uv run --project $source uniover-agent tv-pair --if-needed --installing --code-on-phone
+        & $uv run --project $source --no-dev uniover-agent tv-pair --if-needed --installing --code-on-phone
         $tvState = switch ($LASTEXITCODE) { 0 { 'paired' } 8 { 'phone' } default { 'failed' } }
     }
 
@@ -1199,7 +1202,7 @@ Invoke-SelfCheck $uv
 
 Write-Host 'Ligando este computador a sua conta'
 Write-Host 'O proximo comando mostrara um codigo e um desenho (QR). Abra o app UniOver e aprove.'
-& $uv --directory $source run uniover-agent pair
+& $uv --directory $source run --no-dev uniover-agent pair
 if ($LASTEXITCODE -ne 0) {
     throw 'Este computador nao foi ligado a sua conta.'
 }
@@ -1210,7 +1213,7 @@ Set-ConfigValues $config @{ tv_kind = $TvKind; tv_host = $TvHost }
 if ($TvKind -eq 'samsung') {
     Write-Host 'Aceite o aviso Permitir na TV Samsung quando ele aparecer.'
 }
-& $uv --directory $source run uniover-agent tv-pair --kind $TvKind --host $TvHost
+& $uv --directory $source run --no-dev uniover-agent tv-pair --kind $TvKind --host $TvHost
 if ($LASTEXITCODE -ne 0) {
     throw 'A TV nao foi ligada ao UniOver.'
 }
@@ -1226,5 +1229,5 @@ if ($answer -match '^[sS]') {
 }
 else {
     Remove-EnvironmentBackup
-    Write-Host 'Ele nao vai iniciar sozinho. Para iniciar agora: uv run uniover-agent run'
+    Write-Host 'Ele nao vai iniciar sozinho. Para iniciar agora: uv run --no-dev uniover-agent run'
 }

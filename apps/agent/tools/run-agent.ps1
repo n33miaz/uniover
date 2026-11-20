@@ -27,6 +27,10 @@ try { $env:UNIOVER_SUPERVISOR_PROCESS = ([string]$PID) + ':' + [System.Diagnosti
 # "desatualizado" (um uv anterior a 0.9.8 nao entende o `exclude-dependencies` do pyproject e traria de volta o pacote
 # `av`, uns 70 MB com bibliotecas GPL). O `uv sync --frozen` ja era assim; isto estende o mesmo a `uv run`.
 $env:UV_FROZEN = '1'
+# O grupo `dev` do pyproject (pytest, mypy, ruff...) e so do repositorio: no PC nunca entra. Cada `uv sync` e `uv run`
+# deste supervisor leva `--no-dev` (aceito desde o uv 0.4; o sync e exato e ainda remove o que um ambiente antigo tenha
+# do grupo). A variavel e so reforco: uv antigos a ignoram, por isso a flag vai em todo comando.
+$env:UV_NO_DEV = '1'
 # Bytecode compilado no preparo (`uv sync`): sem ele, a primeira partida depois de uma atualizacao ou de uma paginacao
 # compila uns 800 modulos (medido: 4,4 s contra 1,1 s; ate 12 s no PC do dono). Custa +1,2 s no sync novo e +0,4 s no que
 # nao muda nada; o codigo do proprio agente e compilado pelo auto-diagnostico da candidata, que importa tudo.
@@ -485,7 +489,8 @@ function Sync-Agent([string]$Uv, [bool]$KeepEnvironment = $false) {
     $script:keptForDisk = $false
     # --frozen: o uv.lock manda (dependencia nova ou diferente da que a atualizacao ensaiou nunca entra sozinha), sem que
     # uma versao nova do uv que reescreveria o lock faca o sync falhar no PC. Com prazo: um uv preso nao prende o supervisor.
-    $arguments = 'sync --frozen --project "' + $source + '" --quiet'
+    # --no-dev: so as dependencias do agente; o sync exato tira do ambiente o que houver do grupo `dev`.
+    $arguments = 'sync --frozen --project "' + $source + '" --quiet --no-dev'
     $run = Invoke-Bounded $Uv $arguments $syncTimeoutSeconds
     if (-not $run.TimedOut -and $run.ExitCode -eq 0) { $script:syncReal = $true; return $true }
     Write-SupLog 'WARNING' ('uv sync falhou (' + (Get-RunDescription $run $syncTimeoutSeconds) + '): ' + (Get-Tail $run.Output))
@@ -642,7 +647,7 @@ function Invoke-Update([string]$Uv, [bool]$Forced = $false) {
     if ((($script:syncedVersion -and $script:syncedVersion -eq $before) -or $keptOk) -and (Test-Path -LiteralPath $venvPython)) { $env:UV_NO_SYNC = '1' }
     # Um pedido explicito do dono (`update-now`) vale mais que o adiamento de 24 h de uma versao devolvida por culpa do PC.
     if ($Forced) { $env:UNIOVER_UPDATE_FORCE = '1' }
-    try { $run = Invoke-Bounded $Uv ('run --project "' + $source + '" uniover-agent self-update') $updateTimeoutSeconds }
+    try { $run = Invoke-Bounded $Uv ('run --project "' + $source + '" --no-dev uniover-agent self-update') $updateTimeoutSeconds }
     finally {
         Remove-Item -LiteralPath 'Env:UV_NO_SYNC' -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath 'Env:UNIOVER_UPDATE_FORCE' -ErrorAction SilentlyContinue
@@ -662,7 +667,7 @@ function Invoke-Update([string]$Uv, [bool]$Forced = $false) {
             if ($handover -eq 'done' -or $handover -eq 'failed') { return $false }
             if ($handover -eq 'unsupported') { $script:handoverRetryAt = (Get-Date).AddMinutes(30) }
             if ($Forced) { $env:UNIOVER_UPDATE_FORCE = '1' }
-            try { $run = Invoke-Bounded $Uv ('run --project "' + $source + '" uniover-agent self-update --apply') $updateTimeoutSeconds }
+            try { $run = Invoke-Bounded $Uv ('run --project "' + $source + '" --no-dev uniover-agent self-update --apply') $updateTimeoutSeconds }
             finally { Remove-Item -LiteralPath 'Env:UNIOVER_UPDATE_FORCE' -ErrorAction SilentlyContinue }
             Update-Layout
             $exitCode = $run.ExitCode
@@ -803,7 +808,7 @@ function Start-Hidden([string]$File, [string]$Arguments, [bool]$NoSync = $false,
 }
 
 function Start-Tray([string]$Uv) {
-    $arguments = 'run --project "' + $source + '" uniover-agent tray'
+    $arguments = 'run --project "' + $source + '" --no-dev uniover-agent tray'
     return Start-Hidden $Uv $arguments ([bool]$script:noSyncLaunch)
 }
 
@@ -1467,7 +1472,7 @@ function Invoke-HandoverLocked([string]$Uv, $Slot) {
     $deadlineEpoch = [string]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + [int]$agentSeconds)
     $environment = @{ UV_PROJECT_ENVIRONMENT = $Slot.venv; UNIOVER_APP_DIR = $Slot.app; UNIOVER_WINDOW_TOKEN = $token; UNIOVER_HANDOVER_DEADLINE = $deadlineEpoch; UNIOVER_HANDOVER_TAKEOVER_SECONDS = [string]$handoverTakeoverSeconds }
     $new = $null
-    try { $new = Start-Hidden $Uv ('run --project "' + $Slot.app + '" uniover-agent run --handover') $true $environment } catch { }
+    try { $new = Start-Hidden $Uv ('run --project "' + $Slot.app + '" --no-dev uniover-agent run --handover') $true $environment } catch { }
     if ($null -eq $new) {
         Clear-OwnTrial $sha
         Write-SupLog 'WARNING' 'nao consegui iniciar o processo da versao nova; o agente atual segue servindo'
@@ -1862,7 +1867,7 @@ while ($true) {
     $script:trayWatch = $uv
     Update-Tray $uv
     Ensure-AgentPulse
-    $arguments = 'run --project "' + $source + '" uniover-agent run'
+    $arguments = 'run --project "' + $source + '" --no-dev uniover-agent run'
     $process = Start-Hidden $uv $arguments ([bool]$script:noSyncLaunch)
     $started = Get-Date
     Write-SupLog 'INFO' ('agente iniciado (pid ' + $process.Id + ')')

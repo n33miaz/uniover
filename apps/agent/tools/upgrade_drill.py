@@ -733,7 +733,7 @@ Get-AgentSource $source
 Set-ConfigValues $config @{ api_url = $ApiUrl; allow_insecure = $true; agent_id = 'drill-agent' }
 $env:UNIOVER_CONFIG_FILE = $config
 $env:UV_PROJECT_ENVIRONMENT = Join-Path $base 'runtime\venv'
-& $Uv sync --project $source --quiet
+& $Uv sync --project $source --quiet --no-dev
 if ($LASTEXITCODE -ne 0) { throw 'uv sync da base falhou' }
 Write-AgentLauncher
 Write-Host 'base instalada'

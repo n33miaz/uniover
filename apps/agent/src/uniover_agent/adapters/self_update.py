@@ -1049,7 +1049,16 @@ def run_uv_sync(source: Path, *, pause: float = SYNC_PAUSE_SECONDS) -> None:
     _run_uv(
         # `--compile-bytecode`: a versão nova sobe sem compilar as dependências na primeira partida
         # (o supervisor também liga `UV_COMPILE_BYTECODE`; isto vale para o `self-update` à mão).
-        ["sync", "--frozen", "--compile-bytecode", "--project", str(source), "--quiet"],
+        # `--no-dev`: o grupo `dev` do pyproject (pytest, mypy...) é do repositório, nunca do PC.
+        [
+            "sync",
+            "--frozen",
+            "--compile-bytecode",
+            "--project",
+            str(source),
+            "--quiet",
+            "--no-dev",
+        ],
         what="a sincronização das dependências",
         timeout=SYNC_TIMEOUT_SECONDS,
         cwd=base_of(source),
@@ -1074,6 +1083,7 @@ def run_uv_check(source: Path) -> None:
             "--no-sync",
             "--project",
             str(source),
+            "--no-dev",
             "python",
             "-m",
             "uniover_agent.selfcheck",

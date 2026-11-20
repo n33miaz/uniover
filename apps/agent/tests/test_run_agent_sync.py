@@ -76,9 +76,9 @@ class Pc:
         lines = [
             "@echo off",
             'if "%~1"=="sync" goto sync',
-            'if "%~5"=="self-update" goto self_update',
-            'if "%~5"=="tray" goto tray',
-            'if "%~5"=="run" goto run',
+            'if "%~6"=="self-update" goto self_update',
+            'if "%~6"=="tray" goto tray',
+            'if "%~6"=="run" goto run',
             "exit /b 0",
             ":self_update",
             'echo.>"%UNIOVER_TEST_RECORD%\\self-update"',
