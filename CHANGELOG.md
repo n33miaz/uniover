@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.73.0](https://github.com/n33miaz/uniover/compare/v0.72.0...v0.73.0) (2026-11-20)
+
+
+### Training 0.46.0
+
+#### Features
+
+* **training:** extra sets, swaps and time limit
+
+#### Bug Fixes
+
+* **training:** fix the day and move the calendar
+
+
+### Web 0.70.0
+
+#### Features
+
+* **training:** extra sets, swaps and time limit
+
+#### Bug Fixes
+
+* **training:** fix the day and move the calendar
+
 ## [0.72.0](https://github.com/n33miaz/uniover/compare/v0.71.1...v0.72.0) (2026-11-20)
 
 
