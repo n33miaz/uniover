@@ -229,6 +229,9 @@ def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         "SELF_CARE",
         "HOME",
         "SUPERVISED",
+        # A migração de instalações antigas liga isto em `os.environ` e só o `run` o consome:
+        # um teste que a roda sem desfazer faria o próximo `main(["run"])` do processo sair cedo.
+        "LEGACY_TAKEOVER",
     ):
         monkeypatch.delenv(f"UNIOVER_{name}", raising=False)
     # A pasta do certificado da TV vive em `%LOCALAPPDATA%`: nenhum teste toca na real.
