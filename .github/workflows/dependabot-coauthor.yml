@@ -1,0 +1,63 @@
+name: Dependabot coauthor
+
+# Põe o dono do repositório como coautor dos commits de cada PR do Dependabot.
+# Roda depois do CI verde na branch do Dependabot: só a mensagem muda (a árvore é a mesma que o CI aprovou), então o
+# resultado do CI continua valendo para o commit reescrito. O push com o GITHUB_TOKEN não dispara outro CI.
+# Nenhum código do PR é executado aqui: só operações do git sobre a branch.
+# Este arquivo precisa existir na branch padrão do repositório, porque é de lá que o GitHub lê o `workflow_run`.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dependabot-coauthor-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  coauthor:
+    name: dependabot-coauthor
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      TRAILER: "Co-authored-by: n33miaz <130704790+n33miaz@users.noreply.github.com>"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+      - name: Acrescentar o coautor nos commits do PR
+        run: |
+          set -euo pipefail
+          # A branch andou depois do CI (o Dependabot refez o PR): o próximo CI verde chama de novo.
+          if [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]; then
+            echo "A branch não está mais no commit que o CI aprovou; nada a fazer."
+            exit 0
+          fi
+          # Os PRs do Dependabot miram a develop (dependabot.yml).
+          base=$(git merge-base HEAD origin/develop)
+          missing=0
+          for sha in $(git rev-list "$base..HEAD"); do
+            git show -s --format=%B "$sha" | grep -qxF "$TRAILER" || missing=1
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "Todos os commits já têm o coautor."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Reescreve só as mensagens: autor, datas e conteúdo ficam iguais.
+          git rebase --committer-date-is-author-date "$base" \
+            --exec 'git show -s --format=%B HEAD | grep -qxF "$TRAILER" || git commit --amend --no-edit --trailer "$TRAILER"'
+          test "$(git rev-parse HEAD^{tree})" = "$(git rev-parse "$HEAD_SHA^{tree}")"
+          git push --force-with-lease="$BRANCH:$HEAD_SHA" origin "HEAD:$BRANCH"
