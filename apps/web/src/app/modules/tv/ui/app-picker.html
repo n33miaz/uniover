@@ -1,0 +1,56 @@
+@if (installed().length === 0) {
+  <app-tv-apps-unavailable />
+} @else if (candidates().length === 0) {
+  <p class="note" role="status" i18n="@@tv.picker.all-pinned">
+    Todos os apps da TV já estão no controle.
+  </p>
+} @else {
+  <!-- O teclado anda pelas setas entre a busca e os apps; o Tab segue passando por todos. -->
+  <div class="picker">
+    <label class="ui-visually-hidden" [for]="searchId" i18n="@@tv.picker.search-label"
+      >Buscar app instalado</label
+    >
+    <input
+      [id]="searchId"
+      class="search"
+      type="search"
+      autocomplete="off"
+      spellcheck="false"
+      placeholder="Buscar app"
+      i18n-placeholder="@@tv.picker.search-placeholder"
+      [value]="query()"
+      (input)="onQuery($event)"
+    />
+    <span class="ui-visually-hidden" role="status">{{ countText() }}</span>
+
+    @if (visible().length === 0) {
+      <p class="note" i18n="@@tv.picker.no-match">Nenhum app encontrado para essa busca.</p>
+    } @else {
+      <ul
+        class="options"
+        aria-label="Apps instalados na TV"
+        i18n-aria-label="@@tv.picker.list-label"
+      >
+        @for (item of visible(); track item.id) {
+          <li>
+            <button
+              type="button"
+              class="option"
+              [attr.aria-disabled]="busy() ? 'true' : null"
+              [attr.aria-describedby]="item.enabled ? 'picker-pinned-' + item.id : null"
+              (click)="choose(item)"
+            >
+              <app-tv-app-icon [shortcut]="item" [lazy]="true" />
+              <span class="name">{{ label(item) }}</span>
+              @if (item.enabled) {
+                <span class="ui-chip" [id]="'picker-pinned-' + item.id" i18n="@@tv.picker.pinned"
+                  >No controle</span
+                >
+              }
+            </button>
+          </li>
+        }
+      </ul>
+    }
+  </div>
+}

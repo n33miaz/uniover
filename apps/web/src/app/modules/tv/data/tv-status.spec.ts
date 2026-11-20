@@ -20,6 +20,7 @@ const ALL: TvStatus[] = [
   'loading',
   'unresponsive',
   'pc-off',
+  'tv-unreachable',
 ];
 
 const INDICATORS: TvIndicator[] = [
@@ -28,6 +29,7 @@ const INDICATORS: TvIndicator[] = [
   'connecting',
   'waking',
   'unresponsive',
+  'tv-unreachable',
   'agent-off',
   'pc-off',
   'not-configured',
@@ -77,6 +79,7 @@ describe('deriveIndicator', () => {
     ['unconfigured', 'not-configured'],
     ['not-paired', 'not-paired'],
     ['offline', 'offline'],
+    ['tv-unreachable', 'tv-unreachable'],
   ])('%s becomes %s when the watchdog has nothing to say', (status, expected) => {
     expect(deriveIndicator(status, null)).toBe(expected);
   });
@@ -111,6 +114,7 @@ describe('indicatorPhase', () => {
       connecting: 'connecting',
       waking: 'connecting',
       unresponsive: 'no-reply',
+      'tv-unreachable': 'no-reply',
       'agent-off': 'agent-off',
       'pc-off': 'pc-off',
       'not-configured': 'attention',
@@ -221,7 +225,9 @@ describe('indicatorText', () => {
   });
 
   it('lists nothing for the other states', () => {
-    for (const indicator of INDICATORS.filter((item) => item !== 'repair-failed')) {
+    for (const indicator of INDICATORS.filter(
+      (item) => item !== 'repair-failed' && item !== 'tv-unreachable',
+    )) {
       expect(indicatorText(indicator, 5).hints, indicator).toEqual([]);
     }
   });
@@ -231,6 +237,42 @@ describe('indicatorText', () => {
       const text = indicatorText(indicator, 5);
       expect(`${text.title} ${text.meaning}`, indicator).not.toMatch(/tv desligada/i);
     }
+  });
+});
+
+describe('the PC that cannot reach the TV', () => {
+  it('is its own state, never "computador desligado", with a short label', () => {
+    expect(statusLabel('tv-unreachable')).toBe('PC não alcança a TV');
+    expect(deriveIndicator('tv-unreachable', WATCHDOG_REPAIR_FAILED)).toBe('tv-unreachable');
+  });
+
+  it('says it plainly and offers a one-tap search for the TV', () => {
+    const text = indicatorText('tv-unreachable', 5);
+    expect(text.title).toBe('O PC não alcança a TV');
+    expect(text.meaning).toContain('O computador está ligado');
+    expect(text.action).toBe('retry');
+    expect(text.actionLabel).toBe('Procurar a TV');
+  });
+
+  it('lists the causes, the most common first, in short sentences', () => {
+    const { hints } = indicatorText('tv-unreachable', 5);
+    expect(hints.map((hint) => hint.title)).toEqual([
+      'A TV Está Ligada?',
+      'Outra Rede',
+      'Roteador Desligado',
+      'A TV Saiu da Rede',
+    ]);
+    for (const hint of hints) expect(hint.body.length).toBeLessThan(110);
+  });
+
+  it('gives the physical step when the TV left for a network the PC is not on', () => {
+    const { hints } = indicatorText('tv-unreachable', 5);
+    expect(hints.find((hint) => hint.title === 'Roteador Desligado')?.body).toContain(
+      'Ligue o roteador',
+    );
+    expect(hints.find((hint) => hint.title === 'A TV Saiu da Rede')?.body).toContain(
+      'Configurações > Rede',
+    );
   });
 });
 

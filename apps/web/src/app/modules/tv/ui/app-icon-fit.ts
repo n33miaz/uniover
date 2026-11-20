@@ -225,8 +225,32 @@ export function analyzeIconEdges(rgba: Rgba, width: number, height: number): Edg
     y1: height - Math.round(capped.bottom * height),
   });
   const background =
-    finalRing.opaqueShare >= PLATE_OPAQUE_SHARE && finalRing.color ? finalRing.color : null;
+    finalRing.opaqueShare >= PLATE_OPAQUE_SHARE && finalRing.color
+      ? finalRing.color
+      : lightInk(rgba, width, height)
+        ? DARK_PLATE
+        : null;
   return { trim: capped, background };
+}
+
+/** Fundo escuro para o ícone de tinta clara sem placa (a camada da frente de um ícone adaptativo, branca). */
+export const DARK_PLATE: IconColor = { r: 32, g: 38, b: 34 };
+/** Acima desta luminância média a tinta é clara demais para o fundo claro de reserva do azulejo. */
+const LIGHT_INK_LUMINANCE = 0.8;
+
+/**
+ * A tinta do ícone (só os pixels opacos) é clara, em média? Um logotipo branco sobre transparente sumiria no fundo
+ * claro de reserva do azulejo; com isto ele ganha um fundo escuro.
+ */
+function lightInk(rgba: Rgba, width: number, height: number): boolean {
+  let sum = 0;
+  let count = 0;
+  for (let index = 0; index < width * height * 4; index += 4) {
+    if (rgba[index + 3] < SOLID_ALPHA) continue;
+    sum += (0.2126 * rgba[index] + 0.7152 * rgba[index + 1] + 0.0722 * rgba[index + 2]) / 255;
+    count++;
+  }
+  return count > 0 && sum / count > LIGHT_INK_LUMINANCE;
 }
 
 /** O recorte como um quadrado, em frações do lado da imagem: é o que o `cover` do azulejo consegue mostrar. */

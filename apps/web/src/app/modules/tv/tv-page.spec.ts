@@ -8,7 +8,7 @@ import { TvPrefs, tvPrefsStorageKey } from './data/tv-prefs';
 import { TvSelection } from './data/tv-selection';
 import { TvStore } from './data/tv-store';
 import { TvPage } from './tv-page';
-import { FakeTvStore, createFakeTvStore, makeTv } from './tv-test-kit';
+import { FakeTvStore, createFakeTvStore, makeShortcut, makeTv } from './tv-test-kit';
 import { TV_ROUTES } from './tv.routes';
 
 describe('TvPage', () => {
@@ -352,6 +352,20 @@ describe('TvPage', () => {
       expect(store.wake).toHaveBeenCalled();
     });
 
+    it('when the PC cannot reach the TV the buttons stay on and one tap asks the PC to look for it', async () => {
+      store.status.set('tv-unreachable');
+      store.canSend.set(true);
+      store.disabledReason.set('O PC não alcança a TV. Veja se ela está ligada.');
+      await render();
+      expect(byLabel('Mudo').disabled).toBe(false);
+      const row = root.querySelector('.reason-row')!;
+      expect(row.querySelector('.reason')?.textContent).toContain('O PC não alcança a TV');
+      row.querySelector<HTMLButtonElement>('button.retry')!.click();
+      await render();
+      expect(store.refresh).toHaveBeenCalledTimes(1);
+      expect(store.wake).toHaveBeenCalled();
+    });
+
     it('offers no retry when the network or the server is the problem, which fix themselves', async () => {
       for (const status of ['offline'] as const) {
         store.status.set(status);
@@ -556,7 +570,17 @@ describe('TvPage', () => {
       fixture.destroy();
       TestBed.resetTestingModule();
       store = createFakeTvStore();
-      store.shortcuts.set([]);
+      // A TV informou estes apps, nenhum no controle: as sugestões saem daqui.
+      store.shortcuts.set([
+        makeShortcut(1, { package: 'com.exemplo.radio', tvLabel: 'Rádio', enabled: false }),
+        makeShortcut(2, { package: 'com.netflix.ninja', tvLabel: 'Netflix', enabled: false }),
+        makeShortcut(3, {
+          package: 'com.google.android.youtube.tv',
+          tvLabel: 'YouTube',
+          enabled: false,
+        }),
+        makeShortcut(4, { package: 'com.wbd.stream', tvLabel: 'Max', enabled: false }),
+      ]);
       TestBed.configureTestingModule({
         providers: [provideRouter([]), { provide: TvStore, useValue: store }],
       });
@@ -583,19 +607,43 @@ describe('TvPage', () => {
       await render();
       expect(root.querySelector('app-tv-panel')).toBeNull();
       expect(root.querySelector('.shortcut.suggestion[aria-label="Sugestão: Netflix"]')).toBeNull();
-      expect(TestBed.inject(TvPrefs).dismissedSuggestions()).toEqual(['netflix']);
+      expect(TestBed.inject(TvPrefs).dismissedSuggestions()).toEqual(['com.netflix.ninja']);
     });
 
-    it('asking for the Apps panel closes the suggestion first and then opens Apps, one modal at a time', async () => {
+    it('offers the installed apps, well-known brands first', () => {
+      const offered = [...root.querySelectorAll('.shortcut.suggestion')].map((el) =>
+        el.getAttribute('aria-label'),
+      );
+      expect(offered).toEqual([
+        'Sugestão: YouTube',
+        'Sugestão: Netflix',
+        'Sugestão: Max',
+        'Sugestão: Rádio',
+      ]);
+    });
+
+    it('choosing another app closes the suggestion first and then opens the picker, one modal at a time', async () => {
       await tapSuggestion('Sugestão: YouTube');
       [...root.querySelectorAll<HTMLButtonElement>('app-tv-suggestion button')]
-        .find((b) => b.textContent?.trim() === 'Atualizar a lista de apps')!
+        .find((b) => b.textContent?.trim() === 'Escolher outro app')!
         .click();
       await render();
       await render();
       expect(root.querySelector('app-tv-suggestion')).toBeNull();
       expect(dialogs()).toHaveLength(1);
-      expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Apps da TV');
+      expect(root.querySelector('app-tv-panel h2')?.textContent).toBe('Escolher app');
+      const options = [...root.querySelectorAll<HTMLButtonElement>('app-tv-app-picker .option')];
+      expect(options.map((b) => b.querySelector('.name')?.textContent?.trim())).toEqual([
+        'YouTube',
+        'Netflix',
+        'Max',
+        'Rádio',
+      ]);
+      options[2]!.click();
+      await render();
+      await render();
+      expect(store.setShortcutEnabled).toHaveBeenCalledWith('s4', true);
+      expect(root.querySelector('app-tv-app-picker')).toBeNull();
     });
 
     it('hides the toast while the suggestion is open, as for any panel', async () => {

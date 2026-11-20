@@ -19,5 +19,12 @@
     (error)="markFailed(uri)"
   />
 } @else {
-  <span class="fallback" [class]="hue()" aria-hidden="true">{{ glyph() }}</span>
+  <span
+    class="fallback"
+    [class]="hue()"
+    [style.--brand-tint]="brand()?.tint ?? null"
+    [style.--brand-ink]="brand()?.ink ?? null"
+    aria-hidden="true"
+    >{{ glyph() }}</span
+  >
 }

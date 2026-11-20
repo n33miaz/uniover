@@ -1,0 +1,37 @@
+@if (message(); as text) {
+  <div class="why" role="status">
+    <p class="text">{{ text }}</p>
+    @if (askOwner() && !compact()) {
+      <p class="text" i18n="@@tv.apps-why.ask-owner">
+        Peça a quem cuida da TV para liberar os apps.
+      </p>
+    }
+    @if (fix(); as action) {
+      <!-- Apagado, mas focável, enquanto não dá para usar: o foco de quem acabou de tocar não se perde. -->
+      <button
+        type="button"
+        class="ui-btn secondary fix"
+        [attr.aria-disabled]="blocked() ? 'true' : null"
+        (click)="run()"
+      >
+        @switch (action) {
+          @case ('ask-permission') {
+            <span i18n="@@tv.apps-why.fix-permission">Pedir permissão na TV</span>
+          }
+          @case ('accepted') {
+            <span i18n="@@tv.apps-why.fix-accepted">Já aceitei</span>
+          }
+          @case ('search') {
+            <span i18n="@@tv.apps-why.fix-search">Buscar apps da TV</span>
+          }
+          @case ('wake') {
+            <span i18n="@@tv.apps-why.fix-wake">Ligar a TV</span>
+          }
+          @case ('recheck') {
+            <span i18n="@@tv.apps-why.fix-recheck">Verificar de novo</span>
+          }
+        }
+      </button>
+    }
+  </div>
+}

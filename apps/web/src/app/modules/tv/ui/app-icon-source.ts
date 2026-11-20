@@ -26,6 +26,8 @@ const SAMSUNG_ICON_PATHS: Readonly<Record<string, string>> = {
   'samsung.app.id3202203026841': '/tv/app-icons/twitch.png',
   'samsung.app.id3201608010191': '/tv/app-icons/deezer.png',
   'com.samsung.tv.tvPlusDeeplinker': '/tv/app-icons/samsung-tv-plus.svg',
+  // O lançador do próprio UniOver na TV: o ícone dele é só vetor (adaptativo, sem PNG de reserva), e a marca é nossa.
+  'br.uniover.launcher': '/icons/icon-192.png',
 };
 
 /** O ícone como texto pronto para o `<img>`, ou `null` quando não há (ou não é um PNG/WebP em `data:`). */

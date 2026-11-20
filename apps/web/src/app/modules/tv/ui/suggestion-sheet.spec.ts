@@ -1,8 +1,6 @@
 import { TestBed } from '@angular/core/testing';
-import { SessionState } from '../../../core/session/session-state';
 import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
-import { TV_SUGGESTED_APPS } from '../data/tv-suggestions';
 import { TvShortcut } from '../data/tv-types';
 import { FakeTvStore, createFakeTvStore, makeShortcut, pngIcon } from '../tv-test-kit';
 import { SuggestionSheet } from './suggestion-sheet';
@@ -12,9 +10,8 @@ describe('SuggestionSheet', () => {
   let fixture: ReturnType<typeof TestBed.createComponent<SuggestionSheet>>;
   let root: HTMLElement;
   let done: ReturnType<typeof vi.fn<() => void>>;
-  let openApps: ReturnType<typeof vi.fn<() => void>>;
+  let choose: ReturnType<typeof vi.fn<() => void>>;
 
-  const netflix = TV_SUGGESTED_APPS.find((app) => app.key === 'netflix')!;
   const buttons = () =>
     [...root.querySelectorAll<HTMLButtonElement>('button')].map((b) => b.textContent?.trim());
   const click = (text: string) =>
@@ -22,97 +19,76 @@ describe('SuggestionSheet', () => {
       .find((b) => b.textContent?.trim() === text)!
       .click();
 
-  const mount = (list: TvShortcut[], guestPermissions?: string[]) => {
+  const mount = (app: TvShortcut) => {
     store = createFakeTvStore();
-    store.shortcuts.set(list);
+    store.shortcuts.set([app]);
     TestBed.configureTestingModule({ providers: [{ provide: TvStore, useValue: store }] });
-    if (guestPermissions) {
-      TestBed.inject(SessionState).setUser({
-        id: 'g',
-        email: 'g@example.com',
-        displayName: 'Gi',
-        role: 'guest',
-        permissions: guestPermissions,
-      });
-    }
     fixture = TestBed.createComponent(SuggestionSheet);
-    fixture.componentRef.setInput('app', netflix);
+    fixture.componentRef.setInput('app', app);
     done = vi.fn<() => void>();
-    openApps = vi.fn<() => void>();
+    choose = vi.fn<() => void>();
     fixture.componentInstance.done.subscribe(done);
-    fixture.componentInstance.openApps.subscribe(openApps);
+    fixture.componentInstance.choose.subscribe(choose);
     fixture.detectChanges();
     root = fixture.nativeElement;
   };
+
+  const netflix = (overrides: Partial<TvShortcut> = {}) =>
+    makeShortcut(4, {
+      package: 'com.netflix.ninja',
+      tvLabel: 'Netflix',
+      enabled: false,
+      ...overrides,
+    });
 
   afterEach(() => {
     TestBed.inject(TvPrefs).reset();
     localStorage.clear();
   });
 
-  it('pins the shortcut the TV already listed for the app, with its real icon, and closes', async () => {
-    const listed = makeShortcut(4, {
-      package: 'com.netflix.ninja',
-      enabled: false,
-      iconDataUri: pngIcon(96, 96),
-    });
-    mount([makeShortcut(1, { enabled: false }), listed]);
+  it('shows the installed app with the icon the TV sent, and pins it to the control', async () => {
+    mount(netflix({ iconDataUri: pngIcon(96, 96) }));
     expect(root.querySelector('.ui-chip')?.textContent?.trim()).toBe('Sugestão');
     expect(root.querySelector('app-tv-app-icon img')).not.toBeNull();
-    expect(buttons()).toEqual(['Fixar no controle', 'Remover sugestão']);
+    expect(buttons()).toEqual(['Fixar no controle', 'Escolher outro app', 'Remover sugestão']);
     click('Fixar no controle');
     await fixture.whenStable();
-    expect(store.setShortcutEnabled).toHaveBeenCalledWith(listed.id, true);
+    expect(store.setShortcutEnabled).toHaveBeenCalledWith('s4', true);
     expect(done).toHaveBeenCalledTimes(1);
   });
 
-  it('stays open and pins nothing when the server refuses', async () => {
-    mount([makeShortcut(4, { package: 'com.netflix.ninja', enabled: false })]);
+  it('without an icon from the TV, draws a brand-like tile with the initial (never a logo)', () => {
+    mount(netflix());
+    const tile = root.querySelector<HTMLElement>('app-tv-app-icon .fallback')!;
+    expect(tile.textContent?.trim()).toBe('N');
+    expect(tile.classList.contains('brand')).toBe(true);
+    expect(root.querySelector('app-tv-app-icon img')).toBeNull();
+  });
+
+  it('stays open when the server refuses', async () => {
+    mount(netflix());
     store.setShortcutEnabled.mockResolvedValue(false);
     click('Fixar no controle');
     await fixture.whenStable();
     expect(done).not.toHaveBeenCalled();
   });
 
-  it('does not pretend the app is on the TV: without it on the list there is nothing to pin, only the way to refresh the list', () => {
-    mount([makeShortcut(1, { enabled: false })]);
-    expect(buttons()).toEqual(['Atualizar a lista de apps', 'Remover sugestão']);
-    expect(root.textContent).toContain('A lista da TV ainda não traz este app.');
-    click('Atualizar a lista de apps');
-    expect(openApps).toHaveBeenCalledTimes(1);
+  it('asks for the app picker, announced as opening a dialog', () => {
+    mount(netflix());
+    const other = [...root.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.textContent?.trim() === 'Escolher outro app',
+    )!;
+    expect(other.getAttribute('aria-haspopup')).toBe('dialog');
+    other.click();
+    expect(choose).toHaveBeenCalledTimes(1);
     expect(store.setShortcutEnabled).not.toHaveBeenCalled();
-    // Sem o ícone do app, a inicial do nome sobre a cor do pacote.
-    expect(root.querySelector('app-tv-app-icon .fallback')?.textContent?.trim()).toBe('N');
   });
 
-  it('removes the suggestion for this account and closes', () => {
-    mount([]);
+  it('removes the suggestion by package for this account and closes', () => {
+    mount(netflix());
     click('Remover sugestão');
-    expect(TestBed.inject(TvPrefs).dismissedSuggestions()).toEqual(['netflix']);
+    expect(TestBed.inject(TvPrefs).dismissedSuggestions()).toEqual(['com.netflix.ninja']);
     expect(done).toHaveBeenCalledTimes(1);
     expect(store.setShortcutEnabled).not.toHaveBeenCalled();
-  });
-
-  it('offers the way to refresh the app list only to who can ask the TV for it', () => {
-    mount([], ['module:tv', 'tv:edit-shortcuts']);
-    expect(buttons()).toEqual(['Remover sugestão']);
-  });
-
-  it('dims the way to refresh the list while the agent cannot be reached, and says why', () => {
-    mount([]);
-    store.canSend.set(false);
-    store.disabledReason.set(
-      'O computador que controla a TV está desligado, então os botões não funcionam agora.',
-    );
-    fixture.detectChanges();
-    const refresh = [...root.querySelectorAll<HTMLButtonElement>('button')].find(
-      (b) => b.textContent?.trim() === 'Atualizar a lista de apps',
-    )!;
-    expect(refresh.disabled).toBe(true);
-    expect(root.querySelector('.note + button + .note, button + .note')?.textContent).toContain(
-      'computador que controla a TV está desligado',
-    );
-    refresh.click();
-    expect(openApps).not.toHaveBeenCalled();
   });
 });

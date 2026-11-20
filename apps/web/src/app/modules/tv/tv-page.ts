@@ -35,7 +35,9 @@ import { TvMenu, TvMenuChoice } from './ui/tv-menu';
 import { TvSwitcher } from './ui/tv-switcher';
 import { PowerSheet } from './ui/power-sheet';
 import { PairSheet } from './ui/pair-sheet';
-import { TvSuggestionRequest } from './ui/shortcut-row';
+import { TvPickRequest, TvSuggestionRequest } from './ui/shortcut-row';
+import { AppPicker } from './ui/app-picker';
+import { TvShortcut, shortcutLabel } from './data/tv-types';
 import { PairingNotice } from './ui/pairing-notice';
 import { PcOffSeal } from './ui/pc-off-seal';
 import { StatusIndicator } from './ui/status-indicator';
@@ -70,6 +72,7 @@ const TITLE_MEDIUM_MAX = 12;
   selector: 'app-tv-page',
   imports: [
     RouterLink,
+    AppPicker,
     PcOffSeal,
     PairingNotice,
     TvToast,
@@ -124,7 +127,10 @@ export class TvPage {
   private pendingChoice: TvMenuChoice | null = null;
   /** A sugestão de atalho aberta (o app e o botão tocado), ou nada. */
   protected readonly suggestion = signal<TvSuggestionRequest | null>(null);
-  private suggestionWantsApps = false;
+  private suggestionWantsPicker = false;
+  /** O seletor de apps aberto (o atalho a trocar, ou nenhum, e o botão tocado), ou nada. */
+  protected readonly picker = signal<TvPickRequest | null>(null);
+  protected readonly pickerTitle = $localize`:@@tv.picker.title:Escolher app`;
   /** Pedindo de novo o estado ao agente (o botão "Tentar de novo" fica ocupado até voltar). */
   protected readonly retrying = signal(false);
   /** O título que abriu Personalizar, para devolver o foco a ele (o Safari não foca botão ao toque). */
@@ -157,7 +163,12 @@ export class TvPage {
    */
   protected readonly canRetry = computed(() => {
     const status = this.store.status();
-    return status === 'agent-off' || status === 'pc-off' || status === 'unresponsive';
+    return (
+      status === 'agent-off' ||
+      status === 'pc-off' ||
+      status === 'unresponsive' ||
+      status === 'tv-unreachable'
+    );
   });
 
   /** Há um desligamento agendado (esperando ou já disparando): o botão de energia ganha o relógio miúdo. */
@@ -219,7 +230,8 @@ export class TvPage {
       !this.helpOpen() &&
       !this.menuOpen() &&
       !this.switchOpen() &&
-      this.suggestion() === null,
+      this.suggestion() === null &&
+      this.picker() === null,
   );
 
   private readonly injector = inject(Injector);
@@ -274,7 +286,10 @@ export class TvPage {
         this.pendingChoice = null;
       }
       if (!this.store.multiple()) this.switchOpen.set(false);
-      if (!this.access.editShortcuts()) this.suggestion.set(null);
+      if (!this.access.editShortcuts()) {
+        this.suggestion.set(null);
+        this.picker.set(null);
+      }
       const apps = this.access.apps();
       const text = this.access.text();
       const keys = this.access.control() && this.roundKeys.more().length > 0;
@@ -392,19 +407,29 @@ export class TvPage {
     this.suggestion.set(request);
   }
 
-  /** O painel da sugestão pediu o Apps: fecha primeiro, abre o Apps depois (um modal por vez). */
-  protected suggestionToApps(panel: TvPanel): void {
-    this.suggestionWantsApps = true;
+  protected openPicker(request: TvPickRequest): void {
+    this.picker.set(request);
+  }
+
+  protected appName(shortcut: TvShortcut): string {
+    return shortcutLabel(shortcut);
+  }
+
+  /** O painel da sugestão pediu o seletor: fecha primeiro, abre o seletor depois (um modal por vez). */
+  protected suggestionToPicker(panel: TvPanel): void {
+    this.suggestionWantsPicker = true;
     panel.close();
   }
 
   protected suggestionClosed(): void {
     const request = this.suggestion();
     this.suggestion.set(null);
-    const wantsApps = this.suggestionWantsApps;
-    this.suggestionWantsApps = false;
-    if (!wantsApps || !request) return;
-    afterNextRender(() => this.open('apps', request.opener), { injector: this.injector });
+    const wantsPicker = this.suggestionWantsPicker;
+    this.suggestionWantsPicker = false;
+    if (!wantsPicker || !request) return;
+    afterNextRender(() => this.picker.set({ replacing: null, opener: request.opener }), {
+      injector: this.injector,
+    });
   }
 
   /** Lê o estado de novo e tenta acordar o controle: o que a pessoa faria à mão com o agente fora do ar. */

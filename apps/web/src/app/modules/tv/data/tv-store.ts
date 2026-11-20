@@ -59,6 +59,7 @@ export type TvStatus =
   | 'unresponsive'
   | 'pc-off'
   | 'agent-off'
+  | 'tv-unreachable'
   | 'hot'
   | 'hibernating'
   | 'tv-waking';
@@ -317,7 +318,10 @@ export class TvStore {
     if (!this.currentAccount()) return null;
     const state = this._state();
     if (!state) return null;
-    if (!state.agentOnline || state.connection === 'disconnected') return 'agent-off';
+    if (!state.agentOnline) return 'agent-off';
+    // O agente está no ar e disse que não tem sessão com a TV: quem não alcança a TV é o PC (TV desligada, fora da rede
+    // dele ou em outra rede). Não é "computador desligado".
+    if (state.connection === 'disconnected') return 'tv-unreachable';
     if (state.connection === 'not_paired') return 'not-paired';
     if (state.connection === 'waking') return 'tv-waking';
     if (state.connection === 'unknown') return 'loading';
@@ -379,6 +383,8 @@ export class TvStore {
           return $localize`:@@tv.reason.unresponsive:O controle não recebeu resposta. Tente de novo.`;
         case 'tv-waking':
           return $localize`:@@tv.reason.waking:TV ligando… Os botões já funcionam e esperam a TV responder.`;
+        case 'tv-unreachable':
+          return $localize`:@@tv.reason.tv-unreachable:O PC não alcança a TV. Veja se ela e o roteador estão ligados; se a TV foi para outro Wi-Fi, escolha na TV a rede do PC.`;
         default:
           return null;
       }

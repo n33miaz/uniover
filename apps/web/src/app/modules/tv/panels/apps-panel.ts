@@ -14,7 +14,10 @@ import { TvAccess } from '../data/tv-access';
 import { controlRanks, movedOrder } from '../data/tv-order';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut, shortcutLabel } from '../data/tv-types';
+import { appsAvailability } from '../data/tv-apps-availability';
 import { AppIcon } from '../ui/app-icon';
+import { AppPicker } from '../ui/app-picker';
+import { AppsUnavailable } from '../ui/apps-unavailable';
 import { TvIcon } from '../ui/tv-icon';
 import { AppsTile, TileMove } from './apps-tile';
 
@@ -50,7 +53,7 @@ function plain(text: string): string {
  */
 @Component({
   selector: 'app-tv-apps',
-  imports: [AppIcon, AppsTile, NgTemplateOutlet, TvIcon],
+  imports: [AppIcon, AppPicker, AppsTile, AppsUnavailable, NgTemplateOutlet, TvIcon],
   templateUrl: './apps-panel.html',
   styleUrl: './apps-panel.css',
 })
@@ -72,6 +75,20 @@ export class AppsPanel {
     (this.store.shortcuts() ?? []).filter((item) => item.installed),
   );
   protected readonly loaded = computed(() => this.store.shortcuts() !== null);
+  /**
+   * Por que a lista veio vazia, quando se sabe (computador sem ADB, TV sem permissão, TV desligada, computador fora):
+   * aí o painel diz o motivo e oferece o conserto, em vez do "Buscar apps" que não adiantaria.
+   */
+  protected readonly blockedReason = computed(() => {
+    const reason = appsAvailability({
+      shortcuts: this.store.shortcuts(),
+      state: this.store.state(),
+      tv: this.store.selectedTv(),
+    });
+    return reason === 'ready' || reason === 'loading' || reason === 'empty' ? null : reason;
+  });
+  /** O atalho sendo trocado por outro app (o seletor ocupa o painel), ou nenhum. */
+  protected readonly swapping = signal<TvShortcut | null>(null);
 
   protected readonly query = signal('');
   protected readonly visible = computed(() => {
@@ -125,6 +142,7 @@ export class AppsPanel {
       if (this.access.editShortcuts()) return;
       this.editMode.set(false);
       this.editing.set(null);
+      this.swapping.set(null);
     });
   }
 
@@ -166,6 +184,29 @@ export class AppsPanel {
     } finally {
       this.reloading.set(false);
     }
+  }
+
+  /** Abre o seletor no lugar da grade, para trocar este atalho por outro app instalado. */
+  protected startSwap(shortcut: TvShortcut): void {
+    this.swapping.set(shortcut);
+    this.editing.set(null);
+    this.focusAfterRender('app-tv-app-picker input[type="search"]');
+  }
+
+  protected swapText(shortcut: TvShortcut): string {
+    const name = shortcutLabel(shortcut);
+    return $localize`:@@tv.apps.swap-for:Escolha o app que entra no lugar de ${name}:name:.`;
+  }
+
+  /** Saiu do seletor (trocou ou desistiu): a grade volta e o foco vai ao botão de trocar do mesmo lugar, se ainda houver. */
+  protected endSwap(shortcut: TvShortcut, swapped: TvShortcut | null): void {
+    this.swapping.set(null);
+    if (swapped) {
+      const name = shortcutLabel(swapped);
+      this.announcement.set($localize`:@@tv.apps.swapped:${name}:name: está no controle`);
+    }
+    const target = swapped ?? shortcut;
+    this.focusAfterRender(`[data-swap="${target.id}"]`);
   }
 
   protected startRename(shortcut: TvShortcut): void {

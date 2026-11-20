@@ -61,12 +61,22 @@ describe('AppIcon', () => {
   });
 
   it('without an icon shows the initial of the app name on a color of its package, hidden from readers', () => {
-    show(makeShortcut(1, { tvLabel: 'Spotify', package: 'com.spotify.tv.android' }));
+    show(makeShortcut(1, { tvLabel: 'Som da Sala', package: 'com.exemplo.som' }));
     expect(image()).toBeNull();
     const tile = fallback()!;
     expect(tile.textContent?.trim()).toBe('S');
     expect(tile.getAttribute('aria-hidden')).toBe('true');
     expect(tile.className).toMatch(/\bhue-[0-5]\b/);
+  });
+
+  it('a well-known brand without an icon gets a brand-like tint and its mark, never a bundled logo', () => {
+    show(makeShortcut(1, { tvLabel: 'Disney+', package: 'com.disney.disneyplus' }));
+    expect(image()).toBeNull();
+    const tile = fallback()!;
+    expect(tile.textContent?.trim()).toBe('D+');
+    expect(tile.classList.contains('brand')).toBe(true);
+    expect(tile.style.getPropertyValue('--brand-tint')).toBe('#113ccf');
+    expect(tile.style.getPropertyValue('--brand-ink')).toBe('#ffffff');
   });
 
   it('keeps the same color for the same package, whatever the name', () => {

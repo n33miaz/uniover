@@ -1,0 +1,82 @@
+:host {
+  display: block;
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* A mesma caixa de busca do painel Apps; o foco aparece no anel global (`:focus-visible`). */
+.search {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--a-ink3);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+}
+
+.note {
+  margin: 0;
+  color: var(--a-ink2);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Linha inteira tocável (alvo bem acima de 44 px): ícone, nome que quebra em duas linhas no máximo e a marca. */
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 56px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.option app-tv-app-icon {
+  --tile: 40px;
+}
+.option .name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.option .ui-chip {
+  flex: 0 0 auto;
+}
+.option[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}
+@media (hover: hover) and (pointer: fine) {
+  .option:hover:not([aria-disabled='true']) {
+    background: var(--a-surface-2);
+  }
+}

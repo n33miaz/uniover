@@ -256,6 +256,18 @@ describe('TvStore', () => {
       expect(store.state()?.volume).toBeNull();
     });
 
+    it('an online agent without a TV session is "tv-unreachable": buttons stay on and the reason says why', async () => {
+      await started();
+      emit('tv.state', { ...hot, connection: 'disconnected', power: 'unknown' });
+      expect(store.status()).toBe('tv-unreachable');
+      expect(store.lastKnownStatus()).toBe('tv-unreachable');
+      expect(store.canSend()).toBe(true);
+      expect(store.disabledReason()).toContain('O PC não alcança a TV');
+      emit('tv.state', hot);
+      expect(store.status()).toBe('hot');
+      expect(store.disabledReason()).toBeNull();
+    });
+
     it('applies shortcut lists and ignores events it cannot read', async () => {
       await started();
       emit('tv.shortcuts', [shortcut(3), shortcut(1)]);
