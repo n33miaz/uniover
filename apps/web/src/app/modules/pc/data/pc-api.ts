@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, Injector, inject } from '@angular/core';
 import { firstValueFrom, type Observable } from 'rxjs';
+import type { components } from '../../../core/api/generated/schema';
 import { APP_CONFIG } from '../../../core/config/app-config';
 import { PcDirect, DirectNotSent, type DirectCommandType } from './pc-direct';
 import { OPERATION_HEADER, newOperationId } from './pc-operation';
@@ -12,6 +13,7 @@ import {
   clampZoomSteps,
   clickNeedsV2,
   keyNeedsV2,
+  textEditHasLines,
   textEditNeedsV2,
   type PcClickButton,
   type PcClickOptions,
@@ -19,14 +21,20 @@ import {
   type PcHoldableKey,
   type PcKey,
   type PcKeyOptions,
+  playbackStatusOf,
   type PcMediaAction,
   type PcModifier,
+  type PcNowPlaying,
   type PcPowerAction,
   type PcTextEdit,
   type PcVolumeChange,
 } from './pc-types';
 
 const BASE = `${APP_CONFIG.apiBase}/v1/pc`;
+
+type NowPlayingResponse = components['schemas']['PcNowPlaying'];
+type ClipboardResponse = components['schemas']['PcClipboardText'];
+type ClipboardWriteRequest = components['schemas']['PcClipboardWriteRequest'];
 
 /**
  * Cliente da API do controle do PC. Usa o `HttpClient` do app (os interceptadores levam o Bearer e renovam a sessão); é
@@ -163,7 +171,11 @@ export class PcApi {
     if (erase > 0) body['erase'] = erase;
     if (edit.text) body['text'] = edit.text;
     if (edit.key !== undefined) body['key'] = edit.key;
-    const type = textEditNeedsV2({ ...edit, erase }) ? 'pc.text.v2' : 'pc.text.v1';
+    const type = textEditHasLines(edit)
+      ? 'pc.text.v3'
+      : textEditNeedsV2({ ...edit, erase })
+        ? 'pc.text.v2'
+        : 'pc.text.v1';
     if (this.direct.canUse() && (await this.viaDirect(type, body))) return;
     await this.cloud(this.commandPost(`${BASE}/text`, { ...body, ...this.numbered() }));
   }
@@ -206,6 +218,39 @@ export class PcApi {
 
   async launch(appId: string): Promise<void> {
     await this.cloud(this.commandPost(`${BASE}/apps/${encodeURIComponent(appId)}/launch`, null));
+  }
+
+  /**
+   * O que o Windows diz estar tocando. Só pela nuvem: o agente lê a sessão de mídia do sistema e responde antes do resultado. Só
+   * leitura, e quem chama só pergunta a um PC que declarou `pc.media.state.v1`.
+   */
+  async nowPlaying(): Promise<PcNowPlaying> {
+    const body = (await this.cloud(
+      this.http.get<NowPlayingResponse>(`${BASE}/now-playing`),
+    )) as NowPlayingResponse;
+    return {
+      status: playbackStatusOf(body.status),
+      title: body.title,
+      artist: body.artist,
+      app: body.app,
+    };
+  }
+
+  /**
+   * O texto da área de transferência do PC (vazio quando não há texto). Pode ser uma senha: quem chama o mostra e o esquece, sem
+   * guardar. Só pela nuvem, e só para um PC que declarou `pc.clipboard.v1`.
+   */
+  async readClipboard(): Promise<string> {
+    const body = (await this.cloud(
+      this.commandPost(`${BASE}/clipboard/read`, null),
+    )) as ClipboardResponse;
+    return body.text;
+  }
+
+  /** Troca o texto da área de transferência do PC (quem chama já conferiu com `clipboardTextFits`). */
+  async writeClipboard(text: string): Promise<void> {
+    const body: ClipboardWriteRequest = { text };
+    await this.cloud(this.commandPost(`${BASE}/clipboard/write`, body));
   }
 
   /**

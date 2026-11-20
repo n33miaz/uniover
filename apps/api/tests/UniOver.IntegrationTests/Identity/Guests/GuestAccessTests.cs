@@ -74,7 +74,7 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
     /// <summary>
     /// As rotas do controle do PC: por papel o convidado entra, e o que o barra é a permissão <c>module:pc</c> de cada rota (o dono
     /// tem por padrão, o convidado só se concedida), que a varredura confere abaixo; a tabela vive aqui porque o controle do PC
-    /// tem um conjunto fixo de nove rotas, todas com a mesma permissão.
+    /// tem um conjunto fixo de rotas, todas com a mesma permissão.
     /// </summary>
     private static readonly string[] GuestPcRoutes =
     [
@@ -89,6 +89,9 @@ public sealed class GuestAccessTests(PostgresFixture postgres)
         "/api/v1/pc/volume",
         "/api/v1/pc/power",
         "/api/v1/pc/apps/{appId}/launch",
+        "/api/v1/pc/now-playing",
+        "/api/v1/pc/clipboard/read",
+        "/api/v1/pc/clipboard/write",
         "/api/v1/pc/rtc/offer",
         "/api/v1/pc/rtc/{sessionId:guid}/candidates",
         "/api/v1/pc/rtc/{sessionId:guid}/close",

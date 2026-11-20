@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/pc.media.state.v1.schema.json",
+  "title": "pc.media.state.v1",
+  "description": "Agente para API: o que o Windows diz estar tocando (`status`: `playing`, `paused`, `stopped` ou `none` quando não há sessão de mídia; `title`, `artist` e `app`, o programa que toca, vazios quando não há faixa) e quando foi lido (`at`). Responde a `pc.media.query.v1`: `correlationId` é o do pedido. O título é conteúdo da pessoa: a API o guarda só em memória, por agente, o devolve em `GET /api/v1/pc/now-playing` e nunca o registra nem o audita. O agente só o manda a uma API que listou `pc.media.state.v1` em `features`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "pc.media.state.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "title",
+        "artist",
+        "app",
+        "at"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "playing",
+            "paused",
+            "stopped",
+            "none"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "artist": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "app": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "at": {
+          "$ref": "../envelope.schema.json#/$defs/timestamp"
+        }
+      }
+    }
+  }
+}

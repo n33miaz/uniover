@@ -1,4 +1,6 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { PcAvailability, type PcStatus } from '../../../core/modules/pc-availability';
 import { SessionState } from '../../../core/session/session-state';
 import { tick } from '../input/haptics';
 import { PC_PREFS_DEFAULTS, PcPrefs, pcPrefsStorageKey } from './pc-prefs';
@@ -62,6 +64,21 @@ describe('PcPrefs', () => {
     expect(prefs.clickButtons()).toBe(false);
     expect(prefs.keepAwake()).toBe(true);
     expect(prefs.hintSeen()).toBe(false);
+  });
+
+  it.each([
+    ['normal', true, 4],
+    ['boosted', false, 5],
+    [undefined, true, 4],
+  ] as const)('keeps saved acceleration %s / %s', (sensitivity, acceleration, level) => {
+    localStorage.setItem(
+      pcPrefsStorageKey('pc-user'),
+      JSON.stringify({ sensitivity, acceleration }),
+    );
+
+    const prefs = fresh();
+    expect(prefs.sensitivity()).toBe(level);
+    expect(prefs.acceleration()).toBe(acceleration);
   });
 
   it('the first-use hint, once seen, stays seen and is not a choice', () => {
@@ -270,5 +287,52 @@ describe('PcPrefs', () => {
     const prefs = fresh();
     prefs.set({ sensitivity: 2 });
     expect(prefs.sensitivity()).toBe(2);
+  });
+
+  describe('the acceleration of the Windows of the PC', () => {
+    const windows = signal<PcStatus | null>(null);
+    const withWindows = (acceleration: boolean, id = 'pc-user') => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [{ provide: PcAvailability, useValue: { status: windows.asReadonly() } }],
+      });
+      windows.set({
+        available: true,
+        online: true,
+        apps: [],
+        capabilities: [],
+        volume: null,
+        mouse: { acceleration, speed: 10 },
+      });
+      identify(id);
+      return TestBed.inject(PcPrefs);
+    };
+
+    it('is followed while the app choice was never made, and shown as read', () => {
+      const prefs = withWindows(true);
+      expect(prefs.accelerationChosen()).toBe(false);
+      expect(prefs.pointerAcceleration()).toBe(true);
+      expect(prefs.windowsMouse()).toEqual({ acceleration: true, speed: 10 });
+    });
+
+    it('an explicit choice wins and is kept, and going back to the defaults follows Windows again', () => {
+      const prefs = withWindows(true);
+      prefs.set({ acceleration: false });
+      expect(prefs.pointerAcceleration()).toBe(false);
+      expect(saved()).toMatchObject({ acceleration: false, accelerationChosen: true });
+      expect(withWindows(true).pointerAcceleration()).toBe(false);
+
+      const again = withWindows(true);
+      again.reset();
+      expect(again.pointerAcceleration()).toBe(true);
+    });
+
+    it('a saved "on" from before the choice flag is still a choice', () => {
+      localStorage.setItem(
+        pcPrefsStorageKey('pc-user'),
+        JSON.stringify({ sensitivity: 4, acceleration: true }),
+      );
+      expect(withWindows(false).pointerAcceleration()).toBe(true);
+    });
   });
 });

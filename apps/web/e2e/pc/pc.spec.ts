@@ -340,7 +340,9 @@ async function pushPageDown(page: Page, height = 60) {
 /** Os controles da tela que ficam atrás da barra de abas ou fora da janela (não deve haver nenhum). */
 async function hiddenControls(page: Page, skip = ''): Promise<string[]> {
   return page.evaluate((skipSelector) => {
-    const tabs = document.querySelector('app-tab-bar')!.getBoundingClientRect();
+    const bar = document.querySelector('app-tab-bar')!.getBoundingClientRect();
+    // Com o teclado do PC aberto a barra de abas some (altura zero): o limite passa a ser o fim da janela.
+    const tabs = bar.height > 0 ? bar : { top: window.innerHeight };
     const found: string[] = [];
     for (const element of document.querySelectorAll<HTMLElement>(
       'app-pc-page button, app-pc-page a',
@@ -1691,7 +1693,7 @@ test.describe('Energia', () => {
 
   test.describe('com um PC que reinicia, hiberna e encerra a sessão', () => {
     test.beforeEach(() => {
-      pc.status = { ...READY, apps: [...READY.apps], capabilities: ['pc.power.v2'] };
+      pc.status = { ...READY, apps: [...READY.apps], capabilities: ['pc.power.v2', 'pc.power.hibernate.v1'] };
     });
 
     test('mostra as quatro ações novas e apagar o monitor vale na hora', async ({ page }, info) => {

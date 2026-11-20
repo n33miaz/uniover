@@ -103,6 +103,7 @@ export type DirectCommandType =
   | 'pc.key.v2'
   | 'pc.text.v1'
   | 'pc.text.v2'
+  | 'pc.text.v3'
   | 'pc.media.v1'
   | 'pc.pointer.zoom.v1'
   | 'pc.volume.v1';
@@ -114,6 +115,7 @@ export type DirectCommandType =
 const CHANNEL_LISTED_TYPES: ReadonlySet<DirectCommandType> = new Set<DirectCommandType>([
   'pc.click.v2',
   'pc.text.v2',
+  'pc.text.v3',
   'pc.pointer.zoom.v1',
   'pc.volume.v1',
   // As da TV só existem num canal que a API concedeu com o escopo `tv`: o `ready` as lista, e só então valem.

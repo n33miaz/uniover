@@ -30,6 +30,8 @@ interface Action {
   readonly danger?: boolean;
   /** Só existe com um agente que entende `pc.power.v2`; sem ele a tela nem mostra o botão. */
   readonly needsV2?: boolean;
+  /** Só existe num PC com a hibernação ligada (o agente declara `pc.power.hibernate.v1`). */
+  readonly needsHibernate?: boolean;
 }
 
 interface Sheet {
@@ -43,7 +45,7 @@ interface Sheet {
  * pedem confirmação numa folha (e a API só aceita com a confirmação). Desligar e reiniciar usam a contagem do próprio
  * Windows, com aviso na tela do PC, e o botão de cancelar fica à vista logo depois, porque essas ações derrubam a conexão e
  * não há como desfazer de outro jeito. Reiniciar, encerrar a sessão, hibernar e desligar o monitor só aparecem para um PC
- * que declarou a capacidade (um agente anterior recusaria o pedido).
+ * que declarou a capacidade (um agente anterior recusaria o pedido); hibernar, só num PC com a hibernação ligada.
  */
 @Component({
   selector: 'app-pc-power-page',
@@ -130,6 +132,7 @@ export class PowerPage {
       label: $localize`:@@pc.power.hibernate:Hibernar`,
       icon: 'M12 3v10M8.5 9.5 12 13l3.5-3.5M5 17h14M7 21h10',
       needsV2: true,
+      needsHibernate: true,
     },
     {
       id: 'MONITOR_OFF',
@@ -153,7 +156,11 @@ export class PowerPage {
     },
   ];
   protected readonly actions = computed(() =>
-    this.all.filter((item) => !item.needsV2 || this.store.supportsPowerV2()),
+    this.all.filter(
+      (item) =>
+        (!item.needsV2 || this.store.supportsPowerV2()) &&
+        (!item.needsHibernate || this.store.supportsHibernate()),
+    ),
   );
 
   protected readonly shutdownCounting = $localize`:@@pc.power.counting:O PC vai desligar. O aviso aparece na tela dele.`;

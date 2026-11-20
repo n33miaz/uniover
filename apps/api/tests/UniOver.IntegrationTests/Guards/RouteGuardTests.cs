@@ -94,6 +94,11 @@ public sealed class RouteGuardTests(PostgresFixture postgres)
         ("POST", "/api/v1/pc/volume", RateLimitPolicies.PcInput),
         ("POST", "/api/v1/pc/power", RateLimitPolicies.PcPower),
         ("POST", "/api/v1/pc/apps/{appId}/launch", RateLimitPolicies.PcPower),
+        // O que toca é lido a cada poucos segundos com a tela da mídia aberta: o balde da entrada. A área de transferência pode ter uma senha:
+        // o balde baixo da energia.
+        ("GET", "/api/v1/pc/now-playing", RateLimitPolicies.PcInput),
+        ("POST", "/api/v1/pc/clipboard/read", RateLimitPolicies.PcPower),
+        ("POST", "/api/v1/pc/clipboard/write", RateLimitPolicies.PcPower),
         ("GET", "/api/v1/pc/status", RateLimitPolicies.Commands),
         ("POST", "/api/v1/pc/rtc/offer", RateLimitPolicies.PcRtc),
         ("POST", "/api/v1/pc/rtc/{sessionId:guid}/candidates", RateLimitPolicies.PcRtc),

@@ -22,9 +22,14 @@ from .pc_app_launch_v1 import PcAppLaunchV1Message
 from .pc_apps_v1 import PcAppsV1Message
 from .pc_click_v1 import PcClickV1Message
 from .pc_click_v2 import PcClickV2Message
+from .pc_clipboard_query_v1 import PcClipboardQueryV1Message
+from .pc_clipboard_set_v1 import PcClipboardSetV1Message
+from .pc_clipboard_v1 import PcClipboardV1Message
 from .pc_device_state_v1 import PcDeviceStateV1Message
 from .pc_key_v1 import PcKeyV1Message
 from .pc_key_v2 import PcKeyV2Message
+from .pc_media_query_v1 import PcMediaQueryV1Message
+from .pc_media_state_v1 import PcMediaStateV1Message
 from .pc_media_v1 import PcMediaV1Message
 from .pc_pointer_v1 import PcPointerV1Message
 from .pc_pointer_zoom_v1 import PcPointerZoomV1Message
@@ -39,6 +44,7 @@ from .pc_rtc_reconcile_v1 import PcRtcReconcileV1Message
 from .pc_rtc_reconciled_v1 import PcRtcReconciledV1Message
 from .pc_text_v1 import PcTextV1Message
 from .pc_text_v2 import PcTextV2Message
+from .pc_text_v3 import PcTextV3Message
 from .pc_volume_state_v1 import PcVolumeStateV1Message
 from .pc_volume_v1 import PcVolumeV1Message
 from .tv_adb_rebind_v1 import TvAdbRebindV1Message
@@ -85,9 +91,14 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.apps.v1": PcAppsV1Message,
     "pc.click.v1": PcClickV1Message,
     "pc.click.v2": PcClickV2Message,
+    "pc.clipboard.query.v1": PcClipboardQueryV1Message,
+    "pc.clipboard.set.v1": PcClipboardSetV1Message,
+    "pc.clipboard.v1": PcClipboardV1Message,
     "pc.device.state.v1": PcDeviceStateV1Message,
     "pc.key.v1": PcKeyV1Message,
     "pc.key.v2": PcKeyV2Message,
+    "pc.media.query.v1": PcMediaQueryV1Message,
+    "pc.media.state.v1": PcMediaStateV1Message,
     "pc.media.v1": PcMediaV1Message,
     "pc.pointer.v1": PcPointerV1Message,
     "pc.pointer.zoom.v1": PcPointerZoomV1Message,
@@ -102,6 +113,7 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.rtc.reconciled.v1": PcRtcReconciledV1Message,
     "pc.text.v1": PcTextV1Message,
     "pc.text.v2": PcTextV2Message,
+    "pc.text.v3": PcTextV3Message,
     "pc.volume.state.v1": PcVolumeStateV1Message,
     "pc.volume.v1": PcVolumeV1Message,
     "tv.adb.rebind.v1": TvAdbRebindV1Message,

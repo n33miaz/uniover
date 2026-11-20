@@ -186,8 +186,63 @@ export type PcPowerAction =
   | 'HIBERNATE'
   | 'MONITOR_OFF';
 
-/** A capacidade que o PC declara quando o agente entende `pc.power.v2` (reiniciar, encerrar a sessão, hibernar, apagar o monitor). */
+/**
+ * A capacidade que o PC declara quando o agente entende `pc.power.v2` (reiniciar, encerrar a sessão e apagar o monitor; hibernar
+ * pede também `PC_HIBERNATE_CAPABILITY`).
+ */
 export const PC_POWER_V2_CAPABILITY = 'pc.power.v2';
+
+/** A capacidade que o PC só declara com a hibernação ligada nele: sem ela a tela nem mostra "Hibernar" (e a API recusaria). */
+export const PC_HIBERNATE_CAPABILITY = 'pc.power.hibernate.v1';
+
+/** A capacidade que o PC declara quando o agente diz o que o Windows está tocando ("Tocando agora"). */
+export const PC_MEDIA_STATE_CAPABILITY = 'pc.media.state.v1';
+
+/** A capacidade que o PC declara quando o agente lê e troca o texto da área de transferência. */
+export const PC_CLIPBOARD_CAPABILITY = 'pc.clipboard.v1';
+
+/** O que o Windows diz estar tocando: `none` quando não há sessão de mídia (título, artista e programa vazios). */
+export type PcPlaybackStatus = 'playing' | 'paused' | 'stopped' | 'none';
+
+export interface PcNowPlaying {
+  readonly status: PcPlaybackStatus;
+  readonly title: string;
+  readonly artist: string;
+  /** O programa que toca, como o Windows o identifica (ex.: `Spotify.exe`). */
+  readonly app: string;
+}
+
+const PLAYBACK_STATUSES: ReadonlySet<string> = new Set<PcPlaybackStatus>([
+  'playing',
+  'paused',
+  'stopped',
+  'none',
+]);
+
+/** O estado que veio da API no tipo da tela: um valor que ela não conhece vale como "parado" (há sessão, sem tocar). */
+export function playbackStatusOf(status: string): PcPlaybackStatus {
+  return PLAYBACK_STATUSES.has(status) ? (status as PcPlaybackStatus) : 'stopped';
+}
+
+/** O maior texto que atravessa a área de transferência, em caracteres (o do contrato, da API e do agente). */
+export const PC_CLIPBOARD_MAX = 5000;
+
+/** Tabulação e as duas quebras de linha: os únicos caracteres de controle que o contrato aceita. */
+const CLIPBOARD_ALLOWED_CONTROLS: ReadonlySet<number> = new Set([0x09, 0x0a, 0x0d]);
+
+/**
+ * O texto cabe na área de transferência do PC? Não vazio, até `PC_CLIPBOARD_MAX` e sem caractere de controle além de tabulação e
+ * quebras de linha (a API recusa os C0, o DEL e os C1, como o `char.IsControl` dela).
+ */
+export function clipboardTextFits(text: string): boolean {
+  if (text.length === 0 || text.length > PC_CLIPBOARD_MAX) return false;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    const control = code < 0x20 || (code >= 0x7f && code <= 0x9f);
+    if (control && !CLIPBOARD_ALLOWED_CONTROLS.has(code)) return false;
+  }
+  return true;
+}
 
 export type PcClickButton = 'LEFT' | 'RIGHT' | 'MIDDLE';
 
@@ -255,6 +310,12 @@ export const PC_KEYS: readonly PcKeyV1[] = Object.keys(KEY_TABLE) as PcKeyV1[];
 /** A capacidade que o PC declara quando o agente entende `pc.text.v2` (apagar, digitar e apertar uma tecla num pedido só). */
 export const PC_TEXT_V2_CAPABILITY = 'pc.text.v2';
 
+/**
+ * A capacidade que o PC declara quando o agente entende `pc.text.v3`: a edição da v2 com quebra de linha e tabulação dentro do
+ * texto (o texto colado com várias linhas vai inteiro, em ordem, em vez de virar uma tecla Enter por linha).
+ */
+export const PC_TEXT_V3_CAPABILITY = 'pc.text.v3';
+
 /** A capacidade que o PC declara quando o agente entende `pc.click.v2` (clique com modificadores e com o intervalo do toque anterior). */
 export const PC_CLICK_V2_CAPABILITY = 'pc.click.v2';
 
@@ -283,6 +344,11 @@ export const PC_TEXT_ERASE_CHUNK = 80;
 /** O pedido só cabe na `pc.text.v2`? Apagar ou apertar uma tecla no fim. Texto puro vai pela v1, que todo agente entende. */
 export function textEditNeedsV2(edit: PcTextEdit): boolean {
   return (edit.erase ?? 0) > 0 || edit.key !== undefined;
+}
+
+/** O texto do pedido traz quebra de linha ou tabulação: só a `pc.text.v3` o leva (só para um PC que a declarou). */
+export function textEditHasLines(edit: PcTextEdit): boolean {
+  return edit.text !== undefined && /[\n\t]/.test(edit.text);
 }
 
 /** Os modificadores que um clique leva. O Windows fica de fora: soltá-lo depois do clique abriria o menu Iniciar. */

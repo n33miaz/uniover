@@ -94,10 +94,15 @@ from uniover_agent.core import (
     MAINTENANCE_CAPABILITY,
     MAINTENANCE_TYPE,
     PC_CLICK_V2_CAPABILITY,
+    PC_CLIPBOARD_CAPABILITY,
+    PC_HIBERNATE_CAPABILITY,
     PC_KEY_V2_CAPABILITY,
+    PC_MEDIA_STATE_CAPABILITY,
+    PC_MOUSE_CAPABILITY,
     PC_POWER_V2_CAPABILITY,
     PC_RTC_CAPABILITY,
     PC_TEXT_V2_CAPABILITY,
+    PC_TEXT_V3_CAPABILITY,
     PC_VOLUME_CAPABILITY,
     PC_ZOOM_CAPABILITY,
     PRESENCE_CAPABILITY,
@@ -212,9 +217,14 @@ API_LISTED_CAPABILITIES = frozenset(
         LIVRE_EXTENDED_CAPABILITY,
         PC_KEY_V2_CAPABILITY,
         PC_TEXT_V2_CAPABILITY,
+        PC_TEXT_V3_CAPABILITY,
+        PC_MOUSE_CAPABILITY,
         PC_CLICK_V2_CAPABILITY,
         PC_ZOOM_CAPABILITY,
         PC_POWER_V2_CAPABILITY,
+        PC_HIBERNATE_CAPABILITY,
+        PC_MEDIA_STATE_CAPABILITY,
+        PC_CLIPBOARD_CAPABILITY,
         PC_VOLUME_CAPABILITY,
         PC_RTC_CAPABILITY,
         TV_RTC_CAPABILITY,
@@ -227,17 +237,22 @@ API_LISTED_CAPABILITIES = frozenset(
 
 
 def declarable_capabilities(
-    capabilities: Iterable[str], api_supports: Callable[[str], bool]
+    capabilities: Iterable[str],
+    api_supports: Callable[[str], bool],
+    present: Callable[[str], bool] | None = None,
 ) -> tuple[str, ...]:
     """As capacidades da TV e do PC que podem ir ao `hello` agora.
 
     Uma API anterior recusa o `hello` com capacidade que não conhece: as de
     `API_LISTED_CAPABILITIES` só vão depois de a API listá-las em `features`; as demais vão sempre.
+    `present` diz se o aparelho tem o que a capacidade pede (a hibernação ligada no PC); só é
+    perguntado depois de a API aceitar a capacidade, para não consultar o sistema à toa.
     """
     return tuple(
         capability
         for capability in capabilities
-        if capability not in API_LISTED_CAPABILITIES or api_supports(capability)
+        if (capability not in API_LISTED_CAPABILITIES or api_supports(capability))
+        and (present is None or present(capability))
     )
 
 
@@ -1048,7 +1063,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
                 else ()
             ),
             *(
-                declarable_capabilities(pc.capabilities, features.supports)
+                declarable_capabilities(pc.capabilities, features.supports, pc.present)
                 if pc is not None
                 else ()
             ),
@@ -1057,6 +1072,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         on_connected=on_connected,
         on_disconnected=on_disconnected,
         os_description=describe_os(),
+        pc_mouse=pc.mouse_settings if pc is not None else None,
         tv=(settings.tv_kind, settings.tv_host) if tv is not None and settings.tv_host else None,
         update_status=lambda: update_body(update_source.read()),
         on_startup_failure=delivery.connection_failed,

@@ -1,4 +1,6 @@
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { PcStore } from '../data/pc-store';
 import { PcArmedPills } from '../ui/armed-pills';
 import { PcShortcutGrid } from '../ui/shortcut-grid';
 
@@ -8,7 +10,7 @@ import { PcShortcutGrid } from '../ui/shortcut-grid';
  */
 @Component({
   selector: 'app-pc-shortcuts-page',
-  imports: [PcArmedPills, PcShortcutGrid],
+  imports: [PcArmedPills, PcShortcutGrid, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <header class="head">
@@ -29,6 +31,11 @@ import { PcShortcutGrid } from '../ui/shortcut-grid';
       </button>
     </header>
     <app-pc-shortcut-grid [editing]="editing()" />
+    @if (store.supportsClipboard()) {
+      <a class="ui-btn" routerLink="/pc/area-de-transferencia" i18n="@@pc.sc.clipboard">
+        Colar texto do celular no PC
+      </a>
+    }
   `,
   styles: `
     :host {
@@ -85,5 +92,6 @@ import { PcShortcutGrid } from '../ui/shortcut-grid';
   `,
 })
 export class ShortcutsPage {
+  protected readonly store = inject(PcStore);
   protected readonly editing = signal(false);
 }

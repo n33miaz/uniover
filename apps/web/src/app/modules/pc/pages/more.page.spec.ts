@@ -1,13 +1,19 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { PcStore } from '../data/pc-store';
+import { FakePcStore, createFakePcStore } from '../pc-test-kit';
 import { MorePage } from './more.page';
 
 describe('MorePage', () => {
+  let store: FakePcStore;
   let fixture: ReturnType<typeof TestBed.createComponent<MorePage>>;
   let root: HTMLElement;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ providers: [provideRouter([])] });
+    store = createFakePcStore();
+    TestBed.configureTestingModule({
+      providers: [provideRouter([]), { provide: PcStore, useValue: store }],
+    });
     fixture = TestBed.createComponent(MorePage);
     fixture.detectChanges();
     root = fixture.nativeElement;
@@ -26,6 +32,18 @@ describe('MorePage', () => {
       '/pc/controles',
       '/pc/energia',
     ]);
+  });
+
+  it('shows the clipboard row only for a PC that declared it', () => {
+    store.capabilities.set(['pc.clipboard.v1']);
+    fixture.detectChanges();
+    expect([...root.querySelectorAll('.row')].map((row) => row.textContent?.trim())).toEqual([
+      'Controles',
+      'Energia',
+      'Área de Transferência',
+      'Ajustes',
+    ]);
+    expect(root.querySelector('a[href="/pc/area-de-transferencia"]')).not.toBeNull();
   });
 
   it('Settings opens the settings sheet', async () => {

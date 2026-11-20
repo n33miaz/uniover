@@ -424,7 +424,13 @@ internal sealed partial class AgentHub(
             host = tv.GetProperty("host").GetString();
         }
 
-        return os is null && kind is null ? null : new AgentHostInfo(os, kind, host);
+        PcMouseInfo? mouse = null;
+        if (body.TryGetProperty("pcMouse", out var pcMouse) && pcMouse.ValueKind == JsonValueKind.Object)
+        {
+            mouse = new PcMouseInfo(pcMouse.GetProperty("acceleration").GetBoolean(), pcMouse.GetProperty("speed").GetInt32());
+        }
+
+        return os is null && kind is null && mouse is null ? null : new AgentHostInfo(os, kind, host, mouse);
     }
 
     /// <summary>O estado da auto-atualização (<c>update</c> do <c>hello</c> ou corpo de <c>agent.update.status.v1</c>); já passou pelo contrato.</summary>

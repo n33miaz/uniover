@@ -377,6 +377,10 @@ def text_inputs(text: str) -> list[RawInput]:
     de quem chama. Uma unidade substituta sozinha (metade de um par) não forma caractere: é
     recusada em vez de digitar "?" no lugar, e a mensagem de erro não repete o texto (pode ser
     uma senha).
+
+    Quebra de linha (LF) e tabulação (só a `pc.text.v3` as traz) saem como as teclas Enter e Tab,
+    no lugar delas na ordem e também apertadas e soltas lado a lado: os programas (navegadores
+    principalmente) só criam a linha nova pela tecla Enter, não pelo caractere Unicode.
     """
     try:
         units = text.encode("utf-16-le")
@@ -385,9 +389,17 @@ def text_inputs(text: str) -> list[RawInput]:
     inputs: list[RawInput] = []
     for index in range(0, len(units), 2):
         unit = int.from_bytes(units[index : index + 2], "little")
+        if unit in _TEXT_KEYS:
+            vk = _TEXT_KEYS[unit]
+            inputs += [_key(vk), _key(vk, up=True)]
+            continue
         inputs.append(RawInput("keyboard", KEY_UNICODE, scan=unit))
         inputs.append(RawInput("keyboard", KEY_UNICODE | KEY_UP, scan=unit))
     return inputs
+
+
+# Os caracteres de controle que o texto pode trazer (`pc.text.v3`) e a tecla de cada um.
+_TEXT_KEYS: Final = {0x0A: 0x0D, 0x09: 0x09}
 
 
 def edit_inputs(erase: int, text: str, key: str | None = None) -> list[RawInput]:

@@ -8,7 +8,7 @@ import { ClientTelemetry } from '../../../core/telemetry/client-telemetry';
 import { status } from '../pc-test-kit';
 import { PcApi } from './pc-api';
 import { CANCELLED } from './pc-failure';
-import { PcPrefs } from './pc-prefs';
+import { PcPrefs, pcPrefsStorageKey } from './pc-prefs';
 import {
   ABANDONED_NOTICE_MS,
   APPROVAL_ECHO_MS,
@@ -2086,15 +2086,43 @@ describe('PcStore giving up quietly', () => {
 });
 
 describe('PcStore pointer', () => {
-  it('accelerates the swipe and sends it as one request', async () => {
-    const { store, api } = setup();
-    store.beginGesture();
-    store.movePointer(10, 4, 16);
-    await flush();
-    expect(api.pointer).toHaveBeenCalledTimes(1);
-    const [dx, dy] = api.pointer.mock.calls[0] as unknown as number[];
-    expect(dx).toBeGreaterThanOrEqual(10);
-    expect(dy).toBeGreaterThanOrEqual(4);
+  it('follows the Windows acceleration of the PC on the first gesture while the app choice was never made', async () => {
+    const accountId = 'conta-windows-acelera';
+    try {
+      const { store, api } = setup(status({ mouse: { acceleration: true, speed: 10 } }));
+      signIn(accountId);
+      TestBed.tick();
+      store.beginGesture();
+      store.movePointer(10, 4, 16);
+      await flush();
+      expect(api.pointer.mock.calls[0].slice(0, 2)).toEqual([17, 6]);
+
+      // A escolha explícita no app vence a do Windows.
+      const prefs = TestBed.inject(PcPrefs);
+      prefs.set({ acceleration: false });
+      expect(prefs.pointerAcceleration()).toBe(false);
+    } finally {
+      localStorage.removeItem(pcPrefsStorageKey(accountId));
+    }
+  });
+
+  // Guarda de regressão (a falha relatada pelo dono não foi reproduzida no app): a escolha salva vale já no primeiro gesto.
+  it('aplica a aceleração salva no primeiro gesto sem alternar o ajuste', async () => {
+    const accountId = 'conta-com-aceleracao';
+    const key = pcPrefsStorageKey(accountId);
+    localStorage.setItem(key, JSON.stringify({ sensitivity: 4, acceleration: true }));
+    try {
+      const { store, api } = setup();
+      signIn(accountId);
+      TestBed.tick();
+      store.beginGesture();
+      store.movePointer(10, 4, 16);
+      await flush();
+      expect(api.pointer).toHaveBeenCalledTimes(1);
+      expect(api.pointer.mock.calls[0].slice(0, 2)).toEqual([17, 6]);
+    } finally {
+      localStorage.removeItem(key);
+    }
   });
 
   it('turns a two-finger swipe into wheel units (down scrolls down)', async () => {

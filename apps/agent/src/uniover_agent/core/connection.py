@@ -23,6 +23,8 @@ from uniover_agent.ports import (
     TransportError,
 )
 
+# A capacidade que leva os ajustes do mouse no `hello` (ver `pc.mouse.v1` no contrato).
+_PC_MOUSE_CAPABILITY: Final = "pc.mouse.v1"
 _log = logging.getLogger(__name__)
 
 REVOKED_MESSAGE: Final = "token revogado ou inválido; rode `uniover-agent pair`"
@@ -142,6 +144,7 @@ class ConnectionSupervisor:
         rehello_interval: float = REHELLO_SECONDS,
         os_description: str | None = None,
         tv: tuple[str, str] | None = None,
+        pc_mouse: Callable[[], dict[str, Any] | None] | None = None,
         update_status: Callable[[], dict[str, Any] | None] | None = None,
         on_startup_failure: Callable[[BaseException, bool, int], Awaitable[None]] | None = None,
         handover: bool = False,
@@ -191,6 +194,8 @@ class ConnectionSupervisor:
         # Opcionais do `hello` (sistema do PC; tipo e endereço da TV): só aparecem na tela do dono.
         self._os_description = os_description
         self._tv = tv
+        # Os ajustes do mouse do Windows (lidos a cada `hello`, só com a capacidade declarada).
+        self._pc_mouse = pc_mouse
         # Lido a cada `hello`: o estado da auto-atualização muda com o tempo.
         self._update_status = update_status
         # Falhas de conexão antes do primeiro `hello` deste processo: a API ainda não ouviu o agente
@@ -352,7 +357,20 @@ class ConnectionSupervisor:
         source = self._capabilities
         return tuple(source() if callable(source) else source)
 
+    def _mouse_for(self, declared: Sequence[str]) -> dict[str, Any] | None:
+        """`pcMouse` só vai com `pc.mouse.v1` declarada (uma API que não a lista recusaria o campo);
+        uma leitura que falha só deixa o `hello` sem ele."""
+        if self._pc_mouse is None or _PC_MOUSE_CAPABILITY not in declared:
+            return None
+        try:
+            return self._pc_mouse()
+        except Exception:
+            _log.exception("não consegui ler os ajustes do mouse")
+            return None
+
     def _hello(self) -> dict[str, Any]:
+        declared = self._declared()
+        pc_mouse = self._mouse_for(declared)
         update: dict[str, Any] | None = None
         if self._update_status is not None:
             try:
@@ -362,12 +380,13 @@ class ConnectionSupervisor:
         try:
             return self._envelopes.hello(
                 self._agent_version,
-                self._declared(),
+                declared,
                 os_description=self._os_description,
                 tv=self._tv,
                 update=update,
                 instance_id=self._hello_instance_id(),
                 handover=self._handover_pending,
+                pc_mouse=pc_mouse,
             )
         except ValueError:
             if update is None:
@@ -376,11 +395,12 @@ class ConnectionSupervisor:
             _log.warning("estado da atualização fora do contrato; o hello segue sem ele")
             return self._envelopes.hello(
                 self._agent_version,
-                self._declared(),
+                declared,
                 os_description=self._os_description,
                 tv=self._tv,
                 instance_id=self._hello_instance_id(),
                 handover=self._handover_pending,
+                pc_mouse=pc_mouse,
             )
 
     def _hello_instance_id(self) -> str | None:

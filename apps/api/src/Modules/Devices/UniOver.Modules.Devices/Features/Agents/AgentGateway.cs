@@ -172,7 +172,8 @@ internal sealed partial class AgentGateway(
         }
 
         var created = factory.Create(
-            message.Type, agentId, correlationId: null, message.Body, message.OperationId, message.DeviceId, message.DeviceName);
+            message.Type, agentId, correlationId: null, message.Body, message.OperationId, message.DeviceId, message.DeviceName,
+            message.RequestId);
         if (created.IsFailure)
         {
             // Erro de programação de quem chama: registra o tipo e o código, nunca o corpo.

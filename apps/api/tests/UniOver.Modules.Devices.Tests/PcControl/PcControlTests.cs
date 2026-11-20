@@ -53,6 +53,9 @@ public sealed class PcMessagesTests
             (PcMessages.PowerV2(PcPowerV2BodyAction.Hibernate), "pc.power.v2"),
             (PcMessages.PowerV2(PcPowerV2BodyAction.MonitorOff), "pc.power.v2"),
             (PcMessages.AppLaunch("navegador"), "pc.app.launch.v1"),
+            (PcMessages.MediaQuery(), "pc.media.query.v1"),
+            (PcMessages.ClipboardQuery(), "pc.clipboard.query.v1"),
+            (PcMessages.ClipboardSet("linha 1\r\nlinha 2\tfim"), "pc.clipboard.set.v1"),
         };
 
         foreach (var (message, type) in all)
@@ -75,9 +78,32 @@ public sealed class PcMessagesTests
             PcMessages.Power(PcPowerV1BodyAction.Shutdown),
             PcMessages.PowerV2(PcPowerV2BodyAction.Restart),
             PcMessages.AppLaunch("navegador"),
+            PcMessages.MediaQuery(),
+            PcMessages.ClipboardQuery(),
+            PcMessages.ClipboardSet("x"),
         ];
 
         all.Should().OnlyContain(m => m.Delivery == AgentDelivery.Immediate);
+    }
+
+    [Theory]
+    [InlineData(PcPowerV2BodyAction.Restart, "pc.power.v2")]
+    [InlineData(PcPowerV2BodyAction.Logoff, "pc.power.v2")]
+    [InlineData(PcPowerV2BodyAction.MonitorOff, "pc.power.v2")]
+    [InlineData(PcPowerV2BodyAction.Hibernate, "pc.power.hibernate.v1")]
+    public void Hibernate_NeedsItsOwnCapability_TheOtherNewActionsTheV2(PcPowerV2BodyAction action, string capability) =>
+        PcMessages.PowerV2CapabilityFor(action).Should().Be(capability);
+
+    [Fact]
+    public void TheApi_ListsTheNewCapabilities_SoTheAgentCanDeclareThem() =>
+        GetModuleInfoHandler.AgentFeatures.Should().Contain(["pc.power.v2", "pc.power.hibernate.v1", "pc.media.state.v1", "pc.clipboard.v1"]);
+
+    [Fact]
+    public void TheMessagesThatReturnData_GoOnlyFromApiToAgent_AndTheirAnswersOnlyBack()
+    {
+        AgentMessageDirections.ToAgent.Should().Contain(["pc.media.query.v1", "pc.clipboard.query.v1", "pc.clipboard.set.v1"]);
+        AgentMessageDirections.FromAgent.Should().Contain(["pc.media.state.v1", "pc.clipboard.v1"]);
+        AgentMessageDirections.FromAgent.Should().NotContain(["pc.media.query.v1", "pc.clipboard.set.v1"]);
     }
 
     [Fact]
@@ -335,6 +361,29 @@ public sealed class PcMessagesTests
     }
 
     [Fact]
+    public void TextFor_TakesLinesAndTabsInsideTheTextOnlyThroughTheV3()
+    {
+        // O texto colado com várias linhas vai inteiro: a quebra de linha e a tabulação ficam no texto, em ordem.
+        var pasted = new PcTextRequest("- item 1\n\tdetalhe\n- item 2", null, null, 2, "ENTER");
+        PcMessages.TextFitsV1(pasted).Should().BeFalse();
+        PcMessages.TextCapability(pasted).Should().Be(PcMessages.TextV3Capability);
+        var message = PcMessages.TextFor(pasted);
+        message.Type.Should().Be(AgentMessageTypes.PcTextV3);
+        SameJson(message.Body, "{\"erase\":2,\"text\":\"- item 1\\n\\tdetalhe\\n- item 2\",\"key\":\"ENTER\"}");
+        IsValidForTheContract(message).Should().BeTrue();
+        // Cada quebra e tabulação vira uma tecla no PC: conta no limite de teclas como o apagar e a tecla do fim.
+        PcMessages.TextPresses(pasted).Should().Be(2 + 1 + 3);
+
+        // Sem quebra de linha nada muda: a v1 para o texto puro e a v2 para apagar ou apertar a tecla do fim.
+        PcMessages.TextCapability(new PcTextRequest("olá")).Should().BeNull();
+        PcMessages.TextCapability(new PcTextRequest("olá", null, null, 1, null)).Should().Be(PcMessages.TextV2Capability);
+        PcMessages.TextFor(new PcTextRequest("a\tb")).Type.Should().Be(AgentMessageTypes.PcTextV3);
+        PcMessages.TextV3Capability.Should().Be("pc.text.v3");
+        GetModuleInfoHandler.AgentFeatures.Should().Contain("pc.text.v3");
+        AgentMessageDirections.ToAgent.Should().Contain(AgentMessageTypes.PcTextV3);
+    }
+
+    [Fact]
     public void TextPresses_CountsEveryBackspaceAndTheKeyAtTheEnd()
     {
         PcMessages.TextPresses(new PcTextRequest("abc")).Should().Be(0);
@@ -509,9 +558,11 @@ public sealed class PcValidatorTests
     [InlineData("a", true)]
     [InlineData("", false)]
     [InlineData(null, false)]
-    [InlineData("linha1\nlinha2", false)]
-    [InlineData("tab\taqui", false)]
+    [InlineData("linha1\nlinha2", true)]
+    [InlineData("tab\taqui", true)]
+    [InlineData("linha1\r\nlinha2", false)]
     [InlineData("controle\u0085c1", false)]
+    [InlineData("sino\u0007", false)]
     public void Text_NeedsSomethingWithoutControlCharacters(string? text, bool valid) =>
         PcValidator.Text(new PcTextRequest(text)).Count.Should().Be(valid ? 0 : 1);
 
@@ -562,7 +613,8 @@ public sealed class PcValidatorTests
         PcValidator.Text(new PcTextRequest(null, null, null, 201, null)).Should().ContainKey("erase");
         PcValidator.Text(new PcTextRequest("a", null, null, -1, null)).Should().ContainKey("erase");
         PcValidator.Text(new PcTextRequest("a", null, null, null, "ESCAPE")).Should().ContainKey("key");
-        PcValidator.Text(new PcTextRequest("a\nb", null, null, 1, "ENTER")).Should().ContainKey("text");
+        PcValidator.Text(new PcTextRequest("a\nb", null, null, 1, "ENTER")).Should().BeEmpty();
+        PcValidator.Text(new PcTextRequest("a\rb", null, null, 1, "ENTER")).Should().ContainKey("text");
     }
 
     [Fact]
@@ -598,6 +650,165 @@ public sealed class PcValidatorTests
     [InlineData(null, true, false)]
     public void Power_AskingToSleepOrShutDownNeedsTheExplicitConfirmation(string? action, bool? confirm, bool valid) =>
         PcValidator.Power(new PcPowerRequest(action, confirm)).Count.Should().Be(valid ? 0 : 1);
+
+    [Theory]
+    [InlineData("olá, mundo", true)]
+    [InlineData("linha 1\r\nlinha 2\tfim", true)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    [InlineData("a\u0000b", false)]
+    [InlineData("a\u001bb", false)]
+    [InlineData("a\u007fb", false)]
+    public void Clipboard_AcceptsTextWithTabsAndLineBreaks_ButNoOtherControlCharacter(string? text, bool valid) =>
+        PcValidator.Clipboard(new PcClipboardWriteRequest(text)).Count.Should().Be(valid ? 0 : 1);
+
+    [Fact]
+    public void Clipboard_AcceptsUpToTheContractLimit()
+    {
+        PcValidator.Clipboard(new PcClipboardWriteRequest(new string('x', PcValidator.MaxClipboardLength))).Should().BeEmpty();
+        PcValidator.Clipboard(new PcClipboardWriteRequest(new string('x', PcValidator.MaxClipboardLength + 1))).Should().ContainKey("text");
+        PcValidator.Clipboard(null).Should().ContainKey("text");
+    }
+}
+
+public sealed class PcMediaAndClipboardStoreTests
+{
+    private static readonly DateTimeOffset T0 = new(2026, 11, 14, 12, 0, 0, TimeSpan.Zero);
+
+    private static AgentPresenceInfo Presence(string slug, bool connected, DateTimeOffset? helloAt) =>
+        new(slug, connected, DateTimeOffset.UnixEpoch, "0.1.0", [], null, null, null, null, helloAt);
+
+    private static PcAgentMessageHandler Handler(PcMediaStates media, PcClipboardInbox clipboard) =>
+        new(
+            new PcAppsStore(),
+            new PcRtcAnswers(TimeProvider.System),
+            new PcRtcClosures(new PcRtcSessions(TimeProvider.System), null!, null!, null!),
+            new PcVolumeStore(),
+            new PcDeviceStates(TimeProvider.System),
+            media: media,
+            clipboard: clipboard);
+
+    private static InboundMessage Message(string type, string body, Guid? correlationId = null) =>
+        new("pc-casa", Guid.CreateVersion7(), type, correlationId, T0, JsonDocument.Parse(body).RootElement.Clone());
+
+    [Fact]
+    public async Task TheAgentMessageHandler_KeepsWhatThePcSaysIsPlaying()
+    {
+        var media = new PcMediaStates();
+        var handler = Handler(media, new PcClipboardInbox(TimeProvider.System));
+
+        handler.HandledTypes.Should().Contain([AgentMessageTypes.PcMediaStateV1, AgentMessageTypes.PcClipboardV1]);
+        await handler.HandleAsync(
+            Message(
+                AgentMessageTypes.PcMediaStateV1,
+                "{\"status\":\"paused\",\"title\":\"Águas de Março\",\"artist\":\"Elis\",\"app\":\"Spotify.exe\",\"at\":\"2026-11-14T12:00:00Z\"}"),
+            TestContext.Current.CancellationToken);
+
+        media.Get("pc-casa").Should().Be(new PcNowPlaying("paused", "Águas de Março", "Elis", "Spotify.exe", T0));
+        media.Get("outro").Should().BeNull();
+    }
+
+    [Fact]
+    public void WhatWasPlaying_IsDropped_WhenTheAgentDropsOrStartsANewConnection()
+    {
+        var media = new PcMediaStates();
+        media.Set("pc-casa", new PcNowPlaying("playing", "t", "a", "app", T0));
+        media.OnPresenceChanged(Presence("pc-casa", true, T0));
+        media.Get("pc-casa").Should().NotBeNull();
+        media.OnPresenceChanged(Presence("pc-casa", false, T0));
+        media.Get("pc-casa").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TheClipboardText_IsHandedOnlyToTheRequestThatReadIt_AndOnlyOnce()
+    {
+        var clipboard = new PcClipboardInbox(TimeProvider.System);
+        var handler = Handler(new PcMediaStates(), clipboard);
+        var mine = Guid.CreateVersion7();
+        var other = Guid.CreateVersion7();
+        using var pending = clipboard.Expect("pc-casa", mine, TestContext.Current.CancellationToken);
+
+        await handler.HandleAsync(
+            Message(AgentMessageTypes.PcClipboardV1, "{\"text\":\"senha\",\"at\":\"2026-11-14T12:00:00Z\"}", mine),
+            TestContext.Current.CancellationToken);
+
+        clipboard.Take("pc-casa", other).Should().BeNull("o texto é de outro pedido");
+        clipboard.Take("outro", mine).Should().BeNull("o texto é de outro agente");
+        clipboard.Take("pc-casa", mine).Should().Be("senha");
+        clipboard.Take("pc-casa", mine).Should().BeNull("entregue uma vez só");
+    }
+
+    [Fact]
+    public async Task AClipboardTextWithNoRequest_IsDiscarded()
+    {
+        var clipboard = new PcClipboardInbox(TimeProvider.System);
+        await Handler(new PcMediaStates(), clipboard).HandleAsync(
+            Message(AgentMessageTypes.PcClipboardV1, "{\"text\":\"senha\",\"at\":\"2026-11-14T12:00:00Z\"}"),
+            TestContext.Current.CancellationToken);
+
+        clipboard.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void AClipboardTextThatWaitedTooLong_CannotBeTaken()
+    {
+        var time = new FakeTimeProvider(T0);
+        var clipboard = new PcClipboardInbox(time);
+        var first = Guid.CreateVersion7();
+        using var pending = clipboard.Expect("pc-casa", first, TestContext.Current.CancellationToken);
+        clipboard.Set("pc-casa", first, "velho");
+
+        time.Advance(PcClipboardInbox.Lifetime + TimeSpan.FromSeconds(1));
+        clipboard.Take("pc-casa", first).Should().BeNull();
+    }
+
+    [Fact]
+    public void ClipboardText_ExpiresWithoutAnyFurtherActivity()
+    {
+        var time = new FakeTimeProvider(T0);
+        var clipboard = new PcClipboardInbox(time);
+        var request = Guid.CreateVersion7();
+        using var pending = clipboard.Expect("pc-casa", request, TestContext.Current.CancellationToken);
+        clipboard.Set("pc-casa", request, "texto temporário");
+
+        time.Advance(PcClipboardInbox.Lifetime);
+
+        clipboard.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void ClipboardText_IsForgottenOnCancellation_AndLateDataIsDiscarded()
+    {
+        var clipboard = new PcClipboardInbox(TimeProvider.System);
+        using var cancelled = new CancellationTokenSource();
+        var received = Guid.CreateVersion7();
+        var awaiting = Guid.CreateVersion7();
+        using var receivedRead = clipboard.Expect("pc-casa", received, cancelled.Token);
+        using var awaitingRead = clipboard.Expect("pc-casa", awaiting, cancelled.Token);
+        clipboard.Set("pc-casa", received, "já chegou");
+        clipboard.Count.Should().Be(1);
+
+        cancelled.Cancel();
+        clipboard.Set("pc-casa", awaiting, "chegou depois");
+
+        clipboard.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void TheClipboardTexts_AreDropped_WhenTheAgentDrops()
+    {
+        var clipboard = new PcClipboardInbox(TimeProvider.System);
+        var first = Guid.CreateVersion7();
+        var second = Guid.CreateVersion7();
+        using var firstRead = clipboard.Expect("pc-casa", first, TestContext.Current.CancellationToken);
+        using var secondRead = clipboard.Expect("outro", second, TestContext.Current.CancellationToken);
+        clipboard.Set("pc-casa", first, "a");
+        clipboard.Set("outro", second, "b");
+
+        clipboard.OnPresenceChanged(Presence("pc-casa", false, T0));
+
+        clipboard.Count.Should().Be(1, "só os textos do agente que caiu");
+    }
 }
 
 public sealed class PcZoomAndVolumeValidatorTests

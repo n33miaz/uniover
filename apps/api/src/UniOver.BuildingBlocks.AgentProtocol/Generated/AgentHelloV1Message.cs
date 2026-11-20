@@ -72,6 +72,17 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonConverter(typeof(AgentHelloV1MessageFluffyMinMaxLengthCheckConverter))]
         public string? Os { get; set; }
 
+        /// <summary>
+        /// Os ajustes do mouse do Windows deste PC, só lidos (nunca alterados): `acceleration` é o
+        /// "aprimorar a precisão do ponteiro" e `speed` a velocidade do ponteiro (1 a 20; 10 é o
+        /// padrão do Windows). O Windows já os aplica ao movimento que o agente manda; o app os
+        /// mostra e segue a aceleração quando a pessoa não escolheu. Só vai com a capacidade
+        /// `pc.mouse.v1` (que o agente só declara depois de a API listá-la em `features`).
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("pcMouse")]
+        public AgentHelloV1BodyPcMouse? PcMouse { get; set; }
+
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("tv")]
         public AgentHelloV1BodyTv? Tv { get; set; }
@@ -79,6 +90,22 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("update")]
         public AgentHelloV1BodyUpdate? Update { get; set; }
+    }
+
+    /// <summary>
+    /// Os ajustes do mouse do Windows deste PC, só lidos (nunca alterados): `acceleration` é o
+    /// "aprimorar a precisão do ponteiro" e `speed` a velocidade do ponteiro (1 a 20; 10 é o
+    /// padrão do Windows). O Windows já os aplica ao movimento que o agente manda; o app os
+    /// mostra e segue a aceleração quando a pessoa não escolheu. Só vai com a capacidade
+    /// `pc.mouse.v1` (que o agente só declara depois de a API listá-la em `features`).
+    /// </summary>
+    public partial class AgentHelloV1BodyPcMouse
+    {
+        [JsonPropertyName("acceleration")]
+        public bool Acceleration { get; set; }
+
+        [JsonPropertyName("speed")]
+        public long Speed { get; set; }
     }
 
     public partial class AgentHelloV1BodyTv
@@ -134,7 +161,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentHandoverV1, AgentLogsV1, AgentMaintenanceV1, PcClickV2, PcControlV1, PcDeviceV1, PcKeyV2, PcOpV1, PcPointerZoomV1, PcPowerV2, PcRtcReconcileV1, PcRtcV1, PcTargetV1, PcTextV2, PcVolumeV1, TransportKeepaliveV1, TransportRestartV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvLivreV2, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvRtcV1, TvSettingsOpenV1 };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentHandoverV1, AgentLogsV1, AgentMaintenanceV1, PcClickV2, PcClipboardV1, PcControlV1, PcDeviceV1, PcKeyV2, PcMediaStateV1, PcMouseV1, PcOpV1, PcPointerZoomV1, PcPowerHibernateV1, PcPowerV2, PcRtcReconcileV1, PcRtcV1, PcTargetV1, PcTextV2, PcTextV3, PcVolumeV1, TransportKeepaliveV1, TransportRestartV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvLivreV2, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvRtcV1, TvSettingsOpenV1 };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -210,16 +237,24 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.AgentMaintenanceV1;
                 case "pc.click.v2":
                     return AgentHelloV1BodyCapabilitiesItem.PcClickV2;
+                case "pc.clipboard.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.PcClipboardV1;
                 case "pc.control.v1":
                     return AgentHelloV1BodyCapabilitiesItem.PcControlV1;
                 case "pc.device.v1":
                     return AgentHelloV1BodyCapabilitiesItem.PcDeviceV1;
                 case "pc.key.v2":
                     return AgentHelloV1BodyCapabilitiesItem.PcKeyV2;
+                case "pc.media.state.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.PcMediaStateV1;
+                case "pc.mouse.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.PcMouseV1;
                 case "pc.op.v1":
                     return AgentHelloV1BodyCapabilitiesItem.PcOpV1;
                 case "pc.pointer.zoom.v1":
                     return AgentHelloV1BodyCapabilitiesItem.PcPointerZoomV1;
+                case "pc.power.hibernate.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.PcPowerHibernateV1;
                 case "pc.power.v2":
                     return AgentHelloV1BodyCapabilitiesItem.PcPowerV2;
                 case "pc.rtc.reconcile.v1":
@@ -230,6 +265,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.PcTargetV1;
                 case "pc.text.v2":
                     return AgentHelloV1BodyCapabilitiesItem.PcTextV2;
+                case "pc.text.v3":
+                    return AgentHelloV1BodyCapabilitiesItem.PcTextV3;
                 case "pc.volume.v1":
                     return AgentHelloV1BodyCapabilitiesItem.PcVolumeV1;
                 case "transport.keepalive.v1":
@@ -339,6 +376,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                 case AgentHelloV1BodyCapabilitiesItem.PcClickV2:
                     JsonSerializer.Serialize(writer, "pc.click.v2", options);
                     return;
+                case AgentHelloV1BodyCapabilitiesItem.PcClipboardV1:
+                    JsonSerializer.Serialize(writer, "pc.clipboard.v1", options);
+                    return;
                 case AgentHelloV1BodyCapabilitiesItem.PcControlV1:
                     JsonSerializer.Serialize(writer, "pc.control.v1", options);
                     return;
@@ -348,11 +388,20 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                 case AgentHelloV1BodyCapabilitiesItem.PcKeyV2:
                     JsonSerializer.Serialize(writer, "pc.key.v2", options);
                     return;
+                case AgentHelloV1BodyCapabilitiesItem.PcMediaStateV1:
+                    JsonSerializer.Serialize(writer, "pc.media.state.v1", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.PcMouseV1:
+                    JsonSerializer.Serialize(writer, "pc.mouse.v1", options);
+                    return;
                 case AgentHelloV1BodyCapabilitiesItem.PcOpV1:
                     JsonSerializer.Serialize(writer, "pc.op.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.PcPointerZoomV1:
                     JsonSerializer.Serialize(writer, "pc.pointer.zoom.v1", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.PcPowerHibernateV1:
+                    JsonSerializer.Serialize(writer, "pc.power.hibernate.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.PcPowerV2:
                     JsonSerializer.Serialize(writer, "pc.power.v2", options);
@@ -368,6 +417,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.PcTextV2:
                     JsonSerializer.Serialize(writer, "pc.text.v2", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.PcTextV3:
+                    JsonSerializer.Serialize(writer, "pc.text.v3", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.PcVolumeV1:
                     JsonSerializer.Serialize(writer, "pc.volume.v1", options);

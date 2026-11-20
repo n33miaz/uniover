@@ -1,5 +1,6 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, computed, effect, inject, linkedSignal } from '@angular/core';
+import { PcAvailability } from '../../../core/modules/pc-availability';
 import { SessionState } from '../../../core/session/session-state';
 import { setHapticsEnabled } from '../input/haptics';
 import {
@@ -20,6 +21,11 @@ export interface PcPrefsValue {
   readonly sensitivity: SensitivityLevel;
   /** A curva do app por cima do nível: o deslize rápido vai mais longe (a "Acelerada" de antes). */
   readonly acceleration: boolean;
+  /**
+   * A pessoa escolheu a aceleração no app (ligou ou desligou). Sem escolha, a do app segue a do Windows do PC
+   * (`pointerAcceleration`); voltar ao padrão volta a seguir.
+   */
+  readonly accelerationChosen: boolean;
   /** O quanto a rolagem de dois dedos rende por pixel, de 1 a 7 (separado da sensibilidade do ponteiro). */
   readonly scrollSensitivity: SensitivityLevel;
   /** Rolagem "natural" (como no celular): o conteúdo acompanha o dedo. */
@@ -52,6 +58,7 @@ export interface PcPrefsValue {
 export const PC_PREFS_DEFAULTS: PcPrefsValue = {
   sensitivity: DEFAULT_LEVEL,
   acceleration: false,
+  accelerationChosen: false,
   scrollSensitivity: DEFAULT_LEVEL,
   invertScroll: false,
   doubleTapDrag: false,
@@ -91,6 +98,8 @@ function parsePrefs(raw: unknown): PcPrefsValue {
   return {
     sensitivity: pointer.level,
     acceleration: pointer.acceleration,
+    // Ligada só por escolha (o padrão é desligada): um valor guardado ligado, de antes deste campo, também foi escolhido.
+    accelerationChosen: stored['accelerationChosen'] === true || pointer.acceleration,
     scrollSensitivity: parseScroll(stored['scrollSensitivity']),
     invertScroll: flag('invertScroll'),
     doubleTapDrag: flag('doubleTapDrag'),
@@ -106,25 +115,23 @@ function parsePrefs(raw: unknown): PcPrefsValue {
   };
 }
 
-/**
- * O nível do ponteiro: o número guardado, ou o texto da versão de antes no nível equivalente ("boosted" liga a aceleração). A
- * aceleração guardada só vale junto de um número (com o texto antigo, quem decide é o texto).
- */
+/** Migra o nível antigo sem perder uma escolha explícita de aceleração. */
 function parsePointer(
   level: unknown,
   acceleration: unknown,
 ): { level: SensitivityLevel; acceleration: boolean } {
-  if (isSensitivityLevel(level)) {
-    return {
-      level,
-      acceleration:
-        typeof acceleration === 'boolean' ? acceleration : PC_PREFS_DEFAULTS.acceleration,
-    };
-  }
-  if (typeof level === 'string' && Object.hasOwn(LEGACY_POINTER_LEVEL, level)) {
-    return { ...LEGACY_POINTER_LEVEL[level as LegacyPointerSensitivity] };
-  }
-  return { level: PC_PREFS_DEFAULTS.sensitivity, acceleration: PC_PREFS_DEFAULTS.acceleration };
+  const legacy =
+    typeof level === 'string' && Object.hasOwn(LEGACY_POINTER_LEVEL, level)
+      ? LEGACY_POINTER_LEVEL[level as LegacyPointerSensitivity]
+      : undefined;
+
+  return {
+    level: isSensitivityLevel(level) ? level : (legacy?.level ?? PC_PREFS_DEFAULTS.sensitivity),
+    acceleration:
+      typeof acceleration === 'boolean'
+        ? acceleration
+        : (legacy?.acceleration ?? PC_PREFS_DEFAULTS.acceleration),
+  };
 }
 
 function parseScroll(level: unknown): SensitivityLevel {
@@ -159,6 +166,7 @@ const CHOICES = [
 @Injectable({ providedIn: 'root' })
 export class PcPrefs {
   private readonly session = inject(SessionState);
+  private readonly availability = inject(PcAvailability);
   private readonly storage = this.openStorage();
   private readonly value = linkedSignal<string | null, PcPrefsValue>({
     source: () => this.session.accountId(),
@@ -167,6 +175,18 @@ export class PcPrefs {
 
   readonly sensitivity = computed(() => this.value().sensitivity);
   readonly acceleration = computed(() => this.value().acceleration);
+  readonly accelerationChosen = computed(() => this.value().accelerationChosen);
+  /** Os ajustes do mouse do Windows do PC (só lidos), ou `null` sem eles. */
+  readonly windowsMouse = computed(() => this.availability.status()?.mouse ?? null);
+  /**
+   * A aceleração que o ponteiro usa: a escolhida no app ou, sem escolha, a do Windows do PC (sem a leitura do Windows, a do
+   * app, desligada por padrão). Vale já no primeiro gesto.
+   */
+  readonly pointerAcceleration = computed(() =>
+    this.value().accelerationChosen
+      ? this.value().acceleration
+      : (this.windowsMouse()?.acceleration ?? this.value().acceleration),
+  );
   readonly scrollSensitivity = computed(() => this.value().scrollSensitivity);
   readonly invertScroll = computed(() => this.value().invertScroll);
   readonly doubleTapDrag = computed(() => this.value().doubleTapDrag);
@@ -190,7 +210,12 @@ export class PcPrefs {
   }
 
   set(patch: Partial<PcPrefsValue>): void {
-    const next = parsePrefs({ ...this.value(), ...patch });
+    const chosen = 'acceleration' in patch && !('accelerationChosen' in patch);
+    const next = parsePrefs({
+      ...this.value(),
+      ...patch,
+      ...(chosen ? { accelerationChosen: true } : {}),
+    });
     this.value.set(next);
     this.write(next);
   }

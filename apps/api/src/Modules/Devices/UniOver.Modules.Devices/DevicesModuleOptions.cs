@@ -36,6 +36,9 @@ public sealed class DevicesModuleOptions
 
     public PairingOptions Pairing { get; set; } = new();
 
+    /// <summary>Permite solicitar ao agente uma leitura da área de transferência do PC.</summary>
+    public bool PcClipboardRead { get; set; }
+
     /// <summary>Quanto tempo uma validação de token fica em memória (a revogação a invalida antes).</summary>
     public int TokenCacheSeconds { get; set; } = 30;
 

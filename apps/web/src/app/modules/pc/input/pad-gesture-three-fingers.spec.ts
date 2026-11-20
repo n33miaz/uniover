@@ -153,6 +153,38 @@ describe('PadGesture: three-finger gestures', () => {
     expect(handlers.threeFingerSwipe).not.toHaveBeenCalled();
   });
 
+  it('a finger that leaves first does not look like a swipe, even though the center of the rest jumps', () => {
+    const { gesture, handlers } = on();
+    const spread = THREE_FINGER_SWIPE_PX * 3;
+    gesture.down(1, 200 - spread, 200, 0);
+    gesture.down(2, 200, 200, 5);
+    gesture.down(3, 200 + spread, 200, 10);
+    // Sai o dedo da esquerda: o centro dos que ficam pula metade do afastamento (mais que o limiar do deslize), sem que
+    // nenhum dedo tenha andado.
+    gesture.up(1, 40);
+    gesture.move(2, 201, 200, 50);
+    gesture.move(3, 201 + spread, 200, 50);
+    gesture.up(2, 80);
+    gesture.up(3, 82);
+    expect(handlers.threeFingerSwipe).not.toHaveBeenCalled();
+    expect(handlers.scroll).not.toHaveBeenCalled();
+    expect(handlers.move).not.toHaveBeenCalled();
+  });
+
+  it('a finger that leaves first, with the two others still on the pad, never swipes on their next small move', () => {
+    const { gesture, handlers } = on();
+    const spread = THREE_FINGER_SWIPE_PX * 3;
+    gesture.down(1, 200, 200 - spread, 0);
+    gesture.down(2, 200, 200, 5);
+    gesture.down(3, 200, 200 + spread, 10);
+    gesture.up(3, 30);
+    for (let step = 1; step <= 4; step++) {
+      gesture.move(1, 200, 200 - spread + step, 30 + step * 10);
+      gesture.move(2, 200, 200 + step, 30 + step * 10);
+    }
+    expect(handlers.threeFingerSwipe).not.toHaveBeenCalled();
+  });
+
   it('the distance counts from where the third finger landed, not from the first', () => {
     const { gesture, handlers } = on();
     gesture.down(1, 150, 200, 0);

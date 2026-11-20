@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/pc.clipboard.set.v1.schema.json",
+  "title": "pc.clipboard.set.v1",
+  "description": "API para agente: troca o texto da área de transferência do PC. `text`: 1 a 5000 caracteres, sem caracteres de controle além de tabulação e quebra de linha. Responde `command.result.v1`; erros: `unsupported`, `invalid_message`, `failed`. O texto nunca vai para o registro nem para a auditoria. A API só a usa para o agente que declarou a capacidade `pc.clipboard.v1`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "pc.clipboard.set.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "operationId": {
+      "$ref": "../envelope.schema.json#/$defs/operationId"
+    },
+    "deviceId": {
+      "$ref": "../envelope.schema.json#/$defs/deviceId"
+    },
+    "deviceName": {
+      "$ref": "../envelope.schema.json#/$defs/deviceName"
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000,
+          "pattern": "^[^\u0000-\b\u000b\f\u000e-\u001f]+$"
+        }
+      }
+    }
+  }
+}

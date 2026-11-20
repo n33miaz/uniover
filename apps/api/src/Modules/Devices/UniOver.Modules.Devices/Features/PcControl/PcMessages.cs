@@ -28,6 +28,12 @@ internal static class PcMessages
     public const string TextV2Capability = "pc.text.v2";
 
     /// <summary>
+    /// Capacidade do <c>hello</c> de quem entende <c>pc.text.v3</c> (a edição da v2 com quebra de linha e tabulação dentro do
+    /// texto: o texto colado com várias linhas vai inteiro, em ordem, em vez de um pedido por linha).
+    /// </summary>
+    public const string TextV3Capability = "pc.text.v3";
+
+    /// <summary>
     /// Capacidade do <c>hello</c> de quem entende <c>pc.click.v2</c> (clique com modificadores e com o intervalo do toque anterior).
     /// </summary>
     public const string ClickV2Capability = "pc.click.v2";
@@ -49,6 +55,28 @@ internal static class PcMessages
     /// quatro ações da v1). A API manda a v1 sempre que a ação cabe nela; só as quatro novas dependem desta capacidade.
     /// </summary>
     public const string PowerV2Capability = "pc.power.v2";
+
+    /// <summary>
+    /// Capacidade do <c>hello</c> de quem hiberna: o agente só a declara com a hibernação ligada no PC (e com <see cref="PowerV2Capability"/>).
+    /// Sem ela <c>HIBERNATE</c> volta como 409 <c>pc-key-unsupported</c>, sem enviar nada, e o app nem mostra o botão.
+    /// </summary>
+    public const string HibernateCapability = "pc.power.hibernate.v1";
+
+    /// <summary>A capacidade que uma ação da <c>pc.power.v2</c> exige: hibernar pede a sua; as outras, a da v2.</summary>
+    public static string PowerV2CapabilityFor(PcPowerV2BodyAction action) =>
+        action == PcPowerV2BodyAction.Hibernate ? HibernateCapability : PowerV2Capability;
+
+    /// <summary>
+    /// Capacidade do <c>hello</c> de quem entende <c>pc.media.query.v1</c> e responde com <c>pc.media.state.v1</c> (o que o Windows diz estar
+    /// tocando). Mensagem nova, sem v1 equivalente: só o agente que a declara a recebe.
+    /// </summary>
+    public const string MediaStateCapability = "pc.media.state.v1";
+
+    /// <summary>
+    /// Capacidade do <c>hello</c> de quem lê (<c>pc.clipboard.query.v1</c>, respondida por <c>pc.clipboard.v1</c>) e troca
+    /// (<c>pc.clipboard.set.v1</c>) o texto da área de transferência do PC. Só o agente que a declara recebe essas mensagens.
+    /// </summary>
+    public const string ClipboardCapability = "pc.clipboard.v1";
 
     /// <summary>Capacidade do canal direto (WebRTC): o agente só a declara depois de a API a listar em <c>features</c>.</summary>
     public const string RtcCapability = "pc.rtc.v1";
@@ -133,6 +161,10 @@ internal static class PcMessages
 
     /// <summary>As teclas que a <c>pc.text.v2</c> aperta depois de digitar.</summary>
     public static FrozenDictionary<string, PcTextV2BodyKey> TextKeys { get; } = Enum.GetValues<PcTextV2BodyKey>()
+        .ToFrozenDictionary(WireName, key => key, StringComparer.Ordinal);
+
+    /// <summary>As mesmas teclas, no tipo da <c>pc.text.v3</c>.</summary>
+    private static FrozenDictionary<string, PcTextV3BodyKey> TextV3Keys { get; } = Enum.GetValues<PcTextV3BodyKey>()
         .ToFrozenDictionary(WireName, key => key, StringComparer.Ordinal);
 
     public static FrozenDictionary<string, PcKeyV1BodyKey> Keys { get; } = Enum.GetValues<PcKeyV1BodyKey>()
@@ -300,14 +332,29 @@ internal static class PcMessages
     public static bool TextFitsV1(PcTextRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return (request.Erase ?? 0) == 0 && request.Key is null && !string.IsNullOrEmpty(request.Text);
+        return (request.Erase ?? 0) == 0 && request.Key is null && !string.IsNullOrEmpty(request.Text) && !TextHasLines(request);
     }
 
-    /// <summary>Quantos apertos de tecla o pedido faz (cada Backspace e a tecla do fim); o texto puro não conta.</summary>
+    /// <summary>O texto traz quebra de linha ou tabulação: só a v3 o leva (e só para quem declarou <see cref="TextV3Capability"/>).</summary>
+    public static bool TextHasLines(PcTextRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return request.Text is { } text && text.AsSpan().IndexOfAny('\n', '\t') >= 0;
+    }
+
+    /// <summary>A capacidade que o agente precisa ter para o pedido: nenhuma (v1), a da v2 ou a da v3.</summary>
+    public static string? TextCapability(PcTextRequest request) =>
+        TextHasLines(request) ? TextV3Capability : TextFitsV1(request) ? null : TextV2Capability;
+
+    /// <summary>
+    /// Quantos apertos de tecla o pedido faz: cada Backspace, a tecla do fim e, na v3, cada quebra de linha e tabulação do texto
+    /// (viram Enter e Tab no PC). O texto puro não conta.
+    /// </summary>
     public static int TextPresses(PcTextRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return (request.Erase ?? 0) + (request.Key is null ? 0 : 1);
+        var lines = request.Text is { } text ? text.AsSpan().Count('\n') + text.AsSpan().Count('\t') : 0;
+        return (request.Erase ?? 0) + (request.Key is null ? 0 : 1) + lines;
     }
 
     /// <summary>Monta a mensagem do texto (v1 quando cabe, v2 quando não) de um pedido já validado.</summary>
@@ -317,6 +364,19 @@ internal static class PcMessages
         if (TextFitsV1(request))
         {
             return Text(request.Text!);
+        }
+
+        if (TextHasLines(request))
+        {
+            return Live(AgentMessageTypes.PcTextV3, BodyOf(new PcTextV3Message
+            {
+                Body = new PcTextV3Body
+                {
+                    Erase = request.Erase is > 0 ? request.Erase : null,
+                    Text = request.Text,
+                    Key = request.Key is null ? null : TextV3Keys[request.Key],
+                },
+            }.ToJson()));
         }
 
         return Live(AgentMessageTypes.PcTextV2, BodyOf(new PcTextV2Message
@@ -356,6 +416,18 @@ internal static class PcMessages
     /// <summary>As ações de energia da v2: só vão a um agente que declarou <see cref="PowerV2Capability"/>.</summary>
     public static OutboundMessage PowerV2(PcPowerV2BodyAction action) =>
         Live(AgentMessageTypes.PcPowerV2, BodyOf(new PcPowerV2Message { Body = new PcPowerV2Body { Action = action } }.ToJson()));
+
+    /// <summary>A pergunta do "Tocando agora": só leitura, sem corpo.</summary>
+    public static OutboundMessage MediaQuery() =>
+        Live(AgentMessageTypes.PcMediaQueryV1, BodyOf(new PcMediaQueryV1Message { Body = new PcMediaQueryV1Body() }.ToJson()));
+
+    /// <summary>A leitura do texto da área de transferência do PC: sem corpo.</summary>
+    public static OutboundMessage ClipboardQuery() =>
+        Live(AgentMessageTypes.PcClipboardQueryV1, BodyOf(new PcClipboardQueryV1Message { Body = new PcClipboardQueryV1Body() }.ToJson()));
+
+    /// <summary>A troca do texto da área de transferência do PC, de um pedido já validado. O texto nunca vai para o registro.</summary>
+    public static OutboundMessage ClipboardSet(string text) =>
+        Live(AgentMessageTypes.PcClipboardSetV1, BodyOf(new PcClipboardSetV1Message { Body = new PcClipboardSetV1Body { Text = text } }.ToJson()));
 
     public static OutboundMessage AppLaunch(string appId) =>
         Live(AgentMessageTypes.PcAppLaunchV1, BodyOf(new PcAppLaunchV1Message { Body = new PcAppLaunchV1Body { AppId = appId } }.ToJson()));
@@ -421,6 +493,9 @@ internal static class PcMessages
 
     private static string WireName(PcTextV2BodyKey key) =>
         BodyOf(new PcTextV2Message { Body = new PcTextV2Body { Key = key } }.ToJson()).GetProperty("key").GetString()!;
+
+    private static string WireName(PcTextV3BodyKey key) =>
+        BodyOf(new PcTextV3Message { Body = new PcTextV3Body { Key = key } }.ToJson()).GetProperty("key").GetString()!;
 
     private static string WireName(PcKeyV1BodyKey key) =>
         BodyOf(new PcKeyV1Message { Body = new PcKeyV1Body { Key = key } }.ToJson()).GetProperty("key").GetString()!;

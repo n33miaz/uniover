@@ -18,10 +18,14 @@ import { CANCELLED, PcFailure, pcFailureOf } from './pc-failure';
 import { PcPrefs } from './pc-prefs';
 import {
   PC_CLICK_V2_CAPABILITY,
+  PC_CLIPBOARD_CAPABILITY,
+  PC_HIBERNATE_CAPABILITY,
   PC_KEY_V2_CAPABILITY,
+  PC_MEDIA_STATE_CAPABILITY,
   PC_POWER_V2_CAPABILITY,
   PC_TARGET_CAPABILITY,
   PC_TEXT_V2_CAPABILITY,
+  PC_TEXT_V3_CAPABILITY,
   PC_VOLUME_CAPABILITY,
   PC_ZOOM_CAPABILITY,
   clampVolumeLevel,
@@ -36,6 +40,7 @@ import {
   type PcKeyOptions,
   type PcMediaAction,
   type PcModifier,
+  type PcNowPlaying,
   type PcPowerAction,
   type PcTextEdit,
   type PcVolumeChange,
@@ -129,6 +134,10 @@ function raceTimeout(call: Promise<void>, ms: number): Promise<boolean> {
  * - `ready`: pode mandar comandos.
  */
 export type PcPhase = 'loading' | 'unavailable' | 'offline' | 'ready';
+
+/** Uma leitura do PC: o valor, ou a falha (já com a mensagem para a tela). */
+export type PcRead<T> =
+  { readonly ok: true; readonly value: T } | { readonly ok: false; readonly failure: PcFailure };
 
 /**
  * O estado e os comandos do controle do PC. O estado vem da API (`PcAvailability`, o mesmo que decide o cartão da Início);
@@ -227,14 +236,28 @@ export class PcStore {
   readonly supportsKeyV2 = computed(() => this.capabilities().includes(PC_KEY_V2_CAPABILITY));
   /** O agente entende `pc.text.v2` (apagar, digitar e apertar uma tecla num pedido só). */
   readonly supportsTextV2 = computed(() => this.capabilities().includes(PC_TEXT_V2_CAPABILITY));
+  /** O agente entende `pc.text.v3` (quebra de linha e tabulação dentro do texto: o texto colado vai inteiro, em ordem). */
+  readonly supportsTextV3 = computed(() => this.capabilities().includes(PC_TEXT_V3_CAPABILITY));
   /** O agente confere o programa da frente (`target`): só então os controles por programa mandam tecla. */
   readonly supportsTarget = computed(() => this.capabilities().includes(PC_TARGET_CAPABILITY));
   /** O agente entende `pc.click.v2` (clique com modificadores e com o intervalo do toque anterior). */
   readonly supportsClickV2 = computed(() => this.capabilities().includes(PC_CLICK_V2_CAPABILITY));
   /** O agente entende `pc.pointer.zoom.v1` (a pinça vira Ctrl e a roda do mouse). */
   readonly supportsZoom = computed(() => this.capabilities().includes(PC_ZOOM_CAPABILITY));
-  /** O agente entende `pc.power.v2`: reiniciar, encerrar a sessão, hibernar e apagar o monitor. */
+  /** O agente entende `pc.power.v2`: reiniciar, encerrar a sessão e apagar o monitor. */
   readonly supportsPowerV2 = computed(() => this.capabilities().includes(PC_POWER_V2_CAPABILITY));
+  /** O PC hiberna: o agente só o declara com a hibernação ligada nele (e com a `pc.power.v2`). */
+  readonly supportsHibernate = computed(
+    () => this.supportsPowerV2() && this.capabilities().includes(PC_HIBERNATE_CAPABILITY),
+  );
+  /** O agente diz o que o Windows está tocando ("Tocando agora"). */
+  readonly supportsNowPlaying = computed(() =>
+    this.capabilities().includes(PC_MEDIA_STATE_CAPABILITY),
+  );
+  /** O agente lê e troca o texto da área de transferência do PC. */
+  readonly supportsClipboard = computed(() =>
+    this.capabilities().includes(PC_CLIPBOARD_CAPABILITY),
+  );
   /** O agente entende `pc.volume.v1` (volume absoluto) e avisa o nível de agora. */
   readonly supportsVolume = computed(() => this.capabilities().includes(PC_VOLUME_CAPABILITY));
   /** O nível que a tela pediu e o PC ainda não confirmou na leitura do estado (o que o dedo deixou na faixa). */
@@ -395,7 +418,7 @@ export class PcStore {
       dx,
       dy,
       elapsedMs,
-      accelerationFor(this.prefs.sensitivity(), this.prefs.acceleration()),
+      accelerationFor(this.prefs.sensitivity(), this.prefs.pointerAcceleration()),
     );
     if (step.dx !== 0 || step.dy !== 0) this.batcher.addMove(step.dx, step.dy);
   }
@@ -888,6 +911,33 @@ export class PcStore {
 
   launch(appId: string): Promise<PcFailure | null> {
     return this.command(() => this.api.launch(appId));
+  }
+
+  /**
+   * O que o PC está tocando agora, ou `null` se não deu para saber (PC fora, agente anterior, falha). A tela repete a pergunta a
+   * cada poucos segundos: por isso a falha aqui é calada (nem aviso, nem releitura do estado), e o próximo ciclo tenta de novo.
+   */
+  async nowPlaying(): Promise<PcNowPlaying | null> {
+    if (!this.canSend() || !this.supportsNowPlaying()) return null;
+    try {
+      return await this.api.nowPlaying();
+    } catch {
+      return null;
+    }
+  }
+
+  /** Lê o texto da área de transferência do PC. Pode ser uma senha: a tela o mostra a pedido e nunca o guarda. */
+  async readClipboard(): Promise<PcRead<string>> {
+    let text = '';
+    const failure = await this.command(async () => {
+      text = await this.api.readClipboard();
+    });
+    return failure === null ? { ok: true, value: text } : { ok: false, failure };
+  }
+
+  /** Troca o texto da área de transferência do PC (quem chama já conferiu com `clipboardTextFits`). */
+  writeClipboard(text: string): Promise<PcFailure | null> {
+    return this.command(() => this.api.writeClipboard(text));
   }
 
   /**

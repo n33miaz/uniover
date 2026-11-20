@@ -113,6 +113,10 @@ public static class DevicesModule
         services.AddSingleton<PcAppsStore>();
         services.AddSingleton<PcVolumeStore>();
         services.AddSingleton<IAgentPresenceListener>(sp => sp.GetRequiredService<PcVolumeStore>());
+        services.AddSingleton<PcMediaStates>();
+        services.AddSingleton<IAgentPresenceListener>(sp => sp.GetRequiredService<PcMediaStates>());
+        services.AddSingleton<PcClipboardInbox>();
+        services.AddSingleton<IAgentPresenceListener>(sp => sp.GetRequiredService<PcClipboardInbox>());
         services.AddSingleton<PcDeviceStates>();
         services.AddSingleton<IAgentPresenceListener>(sp => sp.GetRequiredService<PcDeviceStates>());
         services.AddScoped<IAgentMessageHandler, PcAgentMessageHandler>();

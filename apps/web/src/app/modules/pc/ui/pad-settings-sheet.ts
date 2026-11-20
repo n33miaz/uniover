@@ -86,10 +86,17 @@ type SwitchName =
           type="checkbox"
           role="switch"
           class="ui-switch"
-          [checked]="prefs.acceleration()"
+          [checked]="prefs.pointerAcceleration()"
           (change)="onSwitch('acceleration', $event)"
         />
       </label>
+      @if (prefs.windowsMouse(); as mouse) {
+        <p class="pc-mouse" i18n="@@pc.settings.windowsMouse">
+          No Windows do PC: aceleração
+          {mouse.acceleration, select, true {ligada} other {desligada}}, velocidade
+          {{ mouse.speed }} de 20.
+        </p>
+      }
 
       <div class="level">
         <label class="level-head" for="scroll-sensitivity">
@@ -175,6 +182,11 @@ type SwitchName =
     }
     .more {
       justify-self: start;
+    }
+    .pc-mouse {
+      margin: 0;
+      color: var(--a-ink2);
+      font-size: var(--fs-small);
     }
     .row {
       display: flex;

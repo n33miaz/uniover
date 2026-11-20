@@ -13,7 +13,7 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from functools import partial
-from typing import Final, Protocol
+from typing import Any, Final, Protocol
 
 from uniover_agent.adapters import pc_inputs
 from uniover_agent.adapters.pc_inputs import RawInput
@@ -39,6 +39,11 @@ Sender = Callable[[Sequence[RawInput]], None]
 # contam as mensagens que o agente descarta por idade, nem energia e abrir programa, que não
 # passam por aqui.
 DEAD_MAN_SECONDS: Final = 30.0
+RELEASE_RETRY_SECONDS: Final = 0.1
+# `SystemParametersInfoW`: só as ações de leitura dos ajustes do mouse.
+_SPI_GETMOUSE: Final = 0x0003
+_SPI_GETMOUSESPEED: Final = 0x0070
+_MAX_MOUSE_SPEED: Final = 20
 
 
 class PartialSendError(PcInputRefused):
@@ -341,17 +346,27 @@ if sys.platform == "win32":
         return bool(ctypes.windll.powrprof.SetSuspendState(False, False, False))
 
     def _hibernation_enabled() -> bool:
-        # Só leitura (`GetPwrCapabilities`): o byte 8 de `SYSTEM_POWER_CAPABILITIES` é
-        # `HiberFilePresent`, o arquivo de hibernação existe (a hibernação está ligada).
+        # Só leitura (`GetPwrCapabilities`): preenche uma estrutura e nada mais.
         buffer = ctypes.create_string_buffer(256)
         if not ctypes.windll.powrprof.GetPwrCapabilities(buffer):
             return False
-        return bool(buffer.raw[8])
+        return hiber_file_present(buffer.raw)
 
     def _monitor_off() -> bool:
         # `PostMessage` e não `SendMessage` para todas as janelas: um programa travado não segura o
         # agente. 2 é "desligar".
         return bool(ctypes.windll.user32.PostMessageW(0xFFFF, 0x0112, 0xF170, 2))
+
+    def _mouse_parameters() -> tuple[int, int]:
+        # Só leitura (`SystemParametersInfoW` com as ações GET; nenhuma ação SET existe aqui): a
+        # aceleração (o terceiro dos três inteiros de `SPI_GETMOUSE`) e a velocidade (1 a 20).
+        params = (ctypes.c_int * 3)()
+        if not _user32.SystemParametersInfoW(_SPI_GETMOUSE, 0, params, 0):
+            raise OSError(ctypes.get_last_error(), "SPI_GETMOUSE falhou")
+        speed = ctypes.c_int()
+        if not _user32.SystemParametersInfoW(_SPI_GETMOUSESPEED, 0, ctypes.byref(speed), 0):
+            raise OSError(ctypes.get_last_error(), "SPI_GETMOUSESPEED falhou")
+        return params[2], speed.value
 
 else:
 
@@ -375,6 +390,35 @@ else:
 
     def _monitor_off() -> bool:
         raise PcUnsupported(_UNSUPPORTED)
+
+    def _mouse_parameters() -> tuple[int, int]:
+        raise PcUnsupported(_UNSUPPORTED)
+
+
+def read_mouse_settings(
+    read: Callable[[], tuple[int, int]] | None = None,
+) -> dict[str, Any] | None:
+    """Os ajustes do mouse do Windows, como o `hello` os leva (`pcMouse`): `acceleration` (o
+    "aprimorar a precisão do ponteiro") e `speed` (1 a 20). Só lê; sem resposta do Windows (ou fora
+    dele) devolve `None` e o `hello` segue sem eles."""
+    try:
+        acceleration, speed = (read or _mouse_parameters)()
+    except Exception as exc:
+        _log.debug("ajustes do mouse do Windows não lidos: %s", exc)
+        return None
+    if not 1 <= speed <= _MAX_MOUSE_SPEED:
+        return None
+    return {"acceleration": acceleration != 0, "speed": speed}
+
+
+# Posição de `HiberFilePresent` em `SYSTEM_POWER_CAPABILITIES` (depois de oito BOOLEAN de um byte).
+_HIBER_FILE_PRESENT = 8
+
+
+def hiber_file_present(capabilities: bytes) -> bool:
+    """O arquivo de hibernação existe (a hibernação está ligada), pela `SYSTEM_POWER_CAPABILITIES`
+    que o Windows preencheu. Estrutura curta demais conta como desligada."""
+    return len(capabilities) > _HIBER_FILE_PRESENT and bool(capabilities[_HIBER_FILE_PRESENT])
 
 
 class WindowsPcInput:
@@ -412,6 +456,7 @@ class WindowsPcInput:
         self._stuck: tuple[RawInput, ...] = ()
         self._last_activity = monotonic()
         self._timer: _Cancelable | None = None
+        self._retry_timer = False
         # Cada armação ganha um número: um disparo atrasado de um temporizador já trocado se ignora.
         self._generation = 0
 
@@ -455,12 +500,27 @@ class WindowsPcInput:
             self._dispatch(pc_inputs.key_inputs(key, modifiers, repeat, action, held))
 
     def type_text(self, text: str) -> None:
-        self._dispatch(pc_inputs.text_inputs(text))
+        self._dispatch_text(pc_inputs.text_inputs(text))
 
     def edit_text(self, erase: int, text: str, key: str | None = None) -> None:
-        """Apagar, digitar e apertar a tecla do fim, num lote só (e, se o Windows aceitar só parte,
-        o que ficou apertado é solto como em qualquer lote)."""
-        self._dispatch(pc_inputs.edit_inputs(erase, text, key))
+        """Apaga, digita e aperta a tecla final na mesma ordem."""
+        self._dispatch_text(pc_inputs.edit_inputs(erase, text, key))
+
+    def _dispatch_text(self, inputs: Sequence[RawInput]) -> None:
+        # Limita a quantidade entregue ao Windows de uma vez. Cada par de apertar e soltar
+        # fica no mesmo lote, inclusive as duas unidades UTF-16 de um caractere suplementar.
+        limit = 256
+        low_surrogates = range(0xDC00, 0xE000)
+        with self._lock:
+            start = 0
+            while start < len(inputs):
+                end = min(start + limit, len(inputs))
+                if end < len(inputs):
+                    following = inputs[end]
+                    if following.flags & pc_inputs.KEY_UNICODE and following.scan in low_surrogates:
+                        end -= 2
+                self._dispatch(inputs[start:end])
+                start = end
 
     def media(self, action: str, steps: int) -> None:
         self._dispatch(pc_inputs.media_inputs(action, steps))
@@ -576,6 +636,10 @@ class WindowsPcInput:
     def _sync_timer(self) -> None:
         if not self._holding():
             self._cancel_timer()
+        elif self._stuck and not self._retry_timer:
+            self._cancel_timer()
+            self._retry_timer = True
+            self._arm(RELEASE_RETRY_SECONDS)
         elif self._timer is None:
             self._arm(self._dead_man)
 
@@ -585,6 +649,7 @@ class WindowsPcInput:
 
     def _cancel_timer(self) -> None:
         self._generation += 1
+        self._retry_timer = False
         if self._timer is not None:
             self._timer.cancel()
             self._timer = None
@@ -594,11 +659,17 @@ class WindowsPcInput:
             if generation != self._generation:
                 return
             self._timer = None
+            self._retry_timer = False
             if not self._holding():
                 return
             idle = self._monotonic() - self._last_activity
             if idle < self._dead_man:
-                self._arm(self._dead_man - idle)  # houve mensagem no meio do caminho
+                # Solturas recusadas têm de ser tentadas mesmo durante um arrasto ativo.
+                self._retry_stuck()
+                if self._stuck:
+                    self._sync_timer()
+                elif self._holding():
+                    self._arm(self._dead_man - idle)
                 return
             _log.warning("algo ficou apertado sem mensagens do PC há %.0f s: soltando", idle)
             self._release(self._held, self._pending_key_ups())

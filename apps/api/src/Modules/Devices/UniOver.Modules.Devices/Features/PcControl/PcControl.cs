@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
@@ -21,7 +22,32 @@ namespace UniOver.Modules.Devices.Features.PcControl;
 /// esconder o que o PC não entende. Vazio com agente antigo, sem PC ou sem conexão ainda.
 /// </summary>
 internal sealed record PcStatusResponse(
-    bool Available, bool Online, IReadOnlyList<PcApp> Apps, IReadOnlyList<string> Capabilities, PcVolumeState? Volume = null);
+    bool Available,
+    bool Online,
+    IReadOnlyList<PcApp> Apps,
+    IReadOnlyList<string> Capabilities,
+    PcVolumeState? Volume = null,
+    string? System = null,
+    PcMouseSettings? Mouse = null);
+
+/// <summary>
+/// Os ajustes do mouse do Windows do PC, só lidos pelo agente (capacidade <c>pc.mouse.v1</c>): <c>Acceleration</c> é o "aprimorar a precisão
+/// do ponteiro" e <c>Speed</c> a velocidade, de 1 a 20. O Windows já os aplica ao movimento que o app manda; a tela os mostra e segue a
+/// aceleração enquanto a pessoa não escolheu a do app.
+/// </summary>
+internal sealed record PcMouseSettings(bool Acceleration, int Speed);
+
+/// <summary>
+/// O que o Windows diz estar tocando (<c>pc.media.state.v1</c>): <c>Status</c> é <c>playing</c>, <c>paused</c>, <c>stopped</c> ou <c>none</c>. O
+/// título e o artista são conteúdo da pessoa: só passam por aqui em memória e nunca são registrados.
+/// </summary>
+internal sealed record PcNowPlaying(string Status, string Title, string Artist, string App, DateTimeOffset At);
+
+/// <summary>O texto da área de transferência do PC, devolvido uma vez a quem pediu a leitura.</summary>
+internal sealed record PcClipboardText(string Text);
+
+/// <summary>O texto que o app quer pôr na área de transferência do PC (1 a 5000 caracteres, sem caracteres de controle além de tabulação e quebra de linha).</summary>
+internal sealed record PcClipboardWriteRequest(string? Text);
 
 /// <summary>O volume de agora do PC, como o agente avisou (<c>pc.volume.state.v1</c>): nível de 0 a 100 e mudo.</summary>
 internal sealed record PcVolumeState(int Level, bool Muted);
@@ -262,9 +288,10 @@ internal static class PcValidator
         {
             errors["text"] = [$"O texto deve ter no máximo {MaxTextLength} caracteres."];
         }
-        else if (text.Any(IsControl))
+        else if (text.Any(c => IsControl(c) && c is not ('\n' or '\t')))
         {
-            errors["text"] = ["O texto não pode ter quebra de linha nem outros caracteres de controle."];
+            // Quebra de linha e tabulação vão pela `pc.text.v3` (o app troca CRLF e CR por LF antes de mandar).
+            errors["text"] = ["O texto não pode ter caracteres de controle além de quebra de linha e tabulação."];
         }
 
         return errors;
@@ -313,6 +340,25 @@ internal static class PcValidator
         if (request is null || (request.Level is null && request.Muted is null))
         {
             errors["level"] = ["Informe o nível (0 a 100) ou o mudo."];
+        }
+
+        return errors;
+    }
+
+    public const int MaxClipboardLength = 5000;
+
+    public static Dictionary<string, string[]> Clipboard(PcClipboardWriteRequest? request)
+    {
+        var errors = new Dictionary<string, string[]>();
+        var text = request?.Text;
+        // O contrato proíbe o que o agente recusaria (vazio, grande demais, caractere de controle): a API barra antes, e o pedido não vira 500.
+        if (string.IsNullOrEmpty(text) || text.Length > MaxClipboardLength)
+        {
+            errors["text"] = [$"Informe de 1 a {MaxClipboardLength} caracteres."];
+        }
+        else if (text.Any(c => char.IsControl(c) && c is not ('\t' or '\n' or '\r')))
+        {
+            errors["text"] = ["O texto não pode ter caracteres de controle."];
         }
 
         return errors;
@@ -397,12 +443,15 @@ internal sealed partial class PcControlHandler(
     PcAgentResolver resolver,
     PcAppsStore apps,
     PcVolumeStore volume,
+    PcMediaStates media,
+    PcClipboardInbox clipboard,
     IAgentGateway gateway,
     PairingAuditWriter audit,
     DevicesDbContext db,
     TimeProvider time,
     PcOriginReader origins,
     PcDeviceStates deviceStates,
+    IOptions<DevicesModuleOptions> options,
     ILogger<PcControlHandler> logger)
 {
     /// <summary>
@@ -423,7 +472,8 @@ internal sealed partial class PcControlHandler(
         var target = await resolver.ResolveAsync(userId, cancellationToken);
         return TypedResults.Ok(target is null
             ? new PcStatusResponse(false, false, [], [])
-            : new PcStatusResponse(true, target.Connected, apps.Get(target.Slug), OptionalCapabilities(target), VolumeOf(target)));
+            : new PcStatusResponse(true, target.Connected, apps.Get(target.Slug), OptionalCapabilities(target), VolumeOf(target), SystemFamily(target.Os),
+                target.Mouse is { } mouse ? new PcMouseSettings(mouse.Acceleration, mouse.Speed) : null));
     }
 
     /// <summary>
@@ -470,6 +520,18 @@ internal sealed partial class PcControlHandler(
             ? PcMessages.WithSeq(message, seq, epoch)
             : message;
 
+    private static string? SystemFamily(string? os)
+    {
+        var name = os?.Split(' ', 2)[0];
+        return name?.ToLowerInvariant() switch
+        {
+            "windows" => "windows",
+            "darwin" or "macos" => "macos",
+            "linux" => "linux",
+            _ => null,
+        };
+    }
+
     /// <summary>
     /// O volume que o agente avisou, só enquanto ele está conectado e já mandou o <c>hello</c> desta sessão. O que chegou numa sessão
     /// anterior já foi descartado pelo <see cref="PcVolumeStore"/> (queda ou conexão nova): um agente que voltou e ainda não avisou não tem
@@ -477,11 +539,19 @@ internal sealed partial class PcControlHandler(
     /// </summary>
     private PcVolumeState? VolumeOf(PcTarget target) => target.Connected && target.HelloAt is not null ? volume.Get(target.Slug) : null;
 
-    /// <summary>As capacidades <c>pc.*</c> além da base (<see cref="PcMessages.Capability"/>), na ordem em que o agente as declarou.</summary>
-    private static IReadOnlyList<string> OptionalCapabilities(PcTarget target) =>
-        target.HelloAt is null
-            ? []
-            : [.. target.Capabilities.Where(c => c.StartsWith("pc.", StringComparison.Ordinal) && c != PcMessages.Capability)];
+    /// <summary>As capacidades opcionais do agente e a permissão de leitura configurada para o app.</summary>
+    private IReadOnlyList<string> OptionalCapabilities(PcTarget target)
+    {
+        if (target.HelloAt is null)
+        {
+            return [];
+        }
+
+        var capabilities = target.Capabilities.Where(c => c.StartsWith("pc.", StringComparison.Ordinal) && c != PcMessages.Capability);
+        return options.Value.PcClipboardRead && target.Capabilities.Contains(PcMessages.ClipboardCapability, StringComparer.Ordinal)
+            ? [.. capabilities, "pc.clipboard.read.v1"]
+            : [.. capabilities];
+    }
 
     /// <summary>
     /// <paramref name="requiredCapability"/>: a capacidade que o agente precisa ter declarado para entender a mensagem (a v2 de
@@ -498,7 +568,8 @@ internal sealed partial class PcControlHandler(
         string? requiredCapability = null,
         int? seq = null,
         string? epoch = null,
-        string? focus = null)
+        string? focus = null,
+        Func<string, Guid, IResult>? onSuccess = null)
     {
         var target = await ReadyTargetAsync(userId, cancellationToken);
         if (target.Failure is not null)
@@ -521,6 +592,9 @@ internal sealed partial class PcControlHandler(
         var focused = focus is null ? message : PcMessages.WithTarget(message, focus);
         var origin = origins.Read();
         var outbound = PcMessages.WithOrigin(NumberedFor(target, focused, seq, epoch), target.Capabilities, origin, withOperation: true);
+        using var clipboardRead = message.RequestId is { } requestId
+            ? clipboard.Expect(target.Slug, requestId, cancellationToken)
+            : null;
         var started = time.GetTimestamp();
         var reply = await gateway.RequestAsync(target.Slug, outbound, timeout, cancellationToken);
         var elapsedMs = (long)time.GetElapsedTime(started).TotalMilliseconds;
@@ -555,8 +629,55 @@ internal sealed partial class PcControlHandler(
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        return TypedResults.NoContent();
+        // Os comandos que devolvem dados (o que toca, o texto da área de transferência) montam a resposta com o que o agente mandou antes do
+        // resultado, achado pelo agente e pelo identificador deste pedido.
+        return onSuccess is null ? TypedResults.NoContent() : onSuccess(target.Slug, reply.Value.CorrelationId);
     }
+
+    /// <summary>
+    /// O que toca agora no PC: pergunta ao agente, que lê a sessão de mídia do Windows e a manda de volta antes de responder; o que ele mandou
+    /// sai daqui. Só leitura: sem auditoria, e o título nunca vai para o registro (<c>LogOperation</c> só leva tipo e resultado).
+    /// </summary>
+    public Task<IResult> NowPlayingAsync(Guid userId, ClientInfo client, CancellationToken cancellationToken) =>
+        RunAsync(
+            userId,
+            PcMessages.MediaQuery(),
+            CommandTimeout,
+            null,
+            client,
+            cancellationToken,
+            PcMessages.MediaStateCapability,
+            onSuccess: (slug, _) => TypedResults.Ok(media.Get(slug) ?? new PcNowPlaying("none", string.Empty, string.Empty, string.Empty, time.GetUtcNow())));
+
+    /// <summary>
+    /// Lê o texto da área de transferência do PC: pode ser uma senha, então cada leitura fica na trilha (sem o texto), o texto sai uma vez e é
+    /// esquecido, e a rota tem o balde das ações raras.
+    /// </summary>
+    public Task<IResult> ReadClipboardAsync(Guid userId, ClientInfo client, CancellationToken cancellationToken) =>
+        !options.Value.PcClipboardRead
+            ? Task.FromResult<IResult>(TypedResults.Problem(
+                statusCode: StatusCodes.Status403Forbidden,
+                title: "A leitura da área de transferência do PC está desativada."))
+            : RunAsync(
+                userId,
+                PcMessages.ClipboardQuery() with { RequestId = Guid.CreateVersion7() },
+                CommandTimeout,
+                PairingEvents.PcClipboardRead,
+                client,
+                cancellationToken,
+                PcMessages.ClipboardCapability,
+                onSuccess: (slug, requestId) => TypedResults.Ok(new PcClipboardText(clipboard.Take(slug, requestId) ?? string.Empty)));
+
+    /// <summary>Troca o texto da área de transferência do PC. O texto nunca vai para o registro nem para a trilha (só o fato de que houve a troca).</summary>
+    public Task<IResult> WriteClipboardAsync(Guid userId, string text, ClientInfo client, CancellationToken cancellationToken) =>
+        RunAsync(
+            userId,
+            PcMessages.ClipboardSet(text),
+            CommandTimeout,
+            PairingEvents.PcClipboardWrite,
+            client,
+            cancellationToken,
+            PcMessages.ClipboardCapability);
 
     /// <summary>
     /// Se o agente não puder receber a mensagem que precisa de <paramref name="capability"/>: sem o <c>hello</c> da sessão de
@@ -656,6 +777,37 @@ internal static class PcControlEndpoints
             .Produces<PcStatusResponse>()
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status429TooManyRequests);
+
+        // O que toca agora: leitura que o app repete a cada poucos segundos com a tela da mídia aberta.
+        group.MapGet("/now-playing", NowPlayingAsync)
+            .RequireAuthorization(ModulePolicy)
+            .RequireRateLimiting(RateLimitPolicies.PcInput)
+            .Produces<PcNowPlaying>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status502BadGateway)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .ProducesProblem(StatusCodes.Status504GatewayTimeout);
+
+        // A área de transferência pode ter uma senha: balde das ações raras (20 por minuto) e trilha em cada uso.
+        group.MapPost("/clipboard/read", ReadClipboardAsync)
+            .RequireAuthorization(ModulePolicy)
+            .RequireRateLimiting(RateLimitPolicies.PcPower)
+            .Produces<PcClipboardText>()
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status502BadGateway)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .ProducesProblem(StatusCodes.Status504GatewayTimeout);
+
+        group.MapPost("/clipboard/write", WriteClipboardAsync)
+            .RequireAuthorization(ModulePolicy)
+            .RequireRateLimiting(RateLimitPolicies.PcPower)
+            .WithCommonProblems();
 
         group.MapPost("/pointer", PointerAsync)
             .RequireAuthorization(ModulePolicy)
@@ -868,7 +1020,8 @@ internal static class PcControlEndpoints
             return PcProblems.KeyBudgetExceeded();
         }
 
-        // A v1 para o texto puro; a v2 só com apagar ou tecla no fim, e só para o agente que a declarou.
+        // A v1 para o texto puro; a v2 só com apagar ou tecla no fim; a v3 só com quebra de linha ou tabulação no texto. Cada
+        // uma só para o agente que a declarou.
         var result = await handler.RunAsync(
             userId,
             PcMessages.TextFor(request!),
@@ -876,7 +1029,7 @@ internal static class PcControlEndpoints
             null,
             ClientInfo.From(http),
             cancellationToken,
-            PcMessages.TextFitsV1(request!) ? null : PcMessages.TextV2Capability,
+            PcMessages.TextCapability(request!),
             request!.Seq,
             request.Epoch,
             request.Target);
@@ -976,18 +1129,20 @@ internal static class PcControlEndpoints
         var name = request!.Action!;
         var auditEvent = PowerAuditEvent(PcMessages.PowerV2Actions[name]);
         // A v1 sempre que a ação cabe nela (um agente anterior à v2 segue funcionando); só as quatro novas pedem a capacidade, e sem ela o
-        // pedido volta como 409 pc-key-unsupported sem enviar nada.
+        // pedido volta como 409 pc-key-unsupported sem enviar nada. Hibernar pede a sua própria: o agente só a declara com a hibernação
+        // ligada no PC.
+        var v2Action = PcMessages.PowerV2Actions[name];
         return PcMessages.PowerActions.TryGetValue(name, out var legacy)
             ? await handler.RunAsync(
                 userId, PcMessages.Power(legacy), PcControlHandler.PowerTimeout, auditEvent, ClientInfo.From(http), cancellationToken)
             : await handler.RunAsync(
                 userId,
-                PcMessages.PowerV2(PcMessages.PowerV2Actions[name]),
+                PcMessages.PowerV2(v2Action),
                 PcControlHandler.PowerTimeout,
                 auditEvent,
                 ClientInfo.From(http),
                 cancellationToken,
-                PcMessages.PowerV2Capability);
+                PcMessages.PowerV2CapabilityFor(v2Action));
     }
 
     private static string PowerAuditEvent(PcPowerV2BodyAction action) => action switch
@@ -1001,6 +1156,45 @@ internal static class PcControlEndpoints
         PcPowerV2BodyAction.MonitorOff => PairingEvents.PcMonitorOff,
         _ => PairingEvents.PcShutdownCancelled,
     };
+
+    private static async Task<IResult> NowPlayingAsync(
+        ICurrentUser current, HttpContext http, PcControlHandler handler, CancellationToken cancellationToken)
+    {
+        if (current.UserId is not { } userId)
+        {
+            return RemoteCareProblems.Unauthenticated();
+        }
+
+        // O que toca é da pessoa: nada de cache no caminho.
+        http.Response.Headers.CacheControl = "no-store";
+        return await handler.NowPlayingAsync(userId, ClientInfo.From(http), cancellationToken);
+    }
+
+    private static async Task<IResult> ReadClipboardAsync(
+        ICurrentUser current, HttpContext http, PcControlHandler handler, CancellationToken cancellationToken)
+    {
+        if (current.UserId is not { } userId)
+        {
+            return RemoteCareProblems.Unauthenticated();
+        }
+
+        http.Response.Headers.CacheControl = "no-store";
+        return await handler.ReadClipboardAsync(userId, ClientInfo.From(http), cancellationToken);
+    }
+
+    private static async Task<IResult> WriteClipboardAsync(
+        PcClipboardWriteRequest? request, ICurrentUser current, HttpContext http, PcControlHandler handler, CancellationToken cancellationToken)
+    {
+        if (current.UserId is not { } userId)
+        {
+            return RemoteCareProblems.Unauthenticated();
+        }
+
+        var errors = PcValidator.Clipboard(request);
+        return errors.Count > 0
+            ? ProblemDetailsExtensions.ValidationProblem(errors)
+            : await handler.WriteClipboardAsync(userId, request!.Text!, ClientInfo.From(http), cancellationToken);
+    }
 
     private static async Task<IResult> LaunchAsync(
         string appId, ICurrentUser current, HttpContext http, PcControlHandler handler, CancellationToken cancellationToken)

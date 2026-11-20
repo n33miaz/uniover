@@ -109,8 +109,27 @@ describe('PowerPage', () => {
 
   describe('with a PC that understands the newer power actions', () => {
     beforeEach(() => {
+      store.capabilities.set(['pc.power.v2', 'pc.power.hibernate.v1']);
+      fixture.detectChanges();
+    });
+
+    it('hides Hibernate from a PC with hibernation off, keeping the other newer actions', () => {
       store.capabilities.set(['pc.power.v2']);
       fixture.detectChanges();
+      expect([...root.querySelectorAll('.action')].map((b) => b.textContent?.trim())).toEqual([
+        'Bloquear',
+        'Suspender',
+        'Desligar',
+        'Desligar o Monitor',
+        'Reiniciar',
+        'Encerrar Sessão',
+      ]);
+    });
+
+    it('never shows Hibernate from the hibernation capability alone', () => {
+      store.capabilities.set(['pc.power.hibernate.v1']);
+      fixture.detectChanges();
+      expect(action('Hibernar')).toBeUndefined();
     });
 
     it('hides the four newer actions from a PC that did not declare them', () => {

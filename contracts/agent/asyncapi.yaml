@@ -180,6 +180,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.text.v2.schema.json'
+      pcTextV3:
+        name: pc.text.v3
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.text.v3.schema.json'
       pcMedia:
         name: pc.media.v1
         contentType: application/json
@@ -190,6 +195,21 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.power.v1.schema.json'
+      pcMediaQuery:
+        name: pc.media.query.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.media.query.v1.schema.json'
+      pcClipboardQuery:
+        name: pc.clipboard.query.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.clipboard.query.v1.schema.json'
+      pcClipboardSet:
+        name: pc.clipboard.set.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.clipboard.set.v1.schema.json'
       pcPowerV2:
         name: pc.power.v2
         contentType: application/json
@@ -306,6 +326,16 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.volume.state.v1.schema.json'
+      pcMediaState:
+        name: pc.media.state.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.media.state.v1.schema.json'
+      pcClipboard:
+        name: pc.clipboard.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.clipboard.v1.schema.json'
       pcDeviceState:
         name: pc.device.state.v1
         contentType: application/json
@@ -621,6 +651,7 @@ operations:
     messages:
       - $ref: '#/channels/agentCommands/messages/pcText'
       - $ref: '#/channels/agentCommands/messages/pcTextV2'
+      - $ref: '#/channels/agentCommands/messages/pcTextV3'
   sendPcMedia:
     action: send
     channel:
@@ -636,6 +667,21 @@ operations:
     messages:
       - $ref: '#/channels/agentCommands/messages/pcPower'
       - $ref: '#/channels/agentCommands/messages/pcPowerV2'
+  sendPcMediaQuery:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API pergunta o que o Windows diz estar tocando; o agente responde com pc.media.state.v1 e depois com o resultado.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcMediaQuery'
+  sendPcClipboard:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API lê ou troca o texto da área de transferência do PC.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcClipboardQuery'
+      - $ref: '#/channels/agentCommands/messages/pcClipboardSet'
   sendPcAppLaunch:
     action: send
     channel:
@@ -657,6 +703,8 @@ operations:
     summary: A API recebe o volume de agora do PC (nível e mudo).
     messages:
       - $ref: '#/channels/agentEvents/messages/pcVolumeState'
+      - $ref: '#/channels/agentEvents/messages/pcMediaState'
+      - $ref: '#/channels/agentEvents/messages/pcClipboard'
       - $ref: '#/channels/agentEvents/messages/pcDeviceState'
   sendPcRtcOffer:
     action: send

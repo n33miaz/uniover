@@ -3,16 +3,20 @@ import { computed, signal } from '@angular/core';
 import type { PcFavorite, PcStatus, PcVolumeLevel } from '../../core/modules/pc-availability';
 import {
   PC_CLICK_V2_CAPABILITY,
+  PC_CLIPBOARD_CAPABILITY,
+  PC_HIBERNATE_CAPABILITY,
   PC_KEY_V2_CAPABILITY,
+  PC_MEDIA_STATE_CAPABILITY,
   PC_TARGET_CAPABILITY,
   PC_TEXT_V2_CAPABILITY,
+  PC_TEXT_V3_CAPABILITY,
   PC_POWER_V2_CAPABILITY,
   PC_VOLUME_CAPABILITY,
   PC_ZOOM_CAPABILITY,
   keyNeedsV2,
 } from './data/pc-types';
 import type { PcFailure } from './data/pc-failure';
-import type { PcPhase } from './data/pc-store';
+import type { PcPhase, PcRead } from './data/pc-store';
 import type {
   PcClickButton,
   PcClickOptions,
@@ -22,6 +26,7 @@ import type {
   PcKeyOptions,
   PcMediaAction,
   PcModifier,
+  PcNowPlaying,
   PcPowerAction,
   PcTextEdit,
   PcVolumeChange,
@@ -54,11 +59,24 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
     ),
     supportsKeyV2: computed(() => capabilities().includes(PC_KEY_V2_CAPABILITY)),
     supportsTextV2: computed(() => capabilities().includes(PC_TEXT_V2_CAPABILITY)),
+    supportsTextV3: computed(() => capabilities().includes(PC_TEXT_V3_CAPABILITY)),
     supportsTarget: computed(() => capabilities().includes(PC_TARGET_CAPABILITY)),
     supportsClickV2: computed(() => capabilities().includes(PC_CLICK_V2_CAPABILITY)),
     supportsZoom: computed(() => capabilities().includes(PC_ZOOM_CAPABILITY)),
     supportsVolume: computed(() => capabilities().includes(PC_VOLUME_CAPABILITY)),
     supportsPowerV2: computed(() => capabilities().includes(PC_POWER_V2_CAPABILITY)),
+    supportsHibernate: computed(
+      () =>
+        capabilities().includes(PC_POWER_V2_CAPABILITY) &&
+        capabilities().includes(PC_HIBERNATE_CAPABILITY),
+    ),
+    supportsNowPlaying: computed(() => capabilities().includes(PC_MEDIA_STATE_CAPABILITY)),
+    supportsClipboard: computed(() => capabilities().includes(PC_CLIPBOARD_CAPABILITY)),
+    nowPlaying: vi.fn<() => Promise<PcNowPlaying | null>>(() => Promise.resolve(null)),
+    readClipboard: vi.fn<() => Promise<PcRead<string>>>(() =>
+      Promise.resolve({ ok: true, value: '' }),
+    ),
+    writeClipboard: vi.fn<(text: string) => Outcome>(() => Promise.resolve(null)),
     volume,
     zoomPointer: vi.fn<(steps: number) => void>(),
     setVolume: vi.fn<(change: PcVolumeChange) => Outcome>(() => Promise.resolve(null)),

@@ -754,3 +754,94 @@ describe('LiveTyper: the waits cover an empty key bucket', () => {
     expect(bucket.now).toBeLessThanOrEqual(3_500);
   });
 });
+
+describe('LiveTyper: a long text pasted with many lines, to a PC that takes lines in the text', () => {
+  // Uma lista de pedidos colada do chat: linhas do Windows (CRLF), marcadores, tabulação, acentos e emoji.
+  const LINE = '- pedido {n}: conferir (o) "campo"; ação — ok 😀\r\n\tdetalhe {n}\r\n';
+  const PASTED = Array.from({ length: 60 }, (_, n) => LINE.replaceAll('{n}', String(n))).join('');
+  const EXPECTED = PASTED.replaceAll('\r\n', '\n');
+  const RATE: PcFailure = { kind: 'rate-limited', message: 'Muitos comandos seguidos.' };
+  const LOST: PcFailure = { kind: 'timeout', message: 'O PC não respondeu a tempo.' };
+
+  function lab(answers: (PcFailure | null)[] = []) {
+    const sent: PcTextEdit[] = [];
+    const keys: string[] = [];
+    const failures: PcFailure[] = [];
+    const typer = new LiveTyper(
+      {
+        key: (key) => {
+          keys.push(key);
+          return Promise.resolve(null);
+        },
+        text: () => Promise.resolve(null),
+        edit: (edit: PcTextEdit) => {
+          sent.push(edit);
+          return Promise.resolve(answers.shift() ?? null);
+        },
+        canEdit: () => true,
+        canEditLines: () => true,
+      },
+      { failed: (failure) => failures.push(failure), idle: () => undefined },
+      () => Promise.resolve(),
+    );
+    const flush = async () => {
+      for (let round = 0; round < 400; round++) await Promise.resolve();
+    };
+    return { typer, sent, keys, failures, flush };
+  }
+
+  it('the paste is long, with many lines', () => {
+    expect(EXPECTED.length).toBeGreaterThan(3_000);
+    expect(EXPECTED.split('\n').length).toBeGreaterThan(100);
+  });
+
+  it('goes as text, in order, once: no Enter or Tab key, no request over the limits', async () => {
+    const { typer, sent, keys, failures, flush } = lab();
+    typer.edit({ erase: 0, insert: PASTED });
+    await flush();
+    expect(failures).toEqual([]);
+    expect(keys).toEqual([]);
+    expect(sent.every((edit) => edit.key === undefined)).toBe(true);
+    expect(sent.map((edit) => edit.text).join('')).toBe(EXPECTED);
+    for (const edit of sent) {
+      const points = Array.from(edit.text ?? '');
+      expect(points.length).toBeLessThanOrEqual(MAX_TEXT);
+      const presses = (edit.erase ?? 0) + points.filter((c) => c === '\n' || c === '\t').length;
+      expect(presses).toBeLessThanOrEqual(PC_TEXT_ERASE_CHUNK);
+    }
+    // Poucos pedidos: o texto cheio de linhas não vira um pedido por linha.
+    expect(sent.length).toBeLessThan(EXPECTED.split('\n').length / 2);
+  });
+
+  it('a request refused for its pace is sent again once and nothing is typed twice', async () => {
+    const { typer, sent, failures, flush } = lab([null, RATE, null]);
+    typer.edit({ erase: 0, insert: PASTED });
+    await flush();
+    expect(failures).toEqual([]);
+    expect(sent[1]).toEqual(sent[2]);
+    const delivered = [sent[0], ...sent.slice(2)];
+    expect(delivered.map((edit) => edit.text).join('')).toBe(EXPECTED);
+  });
+
+  it('a failure in the middle stops there: what went out is never sent again', async () => {
+    const { typer, sent, failures, flush } = lab([null, null, LOST]);
+    typer.edit({ erase: 0, insert: PASTED });
+    await flush();
+    expect(failures).toEqual([LOST]);
+    expect(sent).toHaveLength(3);
+    expect(new Set(sent.map((edit) => edit.text)).size).toBe(3);
+    expect(EXPECTED.startsWith(sent.map((edit) => edit.text).join(''))).toBe(true);
+  });
+
+  it('a big erase before the paste is cut like before and the text carries the rest of it', () => {
+    const requests = editRequests({ erase: 120, insert: 'a\nb' }, true);
+    expect(requests).toEqual([{ erase: PC_TEXT_ERASE_CHUNK }, { erase: 40, text: 'a\nb' }]);
+  });
+
+  it('without the capability the line breaks are Enter keys of the older request, as always', () => {
+    expect(editRequests({ erase: 0, insert: 'a\r\nb' })).toEqual([
+      { text: 'a', key: 'ENTER' },
+      { text: 'b' },
+    ]);
+  });
+});
