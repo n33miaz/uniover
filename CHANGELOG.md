@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.71.0](https://github.com/n33miaz/uniover/compare/v0.70.0...v0.71.0) (2026-11-20)
+
+
+### Devices 0.65.0
+
+#### Features
+
+* **devices:** connect the pc from one link
+* **pc:** offer the connect link when empty
+
+
+### TV 0.53.0
+
+#### Features
+
+* **tv:** pick apps, flag an unreachable tv
+
+
+### Training 0.45.1
+
+#### Bug Fixes
+
+* **training:** guard the scroll to a new exercise
+
+
+### Web 0.68.0
+
+#### Features
+
+* **agent:** run the installer hidden
+* **devices:** connect the pc from one link
+* **auth:** renew the login qr with a time bar
+* **pc:** offer the connect link when empty
+
+
+### Agent 0.60.0
+
+#### Features
+
+* **agent:** find the tv on every network
+* **agent:** use the adaptive icon front layer
+* **agent:** download the android tools alone
+* **agent:** run the installer hidden
+* **agent:** show install steps with the app logo
+* **devices:** connect the pc from one link
+
+#### Bug Fixes
+
+* **agent:** bring the tray back in seconds
+
 ## [0.70.0](https://github.com/n33miaz/uniover/compare/v0.69.0...v0.70.0) (2026-11-20)
 
 
