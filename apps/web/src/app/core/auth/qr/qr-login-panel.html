@@ -14,12 +14,33 @@
       <div class="stage">
         @switch (phase()) {
           @case ('waiting') {
+            @if (refused()) {
+              <p class="state" role="status">
+                <app-auth-glyph name="alert-circle" />
+                <span i18n="@@auth.qr.denied">Recusado no celular. Geramos um novo QR.</span>
+              </p>
+            }
             <app-qr-code
               [value]="link()"
               label="QR para entrar pelo celular"
               i18n-label="@@auth.qr.image-label"
             />
-            <p class="hint" i18n="@@auth.qr.hint">Escaneie com o celular onde você já entrou.</p>
+            <!-- Barra que esvazia até a troca do QR. Sem região viva: o leitor de tela não anuncia cada passo. -->
+            <div
+              class="timer"
+              role="progressbar"
+              aria-label="Tempo até o próximo QR"
+              i18n-aria-label="@@auth.qr.timer-label"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              [attr.aria-valuenow]="remaining()"
+              [attr.aria-valuetext]="remainingText()"
+            >
+              <span class="timer-fill" [style.--qr-left]="remaining() / 100"></span>
+            </div>
+            <p class="hint" i18n="@@auth.qr.hint">
+              Escaneie com o celular onde você já entrou. O QR se renova sozinho.
+            </p>
           }
           @case ('approved') {
             <p class="state ok" role="status">
@@ -27,21 +48,8 @@
               <span i18n="@@auth.qr.approved">Pronto, entrando…</span>
             </p>
           }
-          @case ('denied') {
-            <p class="state" role="status">
-              <app-auth-glyph name="alert-circle" />
-              <span i18n="@@auth.qr.denied">Recusado no celular.</span>
-            </p>
-            <button
-              type="button"
-              class="ui-btn secondary block"
-              (mousedown)="$event.preventDefault()"
-              (click)="retry()"
-            >
-              <span i18n="@@auth.qr.again">Gerar Outro QR</span>
-            </button>
-          }
           @case ('error') {
+            <!-- Só depois de várias falhas seguidas; as tentativas continuam sozinhas, mais espaçadas. -->
             <p class="state" role="alert">
               <app-auth-glyph name="wifi-off" />
               <span i18n="@@auth.qr.error">Não foi possível gerar o QR.</span>
@@ -65,8 +73,8 @@
             />
           }
         }
-        @if (phase() === 'starting' || phase() === 'waiting') {
-          <!-- Fechar encerra o QR e as consultas; o botão de entrar com o celular volta ao lugar. -->
+        @if (phase() !== 'approved') {
+          <!-- Fechar encerra o QR, as trocas e as consultas; o botão de entrar com o celular volta ao lugar. -->
           <button
             #close
             type="button"
