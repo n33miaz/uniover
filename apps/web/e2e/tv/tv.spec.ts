@@ -107,9 +107,12 @@ const statusDot = (page: Page, title?: string) =>
   });
 const statusPanel = (page: Page) => page.locator('app-status-indicator .panel');
 
-/** Os atalhos de cima são só o ícone do app: o nome está no nome acessível (e na dica) do botão. */
+/**
+ * Os atalhos de cima são só o ícone do app: o nome está no nome acessível (e na dica) do botão. O azulejo de escolher
+ * apps, no fim da faixa quando sobra app instalado fora do controle, não é atalho e fica de fora da conta.
+ */
 async function expectChipNames(page: Page, names: string[]) {
-  const chips = page.locator('.shortcuts .shortcut');
+  const chips = page.locator('.shortcuts .shortcut:not(.add)');
   await expect(chips).toHaveCount(names.length);
   for (const [index, name] of names.entries()) {
     await expect(chips.nth(index)).toHaveAccessibleName(name);
@@ -117,6 +120,32 @@ async function expectChipNames(page: Page, names: string[]) {
 }
 
 const appsDialog = (page: Page) => page.getByRole('dialog', { name: 'Apps da TV' });
+
+/**
+ * Apps que a TV informou como instalados, nenhum no controle: é só daqui que saem as sugestões (as marcas conhecidas
+ * primeiro). O Max saiu da TV e nunca pode ser sugerido.
+ */
+function installedApps(): MockShortcut[] {
+  const apps: [string, string, boolean][] = [
+    ['Netflix', 'com.netflix.ninja', true],
+    ['YouTube', 'com.google.android.youtube.tv', true],
+    ['Prime Video', 'com.amazon.amazonvideo.livingroom', true],
+    ['Disney+', 'com.disney.disneyplus', true],
+    ['Globoplay', 'com.globo.globotv', true],
+    ['Spotify', 'com.spotify.tv.android', true],
+    ['Plex', 'com.plexapp.android', true],
+    ['Max', 'com.wbd.stream', false],
+  ];
+  return apps.map(([tvLabel, pkg, installed], index) => ({
+    id: `00000000-0000-4000-8000-0000000002${String(index + 1).padStart(2, '0')}`,
+    position: index + 1,
+    package: pkg,
+    tvLabel,
+    customLabel: null,
+    enabled: false,
+    installed,
+  }));
+}
 const keyboardDialog = (page: Page) => page.getByRole('dialog', { name: 'Teclado' });
 const keyboardField = (page: Page) => page.getByLabel('Texto para a TV');
 
@@ -534,7 +563,8 @@ test.describe('controle: fileira de atalhos', () => {
     const tile = (await page.locator('.shortcuts .shortcut').first().boundingBox())!;
     const stageTop = (await page.locator('.viewport').boundingBox())!.y;
 
-    await emitSse(page, 'tv.shortcuts', []);
+    const apps = installedApps();
+    await emitSse(page, 'tv.shortcuts', apps);
     const suggestions = page.locator('.shortcuts .shortcut.suggestion');
     await expect(suggestions.first()).toBeVisible();
     // Nenhuma é um atalho de verdade, e a dica de texto deu lugar a elas.
@@ -548,7 +578,10 @@ test.describe('controle: fileira de atalhos', () => {
     // Quantas cabem vem da largura medida da faixa: lado a lado, sem rolar e com folga; uma a mais não caberia.
     const strip = (await page.locator('app-tv-shortcut-row .top').boundingBox())!;
     const count = await suggestions.count();
-    expect(count).toBe(Math.min(6, Math.floor((strip.width - 8) / 68)));
+    expect(count).toBe(
+      Math.min(apps.filter((app) => app.installed).length, Math.floor((strip.width - 8) / 68)),
+    );
+    await expect(page.getByRole('button', { name: 'Sugestão: Max', exact: true })).toHaveCount(0);
     const first = (await suggestions.first().boundingBox())!;
     const last = (await suggestions.last().boundingBox())!;
     expect(first.x, 'folga à esquerda').toBeGreaterThanOrEqual(strip.x + 8 - 1);
@@ -574,10 +607,10 @@ test.describe('controle: fileira de atalhos', () => {
     await expectNoVerticalScroll(page);
   });
 
-  test('a fileira vazia já na abertura mostra as sugestões ao dono, sem presumir app instalado', async ({
+  test('a fileira vazia já na abertura mostra ao dono as sugestões dos apps instalados na TV', async ({
     page,
   }) => {
-    tv.shortcuts = [];
+    tv.shortcuts = installedApps();
     await openTv(page);
     await expect(page.locator('.shortcuts .shortcut.suggestion').first()).toBeVisible();
     await expect(page.locator('.shortcuts .shortcut:not(.suggestion)')).toHaveCount(0);
@@ -1999,8 +2032,11 @@ test.describe('painel Apps', () => {
     }));
     const [, , , playStore, , youtube] = tv.shortcuts;
     await openTv(page);
-    // A fileira de cima segue só com os do controle.
+    // A fileira de cima segue só com os do controle, e no fim dela o azulejo que abre o seletor dos outros.
     await expectChipNames(page, ['CineVS', 'Spotify']);
+    await expect(page.locator('.shortcuts .shortcut').last()).toHaveAccessibleName(
+      'Escolher apps para o controle',
+    );
 
     await openApps(page);
     const dialog = appsDialog(page);
@@ -2107,7 +2143,9 @@ test.describe('painel Apps', () => {
     await sendState(page, { agentOnline: false, connection: 'disconnected', volume: null });
     await openApps(page);
     const dialog = appsDialog(page);
-    await expect(dialog.getByRole('button', { name: 'Buscar apps da TV' })).toBeDisabled();
+    // Sabe-se por que não há lista: o motivo no lugar do "Buscar apps", que não adiantaria.
+    await expect(dialog.getByText('Não Dá para Ver os Apps Agora')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Buscar apps da TV' })).toHaveCount(0);
     await expect(dialog.getByText('O computador que controla a TV está desligado')).toBeVisible();
   });
 });
@@ -3589,10 +3627,13 @@ test.describe('ícones dos apps', () => {
       await print('apps-empty');
       await expectNoSeriousViolations(page);
 
-      // Fechado o painel, a fileira vazia mostra as sugestões no lugar dos azulejos.
+      // Fechado o painel, a fileira vazia diz por que não há apps (nunca sugere app que a TV não informou) e oferece buscar.
       await page.keyboard.press('Escape');
       await expect(dialog).toHaveCount(0);
-      await expect(page.locator('.shortcuts .shortcut.suggestion').first()).toBeVisible();
+      const why = page.locator('app-tv-shortcut-row app-tv-apps-unavailable');
+      await expect(why.getByText('A TV ainda não informou os apps instalados.')).toBeVisible();
+      await expect(why.getByRole('button', { name: 'Buscar apps da TV' })).toBeVisible();
+      await expect(page.locator('.shortcuts .shortcut.suggestion')).toHaveCount(0);
       await print('row-empty');
       await expectNoSeriousViolations(page);
     });

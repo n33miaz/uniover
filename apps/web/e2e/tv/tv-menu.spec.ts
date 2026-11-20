@@ -132,6 +132,21 @@ const pending = (
   ...extra,
 });
 
+/**
+ * Os apps que a TV informou, nenhum ainda no controle: é daqui que saem as sugestões (só apps instalados, as marcas
+ * conhecidas primeiro). O Max saiu da TV e nunca pode ser sugerido.
+ */
+const installedApps = (): MockShortcut[] => [
+  pending(1, 'Netflix', 'com.netflix.ninja'),
+  pending(2, 'YouTube', 'com.google.android.youtube.tv'),
+  pending(3, 'Prime Video', 'com.amazon.amazonvideo.livingroom'),
+  pending(4, 'Disney+', 'com.disney.disneyplus'),
+  pending(5, 'Globoplay', 'com.globo.globotv'),
+  pending(6, 'Spotify', 'com.spotify.tv.android'),
+  pending(7, 'Plex', 'com.plexapp.android'),
+  pending(8, 'Max', 'com.wbd.stream', { installed: false }),
+];
+
 for (const screen of SCREENS) {
   test.describe(`controle em ${screen.name}`, () => {
     test.use({ viewport: { width: screen.width, height: screen.height } });
@@ -471,7 +486,7 @@ test.describe('menu dos três pontos', () => {
       disabledAt: null,
       permissions: ['module:tv', 'tv:control', 'tv:launch', 'tv:edit-shortcuts'],
     });
-    tv.shortcuts = [];
+    tv.shortcuts = installedApps();
     const confortavel = (page: Page) =>
       page
         .getByRole('dialog', { name: 'Personalizar' })
@@ -637,16 +652,19 @@ test.describe('sem rede', () => {
 });
 
 test.describe('sugestões de atalho numa TV sem atalho escolhido', () => {
-  test('cabem pela largura, não presumem o app instalado e o toque só abre o painel da sugestão', async ({
+  test('cabem pela largura, só oferecem apps instalados na TV e o toque só abre o painel da sugestão', async ({
     page,
   }, info) => {
-    tv.shortcuts = [];
+    tv.shortcuts = installedApps();
+    const installed = tv.shortcuts.filter((app) => app.installed).length;
     await openTv(page);
     const tiles = page.locator('.shortcuts .shortcut.suggestion');
     await expect(tiles.first()).toBeVisible();
     const strip = await box(page.locator('app-tv-shortcut-row .top'));
-    await expect(tiles).toHaveCount(Math.min(6, Math.floor((strip.width - 8) / 68)));
-    await expect(button(page, 'Sugestão: YouTube')).toBeVisible();
+    await expect(tiles).toHaveCount(Math.min(installed, Math.floor((strip.width - 8) / 68)));
+    // As marcas conhecidas vêm primeiro, e o app que saiu da TV nunca é sugerido.
+    await expect(tiles.first()).toHaveAccessibleName('Sugestão: YouTube');
+    await expect(button(page, 'Sugestão: Max')).toHaveCount(0);
     await expectNoVerticalScroll(page);
     await shoot(page, 'sugestoes', info.project.name);
 
@@ -654,9 +672,11 @@ test.describe('sugestões de atalho numa TV sem atalho escolhido', () => {
     const panel = page.getByRole('dialog', { name: 'Netflix' });
     await expect(panel).toBeVisible();
     await expect(panel.getByText('Sugestão', { exact: true })).toBeVisible();
-    // A TV ainda não listou o app: nada a fixar, só o caminho para atualizar a lista e remover.
-    await expect(panel.getByText('A lista da TV ainda não traz este app.')).toBeVisible();
-    await expect(panel.getByRole('button', { name: 'Fixar no controle' })).toHaveCount(0);
+    // O app está instalado: o painel oferece fixar, trocar por outro ou remover, e nada muda antes do toque.
+    await expect(panel.getByText('Este app está instalado na TV.')).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Fixar no controle' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Escolher outro app' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Remover sugestão' })).toBeVisible();
     await settle(page);
     await shoot(page, 'sugestao-aberta', info.project.name);
     expect(tv.requests.filter((r) => r.method === 'PATCH')).toEqual([]);
@@ -682,7 +702,7 @@ test.describe('sugestões de atalho numa TV sem atalho escolhido', () => {
   test('remover some com a sugestão, vale para a conta ao recarregar e o menu a devolve', async ({
     page,
   }) => {
-    tv.shortcuts = [];
+    tv.shortcuts = installedApps();
     await openTv(page);
     await button(page, 'Sugestão: Netflix').click();
     await page
@@ -712,7 +732,7 @@ test.describe('sugestões de atalho numa TV sem atalho escolhido', () => {
   });
 
   test('quem não edita os atalhos continua com a dica de sempre', async ({ page }) => {
-    tv.shortcuts = [];
+    tv.shortcuts = installedApps();
     signInAsGuest(['module:tv', 'tv:control', 'tv:launch']);
     await page.goto('/tv');
     await showTv(page);
