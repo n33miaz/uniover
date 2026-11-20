@@ -6,13 +6,14 @@ WebRTC (a biblioteca, os candidatos de rede, a impressão digital DTLS) é o ada
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Final, Protocol
 
 # Os dois canais de dados que o app abre: o ponteiro (não ordenado, sem retransmissão: o que se
 # perde é coberto pelo total acumulado da próxima mensagem) e a entrada (ordenado e confiável:
 # cliques, teclas, texto e mídia, mais o `auth` e as respostas).
 POINTER_CHANNEL = "pointer"
 INPUT_CHANNEL = "input"
+SCREEN_MAX_LIFETIME_SECONDS: Final = 90
 
 
 class DirectUnavailable(Exception):  # noqa: N818 - o nome diz o que aconteceu

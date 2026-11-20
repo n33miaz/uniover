@@ -21,10 +21,10 @@ from uniover_agent.adapters.pc_direct_aiortc import _load, prepare_offer
 from uniover_agent.adapters.pc_direct_network import is_lan_address
 from uniover_agent.adapters.pc_screen_presence import screen_indicator
 from uniover_agent.adapters.pc_windows import USER_DESKTOP
+from uniover_agent.ports.pc_direct import SCREEN_MAX_LIFETIME_SECONDS
 
 CHUNK_BYTES = 16 * 1024
 FRAME_TIMEOUT = 10
-MAX_LIFETIME = 90
 MAX_OFFER_BYTES = 128 * 1024
 MAX_MESSAGE_CHARS = 4096
 MAX_INVALID = 30
@@ -65,8 +65,8 @@ class Offer:
         return cls(
             sdp,
             token,
-            _integer(data.get("tokenTtlSeconds"), 1, MAX_LIFETIME),
-            _integer(data.get("maxLifetimeSeconds"), 1, MAX_LIFETIME),
+            _integer(data.get("tokenTtlSeconds"), 1, SCREEN_MAX_LIFETIME_SECONDS),
+            _integer(data.get("maxLifetimeSeconds"), 1, SCREEN_MAX_LIFETIME_SECONDS),
         )
 
 
@@ -329,16 +329,17 @@ def _read_pipe(
     # Leitura crua em thread daemon evita esperar pelo pai no encerramento do loop.
     buffer = bytearray()
     try:
-        while len(buffer) < MAX_OFFER_BYTES:
+        while len(buffer) <= MAX_OFFER_BYTES:
             chunk = os.read(sys.stdin.fileno(), 4096)
             if not chunk:
                 break
-            line, newline, rest = chunk.partition(b"\n")
-            buffer.extend(line)
-            if newline and len(buffer) <= MAX_OFFER_BYTES:
-                loop.call_soon_threadsafe(offer.set_result, bytes(buffer))
-                if not rest:
-                    os.read(sys.stdin.fileno(), 1)
+            buffer.extend(chunk)
+            newline = buffer.find(b"\n")
+            if 0 <= newline <= MAX_OFFER_BYTES:
+                loop.call_soon_threadsafe(offer.set_result, bytes(buffer[:newline]))
+                # Depois da oferta, só o EOF do pai encerra a sessão.
+                while os.read(sys.stdin.fileno(), 4096):
+                    pass
                 break
     except OSError:
         pass

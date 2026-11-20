@@ -35,6 +35,16 @@ def test_connected_agent_is_green_without_the_seal() -> None:
     assert view.title == "UniOver: conectado - Sala ligada"
 
 
+def test_viewing_screen_shows_the_seal_and_the_measurement_status() -> None:
+    current = inputs(viewing_screen=True, power="on", tv_name="Sala")
+    view = view_of(current)
+
+    assert not view.attention
+    assert view.icon_file == "connected-attention.ico"
+    assert view.title == "UniOver: medição de tela ativa - conectado - Sala ligada"
+    assert "Medição de tela ativa" in status_summary(view, current, None).splitlines()
+
+
 def test_a_fresh_drop_is_reconnecting_and_an_old_one_is_an_error() -> None:
     fresh = inputs(connected=False, since=NOW - RECONNECT_GRACE + timedelta(seconds=5))
     old = inputs(connected=False, since=NOW - RECONNECT_GRACE - timedelta(seconds=5))

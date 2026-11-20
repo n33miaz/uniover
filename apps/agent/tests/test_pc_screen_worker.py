@@ -2,7 +2,8 @@
 
 import asyncio
 import json
-from contextlib import nullcontext
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from io import BytesIO
 from types import SimpleNamespace
 from typing import Any
@@ -19,6 +20,7 @@ from uniover_agent.adapters.pc_screen_worker import (
     ScreenSession,
     encode_frame,
 )
+from uniover_agent.ports.pc_direct import SCREEN_MAX_LIFETIME_SECONDS
 
 
 class Channel:
@@ -172,3 +174,87 @@ async def test_capture_respects_requested_frame_period(monkeypatch: pytest.Monke
     monkeypatch.setattr(pc_screen_worker.asyncio, "to_thread", capture_in_thread)
     await measure.send_frames(lambda _request: b"", lambda: 40_000_000)
     assert captures == [100.0, 100.125]
+
+
+@pytest.mark.parametrize("keep_requesting", [False, True], ids=["sem-pedidos", "tempo-maximo"])
+async def test_worker_closes_when_the_screen_deadline_expires(
+    monkeypatch: pytest.MonkeyPatch, keep_requesting: bool
+) -> None:
+    loop = asyncio.get_running_loop()
+    now = loop.time()
+    monkeypatch.setattr(loop, "time", lambda: now)
+    monkeypatch.setattr(pc_screen_worker, "monotonic", lambda: now)
+    offer = Offer("oferta", "bilhete-de-teste", 10, SCREEN_MAX_LIFETIME_SECONDS)
+    measure, channel = session("192.168.1.6")
+    measure.deadline = now + offer.lifetime
+    peer_closed = asyncio.Event()
+    viewing_started = asyncio.Event()
+
+    async def close_peer() -> None:
+        peer_closed.set()
+
+    async def answer(_sdp: str) -> str:
+        return "resposta"
+
+    @contextmanager
+    def viewing() -> Iterator[None]:
+        viewing_started.set()
+        yield
+
+    monkeypatch.setattr(measure.peer, "close", close_peer, raising=False)
+    monkeypatch.setattr(measure, "answer", answer)
+
+    async def capture_in_thread(_capture: Any, _request: FrameRequest) -> bytes:
+        return b"jpeg"
+
+    monkeypatch.setattr(pc_screen_worker.asyncio, "to_thread", capture_in_thread)
+    monkeypatch.setattr(pc_screen_worker, "private_bytes", lambda: 0)
+    channel.message(k="auth", token=offer.token)
+    task = asyncio.create_task(measure.run(offer, asyncio.Event(), lambda _reply: None, viewing))
+    try:
+        await viewing_started.wait()
+        if keep_requesting:
+            # Mantém o fluxo ativo até o limite, inclusive com pedido pendente nesse instante.
+            for _ in range((offer.lifetime - 1) // (FRAME_TIMEOUT - 1)):
+                now += FRAME_TIMEOUT - 1
+                channel.message(k="s.get")
+                await asyncio.sleep(0)
+            assert not task.done()
+            assert len(channel.sent) > 1
+            now = measure.deadline
+            channel.message(k="s.get")
+        else:
+            now += FRAME_TIMEOUT
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert task.done()
+        await task
+        assert peer_closed.is_set()
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_pipe_ignores_bytes_after_the_offer_until_eof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loop = asyncio.get_running_loop()
+    offer: asyncio.Future[bytes] = loop.create_future()
+    closed = asyncio.Event()
+    chunks = iter([b'{"sdp":', b'"oferta"}\nresto', b"mais bytes", b""])
+    reads: list[bytes] = []
+
+    def read(_fd: int, _size: int) -> bytes:
+        chunk = next(chunks)
+        reads.append(chunk)
+        return chunk
+
+    monkeypatch.setattr(
+        pc_screen_worker, "sys", SimpleNamespace(stdin=SimpleNamespace(fileno=lambda: 0))
+    )
+    monkeypatch.setattr(pc_screen_worker, "os", SimpleNamespace(read=read))
+    pc_screen_worker._read_pipe(loop, offer, closed)
+
+    assert await offer == b'{"sdp":"oferta"}'
+    assert reads[-2:] == [b"mais bytes", b""]
+    assert closed.is_set()

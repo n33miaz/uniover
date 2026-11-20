@@ -4,6 +4,9 @@ using System.Text.Json.Nodes;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
+using UniOver.BuildingBlocks.Web;
 using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Identity;
@@ -26,6 +29,8 @@ public sealed class PcRtcTests(PostgresFixture postgres)
     private const string Rtc = "pc.rtc.v1";
     private const string FakeSdp =
         "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=fingerprint:sha-256 AA:BB\r\n";
+
+    private static readonly string[] ScreenScopes = ["screen"];
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -113,7 +118,7 @@ public sealed class PcRtcTests(PostgresFixture postgres)
 
         var (parent, parentOffer) = await OpenAsync(app, agent);
         var parentId = parent.GetProperty("sessionId").GetGuid();
-        var request = new { sdp = FakeSdp, scopes = new[] { "screen" }, parentSessionId = parentId };
+        var request = new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId };
         var anotherLogin = await app.App.LoginAsync();
 
         using var refused = await PostAsync(app, "offer", request, anotherLogin.AccessToken);
@@ -135,15 +140,102 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         body.TryGetProperty("ticket", out _).Should().BeFalse();
 
         var repeated = PostAsync(app, "offer", request);
-        await AnswerOfferAsync(agent, ok: false);
-        using var unavailable = await repeated.WaitAsync(FakeAgent.Patience, Ct);
-        unavailable.IsSuccessStatusCode.Should().BeFalse();
-
-        using var close = await PostAsync(app, $"{screenId}/close", null);
-        close.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await AnswerOfferAsync(agent);
+        using var replaced = await repeated.WaitAsync(FakeAgent.Patience, Ct);
+        replaced.StatusCode.Should().Be(HttpStatusCode.OK);
+        var replacementId = (await DevicesApp.JsonAsync(replaced)).GetProperty("sessionId").GetGuid();
+        replacementId.Should().NotBe(screenId);
         var closed = (await agent.ReceiveAsync())!.Value;
         closed.GetProperty("type").GetString().Should().Be("pc.rtc.close.v1");
         closed.GetProperty("body").GetProperty("sessionId").GetGuid().Should().Be(screenId);
+        closed.GetProperty("body").GetProperty("reason").GetString().Should().Be("replaced");
+
+        using var oldClose = await PostAsync(app, $"{screenId}/close", null);
+        oldClose.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await ExpectStillOpenAsync(app, agent, replacementId);
+        await ExpectStillOpenAsync(app, agent, parentId);
+    }
+
+    [Fact]
+    public async Task ScreenRequiresAnAccountWithPermission()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        var guest = await GuestSeed.CreateGuestAsync(
+            app.App.Client, app.App.Database, app.App.Time.GetUtcNow(), "Raphael", ["module:training"]);
+
+        using var response = await PostAsync(app, "offer",
+            new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId }, guest.Login.AccessToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await ExpectStillOpenAsync(app, agent, parentId);
+    }
+
+    [Fact]
+    public async Task ScreenRequiresTheAgentCapability()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1");
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+
+        using var response = await PostAsync(app, "offer",
+            new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-direct-unavailable");
+        await ExpectStillOpenAsync(app, agent, parentId);
+    }
+
+    [Fact]
+    public async Task ScreenRequiresADeviceIdFromTheLoginSession()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        var now = app.App.Time.GetUtcNow();
+        var token = new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = UniOverAuth.Issuer,
+            Audience = UniOverAuth.ApiAudience,
+            IssuedAt = now.UtcDateTime,
+            NotBefore = now.UtcDateTime,
+            Expires = now.AddMinutes(5).UtcDateTime,
+            SigningCredentials = app.App.Services.GetRequiredService<JwtKeySet>().SigningCredentials,
+            Claims = new Dictionary<string, object>
+            {
+                [UniOverAuth.SubjectClaim] = (await OwnerIdAsyncFromToken(app)).ToString(),
+                [UniOverAuth.RoleClaim] = AccountRoles.Owner,
+            },
+        });
+
+        using var response = await PostAsync(app, "offer",
+            new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId }, token);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-direct-forbidden");
+        await ExpectStillOpenAsync(app, agent, parentId);
+    }
+
+    [Fact]
+    public async Task ScreenRejectsADeniedDeviceWhileTheParentChannelIsOpen()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
+        var (parent, offer) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        var deviceId = offer.GetProperty("deviceId").GetString()!;
+        app.App.Services.GetRequiredService<PcDeviceStates>().Set(app.Agent.Slug, deviceId, "denied");
+
+        using var response = await PostAsync(app, "offer",
+            new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-device-denied");
+        await ExpectStillOpenAsync(app, agent, parentId);
     }
 
     [Fact]

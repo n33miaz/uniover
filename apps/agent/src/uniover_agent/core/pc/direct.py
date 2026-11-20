@@ -79,6 +79,7 @@ from uniover_agent.ports import Sender, TransportError
 from uniover_agent.ports.pc_direct import (
     INPUT_CHANNEL,
     POINTER_CHANNEL,
+    SCREEN_MAX_LIFETIME_SECONDS,
     DirectPeer,
     DirectPeerFactory,
     DirectUnavailable,
@@ -499,6 +500,9 @@ class PcDirectService:
         self._factory = factory
         self._screen_factory = screen_factory
         self._screen: tuple[str, ScreenPeer] | None = None
+        self._screen_lifecycle = asyncio.Lock()
+        self._screen_exit: asyncio.Task[None] | None = None
+        self._screen_disconnects = 0
         self._agent_id = agent_id
         self._gate = gate
         # A faixa do PC (`ProcessMessage`) nasce depois deste serviço: `bind` a entrega.
@@ -604,14 +608,7 @@ class PcDirectService:
             # que mudou no meio: a TV segue pela nuvem.
             raise DirectRefused(REFUSED_UNAVAILABLE)
         if SCOPE_PC in granted and self._devices is not None:
-            decision = self._devices.check(device_id, device_name)
-            if decision is not DeviceDecision.APPROVED:
-                raise DirectRefused(
-                    {
-                        DeviceDecision.DENIED: DEVICE_DENIED,
-                        DeviceDecision.UNKNOWN: DEVICE_UNKNOWN,
-                    }.get(decision, DEVICE_PENDING)
-                )
+            self._check_device(device_id, device_name)
         settings = self._settings
         lifetime = settings.max_lifetime_seconds
         if max_lifetime_seconds is not None:
@@ -689,12 +686,64 @@ class PcDirectService:
         device_id: str | None,
         parent_session_id: str | None,
     ) -> str:
+        factory = self._screen_factory
+        if factory is None:
+            raise DirectRefused(REFUSED_UNAVAILABLE)
+        disconnects = self._screen_disconnects
+        async with self._screen_lifecycle:
+            if disconnects != self._screen_disconnects:
+                raise DirectRefused(REFUSED_CLOSED)
+            self._check_screen_offer(session_id, device_id, parent_session_id)
+            if self._screen is not None and self._screen[0] == session_id:
+                raise DirectRefused(REFUSED_UNAVAILABLE)
+            self._stop_screen()
+            if self._screen_exit is not None:
+                await asyncio.shield(self._screen_exit)
+                self._screen_exit = None
+                if disconnects != self._screen_disconnects:
+                    raise DirectRefused(REFUSED_CLOSED)
+                self._check_screen_offer(session_id, device_id, parent_session_id)
+            peer = factory()
+            screen = (session_id, peer)
+            self._screen = screen
+            lifetime = min(
+                lifetime_seconds or SCREEN_MAX_LIFETIME_SECONDS, SCREEN_MAX_LIFETIME_SECONDS
+            )
+            try:
+                answer = await asyncio.wait_for(
+                    peer.accept_offer(sdp, token, ttl_seconds, lifetime),
+                    self._settings.accept_timeout_seconds,
+                )
+                if self._screen is not screen:
+                    raise DirectRefused(REFUSED_CLOSED)
+            except (Exception, asyncio.CancelledError) as error:
+                self._stop_screen(session_id)
+                if isinstance(error, (DirectRefused, asyncio.CancelledError)):
+                    raise
+                raise DirectRefused(REFUSED_FAILED) from None
+            self._spawn(self._watch_screen(screen))
+            return answer
+
+    def _check_device(self, device_id: str | None, device_name: str | None) -> None:
+        if self._devices is None:
+            raise DirectRefused(REFUSED_UNAVAILABLE)
+        decision = self._devices.check(device_id, device_name)
+        if decision is not DeviceDecision.APPROVED:
+            raise DirectRefused(
+                {
+                    DeviceDecision.DENIED: DEVICE_DENIED,
+                    DeviceDecision.UNKNOWN: DEVICE_UNKNOWN,
+                }.get(decision, DEVICE_PENDING)
+            )
+
+    def _check_screen_offer(
+        self, session_id: str, device_id: str | None, parent_session_id: str | None
+    ) -> None:
+        if self._was_closed(session_id):
+            raise DirectRefused(REFUSED_CLOSED)
         parent = self._current
         if (
-            self._screen_factory is None
-            or self._screen is not None
-            or self._was_closed(session_id)
-            or parent is None
+            parent is None
             or parent.closed
             or not parent.authenticated
             or SCOPE_PC not in parent.scopes
@@ -703,23 +752,7 @@ class PcDirectService:
             or parent.device_id != device_id
         ):
             raise DirectRefused(REFUSED_UNAVAILABLE)
-        peer = self._screen_factory()
-        screen = (session_id, peer)
-        self._screen = screen
-        try:
-            answer = await asyncio.wait_for(
-                peer.accept_offer(sdp, token, ttl_seconds, min(lifetime_seconds or 90, 90)),
-                self._settings.accept_timeout_seconds,
-            )
-            if self._screen is not screen:
-                raise DirectRefused(REFUSED_CLOSED)
-        except (Exception, asyncio.CancelledError) as error:
-            self._stop_screen(session_id)
-            if isinstance(error, (DirectRefused, asyncio.CancelledError)):
-                raise
-            raise DirectRefused(REFUSED_FAILED) from None
-        self._spawn(self._watch_screen(screen))
-        return answer
+        self._check_device(device_id, parent.device_name)
 
     async def _watch_screen(self, screen: tuple[str, ScreenPeer]) -> None:
         session_id, peer = screen
@@ -735,6 +768,7 @@ class PcDirectService:
             self._screen = None
             self._remember_closed(screen[0])
             screen[1].stop()
+            self._screen_exit = asyncio.create_task(screen[1].wait())
 
     async def add_candidate(
         self, session_id: str, candidate: str, mid: str | None, index: int | None
@@ -773,6 +807,7 @@ class PcDirectService:
         rede) não deve derrubar um arrasto. A vida máxima do canal (o que resta do token de acesso)
         continua valendo; a revogação chega pela API e fecha na hora quando ela está de volta.
         """
+        self._screen_disconnects += 1
         self._stop_screen()
         # Uma reconciliação em curso perdeu a conexão que a confirmaria: a próxima conexão a refaz.
         self._cancel_reconcile()
@@ -901,6 +936,8 @@ class PcDirectService:
         session = self._current
         if session is not None:
             await self._finish(session, REASON_SHUTDOWN, notify=False)
+        if self._screen_exit is not None:
+            await asyncio.shield(self._screen_exit)
         for task in list(self._tasks):
             task.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
