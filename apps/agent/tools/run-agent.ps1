@@ -49,11 +49,30 @@ function Get-WindowsStartupNames {
 }
 
 function Find-Uv {
+    # O winget instala o uv em WinGet\Packages e so cria o atalho (Links) e o PATH para as sessoes novas; o perfil refeito
+    # pode nem ter o atalho. Por isso, alem do PATH, vale o caminho que o instalador anotou (runtime\uv-path.txt) e os
+    # lugares conhecidos de cada forma de instalar o uv.
     $found = Get-Command uv -ErrorAction SilentlyContinue
     if ($found) { return $found.Source }
+    $candidates = @()
+    try {
+        $noted = [System.IO.File]::ReadAllText((Join-Path $runtime 'uv-path.txt'), [System.Text.Encoding]::UTF8).Trim()
+        if ($noted -and [System.IO.Path]::IsPathRooted($noted)) { $candidates += $noted }
+    } catch { }
     foreach ($relative in @('Microsoft\WinGet\Links\uv.exe', 'Microsoft\WindowsApps\uv.exe', '.local\bin\uv.exe')) {
-        $candidate = Join-Path $env:LOCALAPPDATA $relative
-        if (Test-Path -LiteralPath $candidate) { return $candidate }
+        $candidates += (Join-Path $env:LOCALAPPDATA $relative)
+    }
+    if ($env:USERPROFILE) {
+        $candidates += (Join-Path $env:USERPROFILE '.local\bin\uv.exe')
+        $candidates += (Join-Path $env:USERPROFILE '.cargo\bin\uv.exe')
+    }
+    try {
+        $packages = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+        $candidates += @(Get-ChildItem -LiteralPath $packages -Directory -Filter 'astral-sh.uv_*' -ErrorAction Stop |
+            Sort-Object LastWriteTime -Descending | ForEach-Object { Join-Path $_.FullName 'uv.exe' })
+    } catch { }
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $candidate }
     }
     return $null
 }
@@ -298,12 +317,16 @@ function Ensure-TvUseMarker {
 
 function Sleep-Beating([double]$Seconds) {
     # Nenhuma espera do supervisor passa de poucos segundos sem dar sinal de vida: quem o vigia (lancador e agente) nao
-    # distingue "dormindo 5 minutos" de "travado".
+    # distingue "dormindo 5 minutos" de "travado". O icone tambem e vigiado a cada segundo da espera (recuo depois de
+    # uma queda do agente, outro dono da instalacao): ele nao fica de fora por minutos so porque o supervisor espera.
+    # So com o ambiente pronto ($script:trayWatch): antes do sync o icone prenderia o executavel que o sync troca.
     $end = (Get-Date).AddSeconds($Seconds)
+    $touched = [DateTime]::MinValue
     while ((Get-Date) -lt $end) {
-        Touch-Alive
+        if (((Get-Date) - $touched).TotalSeconds -ge 5) { Touch-Alive; $touched = Get-Date }
         $left = ($end - (Get-Date)).TotalMilliseconds
-        Start-Sleep -Milliseconds ([int][Math]::Min(5000, [Math]::Max(50, $left)))
+        Start-Sleep -Milliseconds ([int][Math]::Min(1000, [Math]::Max(50, $left)))
+        if ($script:trayWatch -and ($null -eq $script:tray -or $script:tray.HasExited)) { Update-Tray $script:trayWatch }
     }
 }
 
@@ -439,8 +462,10 @@ function Stop-VenvUsers {
             ($_.CommandLine -and $_.CommandLine -like "*uniover-agent*" -and $_.CommandLine -like "*$source*")
         )
     } | ForEach-Object { & taskkill.exe /PID $_.ProcessId /T /F *> $null }
-    # O icone tambem saiu, de proposito: nao e queda dele (o proximo Update-Tray o abre de novo).
+    # O icone tambem saiu, de proposito: nao e queda dele (o proximo Update-Tray o abre de novo). Ate o ambiente ficar
+    # pronto de novo, a espera nao o reabre.
     $script:tray = $null
+    $script:trayWatch = $null
 }
 
 function Get-RunDescription($Run, [double]$Seconds) {
@@ -789,7 +814,9 @@ function Get-LogonTime {
         $forced = [Environment]::GetEnvironmentVariable('UNIOVER_SUPERVISOR_LOGON_AT')
         if ($forced) { return [DateTime]::Parse($forced, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind).ToLocalTime() }
         $session = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
-        $first = Get-Process -Name explorer -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $session } | Sort-Object StartTime | Select-Object -First 1
+        # O sihost.exe nasce no logon e nao reinicia com a Area de Trabalho; o explorer.exe reinicia quando trava ou e
+        # fechado, e so por ele um explorer novo faria o pedido do icone desta sessao parecer velho (o icone sumia).
+        $first = Get-Process -Name sihost, explorer -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $session } | Sort-Object StartTime | Select-Object -First 1
         if ($first) { return $first.StartTime }
     } catch { }
     return $null
@@ -824,6 +851,9 @@ function Test-TrayRequested {
 }
 
 $script:trayStarted = $null
+$script:trayWatch = $null
+$script:restartOnly = $false
+$script:restartPending = $false
 $script:trayFalls = 0
 $script:trayRetryAt = [DateTime]::MinValue
 function Update-Tray([string]$Uv) {
@@ -841,7 +871,8 @@ function Update-Tray([string]$Uv) {
         if ($lived -ge 120) { $script:trayFalls = 0 }
         elseif (-not (Test-Path -LiteralPath (Join-Path $runtime 'tray-closed'))) {
             $script:trayFalls++
-            $seconds = [Math]::Min(15 * [Math]::Pow(2, [Math]::Min($script:trayFalls, 7)), 1800)
+            # A primeira volta e em segundos (5 s); so quedas seguidas alongam a espera (10, 20, 40 s... ate 30 min).
+            $seconds = [Math]::Min(5 * [Math]::Pow(2, [Math]::Min($script:trayFalls - 1, 9)), 1800)
             $script:trayRetryAt = $now.AddSeconds($seconds)
             if ($null -ne $code -and $code -ne 0) {
                 Write-SupLog 'WARNING' ('o icone da bandeja caiu logo ao abrir (codigo ' + $code + ')')
@@ -853,6 +884,11 @@ function Update-Tray([string]$Uv) {
     if ($now -lt $script:trayRetryAt) { return }
     $script:trayStarted = $now
     $script:tray = Start-Tray $Uv
+    # O icone aberto vale como pedido desta sessao: um supervisor que reinicia (atualizacao, processo morto por fora) o
+    # abre de novo em segundos em vez de esperar um pedido novo do atalho.
+    if ($null -ne $script:tray) {
+        try { [System.IO.File]::WriteAllText((Join-Path $runtime 'tray-start-request'), '', [System.Text.Encoding]::ASCII) } catch { }
+    }
 }
 
 function Test-OwnerStalled {
@@ -1748,7 +1784,17 @@ while ($true) {
     # instalacao (codigo 5) o ambiente acabou de ser preparado e o sync (que antes encerra quem usa o ambiente) nao roda a cada
     # tentativa: so mataria o dono que esta vivo e bem.
     $synced = $true
-    if (-not $script:ownedElsewhere) {
+    # Reinicio pedido pelo dono (bandeja, app ou `uniover-agent restart`) com o ambiente desta versao ja pronto: nada a
+    # sincronizar, e o sync encerraria quem usa o ambiente, inclusive o icone. So o agente reinicia; o icone fica.
+    $quickRestart = ($script:restartOnly -and (Test-EnvironmentSynced) -and -not $rollbackReady)
+    $script:restartOnly = $false
+    if ($quickRestart) {
+        Write-SupLog 'INFO' 'reinicio pedido com o ambiente pronto; o icone da bandeja fica'
+        # Sem o sync, quem encerrava um outro dono da instalacao era ele: se o agente novo achar outro dono, o pedido de
+        # reinicio continua valendo para encerra-lo.
+        $script:restartPending = $true
+    }
+    elseif (-not $script:ownedElsewhere) {
         $synced = Sync-Agent $uv $rollbackReady
         # `syncedVersion` (UV_NO_SYNC do update) so com sync real desta versao: falha ou ambiente apenas mantido o limpam.
         # `noSyncLaunch` (agente e icone) vale tambem com o ambiente mantido: o sync acabou de rodar, com prazo.
@@ -1811,7 +1857,9 @@ while ($true) {
     $syncFalls = 0
     $syncErrorFalls = 0
     $syncDiskFalls = 0
-    # O icone sobe depois do sync: antes, ele prenderia o executavel que o sync troca.
+    # O icone sobe depois do sync: antes, ele prenderia o executavel que o sync troca. Daqui em diante as esperas tambem o
+    # vigiam.
+    $script:trayWatch = $uv
     Update-Tray $uv
     Ensure-AgentPulse
     $arguments = 'run --project "' + $source + '" uniover-agent run'
@@ -1878,6 +1926,7 @@ while ($true) {
             Set-StopReason 'restart'
             & taskkill.exe /PID $process.Id /T /F *> $null
             $restartForUpdate = $true
+            $script:restartOnly = $true
         }
         $rollbackFlag = Join-Path $runtime 'rollback-now'
         if (Test-Path -LiteralPath $rollbackFlag) {
@@ -1922,7 +1971,8 @@ while ($true) {
         Write-SupLog 'INFO' 'outro agente ja roda nesta instalacao; espero antes de tentar de novo'
         # Os pedidos do dono (reiniciar, voltar a versao) nao podem ficar esperando um agente nosso: valem agora.
         $restartFlag = Join-Path $runtime 'restart-now'
-        if (Test-Path -LiteralPath $restartFlag) {
+        if ($script:restartPending -or (Test-Path -LiteralPath $restartFlag)) {
+            $script:restartPending = $false
             Remove-Item -LiteralPath $restartFlag -Force -ErrorAction SilentlyContinue
             Write-SupLog 'INFO' 'reinicio pedido; encerro o outro agente desta instalacao'
             Set-StopReason 'restart'
@@ -1972,6 +2022,7 @@ while ($true) {
         continue
     }
     $script:ownedElsewhere = $false
+    $script:restartPending = $false
     $script:ownerReported = $null
     # Quedas rapidas e seguidas sobre um ambiente apenas MANTIDO (nunca passou num sync completo: por exemplo, o da versao
     # rejeitada logo depois de uma volta atras, com o disco cheio) quase sempre sao o venv inutilizavel. Dai em diante: um

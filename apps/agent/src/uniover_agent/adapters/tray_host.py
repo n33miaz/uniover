@@ -31,7 +31,11 @@ _HINT_WIDTH = 46
 _READY_TIMEOUT = 8.0
 _REFRESH_SECONDS = 2.0
 # Esperas entre as tentativas de trocar o arquivo de estado (o total fica abaixo de 1 s).
-_REPLACE_DELAYS = (0.05, 0.1, 0.2, 0.4)
+# Até uns 3 s no total: um antivírus ou o host que acabou de abrir o arquivo podem segurá-lo
+# por mais que um instante.
+_REPLACE_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8, 1.6)
+# ERROR_SHARING_VIOLATION e ERROR_LOCK_VIOLATION: o arquivo está aberto por outro processo.
+_SHARING_ERRORS = frozenset({32, 33})
 _WARN_EVERY_SECONDS = 60.0
 _last_warning = float("-inf")
 Record = Callable[[str, Severity, str], None]
@@ -100,7 +104,9 @@ def _write_state(  # noqa: PLR0913 - estado, destino e opções da gravação
         "balloon": balloon,
         "exit": exit_host,
     }
-    temporary = path.with_suffix(".json.new")
+    # Temporário com o número do processo: dois ícones (um antigo que ainda não saiu e o novo)
+    # nunca disputam o mesmo arquivo de troca, que era o "arquivo em uso" / "Acesso negado".
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.new")
     try:
         temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         _replace_with_retry(temporary, path)
@@ -119,9 +125,16 @@ def _replace_with_retry(temporary: Path, path: Path) -> None:
         try:
             os.replace(temporary, path)
             return
-        except PermissionError:
+        except OSError as exc:
+            if not _is_transient(exc):
+                raise
             time.sleep(delay)
     os.replace(temporary, path)
+
+
+def _is_transient(exc: OSError) -> bool:
+    """Acesso negado ou arquivo em uso por outro processo: passa sozinho, vale tentar de novo."""
+    return isinstance(exc, PermissionError) or getattr(exc, "winerror", None) in _SHARING_ERRORS
 
 
 def _warn_state_not_written(exc: OSError, record: Record | None) -> None:
@@ -179,6 +192,10 @@ def run_host(  # noqa: PLR0912, PLR0913, PLR0917, PLR0915 - integra processo e c
                     str(script),
                     "-StatePath",
                     str(state),
+                    # O host sai sozinho quando este processo some (morto por fora): nunca
+                    # fica um ícone órfão segurando o arquivo de estado do próximo.
+                    "-ParentPid",
+                    str(os.getpid()),
                 ],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
