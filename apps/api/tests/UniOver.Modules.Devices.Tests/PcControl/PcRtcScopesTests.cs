@@ -58,6 +58,44 @@ public sealed class PcRtcScopesTests
         PcRtcValidator.Offer(new PcRtcOfferRequest(Sdp, TvOnly, Guid.Empty)).Should().ContainKey("tvId");
     }
 
+    [Theory]
+    [InlineData("screen", false, "parentSessionId")]
+    [InlineData("screen,pc", true, "scopes")]
+    [InlineData("screen,tv", true, "scopes")]
+    [InlineData("pc", true, "parentSessionId")]
+    public void ScreenRequiresAnExclusiveScopeAndAParent(string scopes, bool parent, string field)
+    {
+        var request = new PcRtcOfferRequest(Sdp, scopes.Split(','), ParentSessionId: parent ? Guid.NewGuid() : null);
+
+        PcRtcValidator.Offer(request).Should().ContainKey(field);
+    }
+
+    [Fact]
+    public void ScreenIsBoundToTheNegotiatedPcChannelAndLogin()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        var sessions = new PcRtcSessions(time);
+        var agent = Guid.NewGuid();
+        var family = Guid.NewGuid();
+        var parent = sessions.Open(UserId, agent, "pc-casa", family);
+
+        sessions.TryOpenScreen(UserId, agent, "pc-casa", family, parent.Id, out _).Should().BeNull();
+        sessions.FinishNegotiation(parent.Id, UserId, time.GetUtcNow().AddMinutes(1)).Should().BeTrue();
+        sessions.TryOpenScreen(UserId, agent, "pc-casa", Guid.NewGuid(), parent.Id, out _).Should().BeNull();
+        sessions.TryOpenScreen(UserId, Guid.NewGuid(), "outro-pc", family, parent.Id, out _).Should().BeNull();
+
+        var screen = sessions.TryOpenScreen(UserId, agent, "pc-casa", family, parent.Id, out var previous);
+        screen.Should().NotBeNull();
+        previous.Should().BeEmpty();
+        sessions.Get(parent.Id, UserId, negotiating: false).Should().NotBeNull();
+        sessions.AcceptsUsage(screen!.Id, UserId).Should().BeFalse();
+        sessions.Get(screen.Id, UserId, negotiating: true, family).Should().NotBeNull();
+
+        sessions.TakeOwned(parent.Id, UserId).Should().NotBeNull();
+        sessions.Get(screen.Id, UserId, negotiating: true, family).Should().BeNull();
+        sessions.FinishNegotiation(screen.Id, UserId, time.GetUtcNow().AddMinutes(1)).Should().BeFalse();
+    }
+
     // ---- a oferta ao agente ----
 
     [Fact]

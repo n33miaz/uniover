@@ -103,6 +103,50 @@ public sealed class PcRtcTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task ScreenIsAnIndependentChannelForTheSameLoginAndPcSession()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
+        using var status = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: app.Login.AccessToken);
+        var capabilities = (await DevicesApp.JsonAsync(status)).GetProperty("capabilities").EnumerateArray().Select(c => c.GetString());
+        capabilities.Should().Contain("pc.screen.v1");
+
+        var (parent, parentOffer) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        var request = new { sdp = FakeSdp, scopes = new[] { "screen" }, parentSessionId = parentId };
+        var anotherLogin = await app.App.LoginAsync();
+
+        using var refused = await PostAsync(app, "offer", request, anotherLogin.AccessToken);
+        refused.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var posting = PostAsync(app, "offer", request);
+        var offer = await AnswerOfferAsync(agent);
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var screen = await DevicesApp.JsonAsync(response);
+        var screenId = screen.GetProperty("sessionId").GetGuid();
+        screenId.Should().NotBe(parentId);
+        screen.GetProperty("token").GetString().Should().NotBe(parent.GetProperty("token").GetString());
+        screen.GetProperty("scopes").EnumerateArray().Select(scope => scope.GetString()).Should().Equal("screen");
+        offer.GetProperty("deviceId").GetString().Should().Be(parentOffer.GetProperty("deviceId").GetString());
+        var body = offer.GetProperty("body");
+        body.GetProperty("parentSessionId").GetGuid().Should().Be(parentId);
+        body.GetProperty("maxLifetimeSeconds").GetInt32().Should().Be(90);
+        body.TryGetProperty("ticket", out _).Should().BeFalse();
+
+        var repeated = PostAsync(app, "offer", request);
+        await AnswerOfferAsync(agent, ok: false);
+        using var unavailable = await repeated.WaitAsync(FakeAgent.Patience, Ct);
+        unavailable.IsSuccessStatusCode.Should().BeFalse();
+
+        using var close = await PostAsync(app, $"{screenId}/close", null);
+        close.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var closed = (await agent.ReceiveAsync())!.Value;
+        closed.GetProperty("type").GetString().Should().Be("pc.rtc.close.v1");
+        closed.GetProperty("body").GetProperty("sessionId").GetGuid().Should().Be(screenId);
+    }
+
+    [Fact]
     public async Task EachOffer_GetsItsOwnTokenAndSession()
     {
         await using var app = await TransportApp.StartAsync(postgres);

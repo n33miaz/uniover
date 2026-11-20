@@ -5,7 +5,7 @@ import json
 import logging
 import re
 import time
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -46,6 +46,7 @@ from uniover_agent.ports import (
     DirectUnavailable,
     PeerCallbacks,
 )
+from uniover_agent.ports.pc_direct import ScreenPeer
 
 from .support import AGENT_ID, FakeAudio, dump, envelope
 
@@ -163,6 +164,7 @@ class Lab:
         factory: DirectPeerFactory | None = None,
         pacer: ClickPacer | None = None,
         pc: Any | None = None,
+        screen_factory: Callable[[], ScreenPeer] | None = None,
     ) -> None:
         self.clock = FakeClock()
         self.gate = EnvelopeGate(AGENT_ID)
@@ -214,6 +216,7 @@ class Lab:
             record=lambda kind, severity, detail: self.records.append((kind, severity, detail)),
             settings=settings or DirectSettings(tick_seconds=0.005),
             announce_reconcile=announce_reconcile,
+            screen_factory=screen_factory,
         )
         handlers.update(pc_rtc_handlers(self.service, self.transport, self.envelopes))
         # A faixa e os `pc.rtc.*` usam os mesmos handlers do agente de verdade.

@@ -10,8 +10,10 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
 
 
-class PcRtcOfferV1BodyScopesItem(RootModel[Literal['pc', 'tv']]):
-    root: Annotated[Literal['pc', 'tv'], Field(title='PcRtcOfferV1BodyScopesItem')]
+class PcRtcOfferV1BodyScopesItem(RootModel[Literal['pc', 'tv', 'screen']]):
+    root: Annotated[
+        Literal['pc', 'tv', 'screen'], Field(title='PcRtcOfferV1BodyScopesItem')
+    ]
 
 
 class PcRtcOfferV1Body(BaseModel):
@@ -26,6 +28,7 @@ class PcRtcOfferV1Body(BaseModel):
     scopes: Annotated[
         list[PcRtcOfferV1BodyScopesItem] | None, Field(max_length=2, min_length=1)
     ] = None
+    parentSessionId: UUID | None = None
     ticket: Annotated[
         str | None,
         Field(

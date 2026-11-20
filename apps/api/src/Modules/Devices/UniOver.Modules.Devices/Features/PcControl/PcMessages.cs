@@ -95,6 +95,8 @@ internal static class PcMessages
     /// </summary>
     public const string RtcReconcileCapability = "pc.rtc.reconcile.v1";
 
+    public const string ScreenRtcCapability = "pc.screen.v1";
+
     /// <summary>
     /// Capacidade de quem aceita o <c>operationId</c> no envelope dos comandos do PC (o código do pedido HTTP, para ligar o registro da API ao do
     /// agente). O envelope de um agente anterior é fechado: sem a capacidade o campo nem sai.
@@ -440,7 +442,8 @@ internal static class PcMessages
         int tokenTtlSeconds,
         int maxLifetimeSeconds,
         IReadOnlyList<string>? scopes = null,
-        string? ticket = null) =>
+        string? ticket = null,
+        Guid? parentSessionId = null) =>
         Live(AgentMessageTypes.PcRtcOfferV1, BodyOf(new PcRtcOfferV1Message
         {
             Body = new PcRtcOfferV1Body
@@ -450,7 +453,13 @@ internal static class PcMessages
                 Token = token,
                 TokenTtlSeconds = tokenTtlSeconds,
                 MaxLifetimeSeconds = maxLifetimeSeconds,
-                Scopes = scopes?.Select(name => name == "tv" ? PcRtcOfferV1BodyScopesItem.Tv : PcRtcOfferV1BodyScopesItem.Pc).ToArray(),
+                Scopes = scopes?.Select(name => name switch
+                {
+                    PcRtcScopeNames.Tv => PcRtcOfferV1BodyScopesItem.Tv,
+                    PcRtcScopeNames.Screen => PcRtcOfferV1BodyScopesItem.Screen,
+                    _ => PcRtcOfferV1BodyScopesItem.Pc,
+                }).ToArray(),
+                ParentSessionId = parentSessionId,
                 Ticket = ticket,
             },
         }.ToJson()));

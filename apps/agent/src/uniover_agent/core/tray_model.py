@@ -76,6 +76,7 @@ class TrayInputs:
     heartbeat_age: timedelta | None = None
     # Por que o agente não alcança a API, segundo ele mesmo (nulo quando não se sabe).
     net_problem: NetProblem | None = None
+    viewing_screen: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +86,7 @@ class TrayView:
     title: str
     # Motivo da queda, só quando sem conexão há algum tempo e o agente soube dizer.
     problem: NetProblem | None = None
+    viewing_screen: bool = False
 
     @property
     def status_text(self) -> str:
@@ -100,7 +102,11 @@ class TrayView:
     @property
     def icon_file(self) -> str:
         """O `.ico` desta combinação (um por estado, com e sem o selo)."""
-        return f"{self.state}-attention.ico" if self.attention else f"{self.state}.ico"
+        return (
+            f"{self.state}-attention.ico"
+            if self.attention or self.viewing_screen
+            else f"{self.state}.ico"
+        )
 
 
 def _tv_text(inputs: TrayInputs) -> str:
@@ -148,6 +154,8 @@ def tooltip(
 ) -> str:
     """Texto do balãozinho ao parar o mouse; o Windows corta em 127 caracteres, então fica curto."""
     text = f"UniOver: {_PROBLEM_TEXT[problem] if problem else _STATE_TEXT[state]}"
+    if inputs.viewing_screen:
+        text = f"UniOver: medição de tela ativa - {text.removeprefix('UniOver: ')}"
     if state == "connected":
         text += f" - {_tv_text(inputs)}"
     if attention:
@@ -159,7 +167,9 @@ def view_of(inputs: TrayInputs) -> TrayView:
     state = decide_state(inputs)
     attention = needs_attention(inputs)
     problem = net_problem(state, inputs)
-    return TrayView(state, attention, tooltip(state, attention, inputs, problem), problem)
+    return TrayView(
+        state, attention, tooltip(state, attention, inputs, problem), problem, inputs.viewing_screen
+    )
 
 
 def status_summary(view: TrayView, inputs: TrayInputs, version: str | None) -> str:
@@ -167,6 +177,8 @@ def status_summary(view: TrayView, inputs: TrayInputs, version: str | None) -> s
     lines = [f"Agente: {_PROBLEM_TEXT[view.problem] if view.problem else _STATE_TEXT[view.state]}"]
     if view.state == "connected":
         lines.append(f"TV: {_tv_text(inputs)}")
+    if view.viewing_screen:
+        lines.append("Medição de tela ativa")
     if view.hint:
         lines.append(view.hint)
     if view.attention:

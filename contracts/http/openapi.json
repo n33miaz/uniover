@@ -4939,6 +4939,13 @@
       },
       "PcRtcOfferRequest": {
         "properties": {
+          "parentSessionId": {
+            "format": "uuid",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "scopes": {
             "items": {
               "type": "string"

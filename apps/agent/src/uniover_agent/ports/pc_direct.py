@@ -52,4 +52,14 @@ class DirectPeer(Protocol):
     async def close(self) -> None: ...
 
 
+class ScreenPeer(Protocol):
+    async def accept_offer(
+        self, sdp: str, token: str, ttl_seconds: int, lifetime_seconds: int
+    ) -> str: ...
+
+    def stop(self) -> None: ...
+
+    async def wait(self) -> None: ...
+
+
 DirectPeerFactory = Callable[[PeerCallbacks], DirectPeer]
