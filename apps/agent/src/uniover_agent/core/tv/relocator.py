@@ -19,6 +19,10 @@ conferências ficam mais próximas, com espera crescente e teto baixo; a primeir
 encerra essa fase e volta o espaçamento de sempre. Se a TV faltou nesta partida, o vigia reabre a
 sessão (sem tecla) e registra numa linha quanto tempo a TV levou para ficar controlável.
 
+Quando alguém pede a TV pelo app e ela não atende (`nudge`), a conferência sai já, sem esperar o
+espaçamento, e, se a TV não está no endereço, a procura também (no máximo uma vez por
+`DEFAULT_NUDGE_INTERVAL_SECONDS`, para o app aberto numa TV desligada não virar varredura sem fim).
+
 O núcleo não sabe varrer rede nem gravar arquivo: as ações vêm por injeção.
 """
 
@@ -55,6 +59,8 @@ DEFAULT_FAST_WINDOW_SECONDS = 600.0
 DEFAULT_FAST_STEPS = (5.0, 10.0, 20.0)
 # A linha "TV de volta" só fala da partida: uma TV achada horas depois (ligada de manhã) não conta.
 DEFAULT_COMEBACK_REPORT_SECONDS = 1800.0
+# Pedido do app com a TV sem responder: no máximo uma procura antecipada por este tempo.
+DEFAULT_NUDGE_INTERVAL_SECONDS = 120.0
 
 
 @dataclass(slots=True)
@@ -106,6 +112,7 @@ class TvRelocator:
         fast_steps: tuple[float, ...] = DEFAULT_FAST_STEPS,
         start: AgentStart | None = None,
         comeback_report_seconds: float = DEFAULT_COMEBACK_REPORT_SECONDS,
+        nudge_interval_seconds: float = DEFAULT_NUDGE_INTERVAL_SECONDS,
     ) -> None:
         """`rescan` devolve o novo endereço da **mesma** TV, ou `None` (não achou ou não mudou).
 
@@ -170,6 +177,18 @@ class TvRelocator:
         self._network_lost = False
         self._network_back = False
         self._last_network_back: float | None = None
+        self._nudge_interval = nudge_interval_seconds
+        self._nudged = False
+        self._last_nudge: float | None = None
+
+    def nudge(self) -> None:
+        """Alguém pediu a TV pelo app e ela não atendeu: confere já e, se ela não está no endereço,
+        procura já, sem esperar as falhas seguidas. Ignorado se houve outro há pouco."""
+        now = self._clock.monotonic()
+        if self._last_nudge is not None and now - self._last_nudge < self._nudge_interval:
+            return
+        self._last_nudge = now
+        self._nudged = True
 
     async def step(self) -> str | None:
         """Uma conferência. Devolve o novo endereço quando a TV mudou de lugar."""
@@ -182,10 +201,12 @@ class TvRelocator:
         if self._take_network_back():
             _log.info("a rede do PC voltou; confiro a TV já")
             self._start_fast_window()
+        nudged, self._nudged = self._nudged, False
         if self._is_hot() or await self._safe_reachable():
             await self._tv_is_here()
             return None
         self._failures += 1
+        self._search_now_if_nudged(nudged)
         if self._start is not None and not self._start.reported:
             self._start.tv_missing = True
         if self._network_burst > 0:
@@ -210,6 +231,21 @@ class TvRelocator:
         elif self._searched():
             self._note_empty_search()
         return moved
+
+    def _search_now_if_nudged(self, nudged: bool) -> None:
+        """Pediram a TV pelo app e ela não atende no endereço: a procura sai nesta conferência."""
+        if not nudged:
+            return
+        _log.info("pediram a TV pelo app e ela não atende no endereço; procuro já")
+        self._failures = max(self._failures, self._failures_needed)
+        if self._on_network_change is None:
+            return
+        try:
+            # Uma pessoa pediu: o localizador esquece os espaçamentos e a procura lenta (de TV
+            # desligada por horas) para esta procura.
+            self._on_network_change(True)
+        except Exception:
+            _log.exception("falha ao reiniciar a procura da TV")
 
     async def _tv_is_here(self) -> None:
         recovered = self._failures > 0
@@ -246,7 +282,7 @@ class TvRelocator:
             slice_seconds = min(self._network_poll_seconds, interval - waited)
             await self._clock.sleep(slice_seconds)
             waited += slice_seconds
-            if await self._poll_network():
+            if await self._poll_network() or self._nudged:
                 return
 
     def _start_fast_window(self) -> None:

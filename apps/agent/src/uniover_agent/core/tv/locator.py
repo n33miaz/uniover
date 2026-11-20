@@ -17,9 +17,18 @@ Depois de `empty_searches_limit` buscas seguidas sem achar nada (TV desligada po
 etapas caras (SSDP, mDNS e varredura) passam a rodar no máximo uma vez a cada `slow_search_seconds`
 (meia hora): a tabela ARP continua sendo lida em toda conferência, porque é de graça.
 
+A escuta do mDNS é a exceção da procura lenta: ela não manda nada à TV (só ouve o anúncio que a
+própria Android TV faz ao entrar numa rede) e segue no espaçamento de sempre. É ela que reencontra a
+TV que passou do cabo para o Wi-Fi do ponto de acesso do celular quando o PC já estava nas duas
+redes (a rede do PC não mudou, então nada acorda a procura) e a TV ficou horas fora.
+
 Nenhum candidato vale só por ter a porta aberta: `identify` compara os identificadores guardados;
-sem identificador, a Android TV precisa completar uma sessão com o certificado pareado. O núcleo
-não sabe fazer rede: tudo vem por injeção, e os testes andam o tempo à mão.
+sem identificador, a Android TV precisa completar uma sessão com o certificado pareado. A sessão com
+o certificado também decide quando o MAC do candidato **não bate**: a Android TV não conta o MAC no
+protocolo e o que se guardou é o da placa que o ARP viu (a do cabo); no Wi-Fi ela tem outro. Só uma
+TV com o certificado já pareado completa a sessão, então nenhum aparelho qualquer é adotado, e o
+MAC novo passa a ser o guardado. O núcleo não sabe fazer rede: tudo vem por injeção, e os testes
+andam o tempo à mão.
 """
 
 import asyncio
@@ -248,7 +257,12 @@ class TvLocator:
             self._schedule.empty_searches = 0
             return found
         if self._searching_slowly():
-            return None
+            # Só a escuta do mDNS, que não toca a TV: a TV que voltou numa rede onde o PC já estava
+            # não espera a meia hora da procura lenta.
+            found = await self._by_mdns(current_host)
+            if found is not None:
+                self._schedule.empty_searches = 0
+            return found
         self._schedule.ran_expensive_stage = False
         found = await self._by_ssdp(current_host)
         if found is None:
@@ -349,9 +363,9 @@ class TvLocator:
         for host in list(dict.fromkeys(candidates))[:MAX_SSDP_CANDIDATES]:
             if host == current_host:
                 continue
-            identity = await self._identify(host)
-            if identity is not None and self.known.matches(identity):
-                return self._found(host, identity, "ssdp")
+            located = await self._confirm(host, await self._identify(host), "ssdp")
+            if located is not None:
+                return located
         return None
 
     # --- 3. mDNS -----------------------------------------------------------------------------
@@ -372,9 +386,9 @@ class TvLocator:
         for host in list(dict.fromkeys(candidates))[:MAX_SSDP_CANDIDATES]:
             if host == current_host:
                 continue
-            identity = await self._identify(host)
-            if identity is not None and self.known.matches(identity):
-                return self._found(host, identity, "mdns")
+            located = await self._confirm(host, await self._identify(host), "mdns")
+            if located is not None:
+                return located
         return None
 
     # --- 4. varredura limitada -----------------------------------------------------------------
@@ -475,11 +489,33 @@ class TvLocator:
                     return Located(host, None, "varredura")
                 return None
             identity = await self._identify(host)
+            return await self._confirm(host, identity, "varredura", probed=True)
         except OSError:
             return None
+
+    async def _confirm(
+        self, host: str, identity: TvIdentity | None, via: str, *, probed: bool = False
+    ) -> Located | None:
+        """O candidato é a nossa TV? Pelos identificadores guardados ou, na Android TV (que tem um
+        MAC por placa de rede), pela sessão com o certificado já pareado.
+
+        A sessão só é tentada com a porta do controle atendendo (`probed`: já se conferiu). Uma TV
+        que a confirma num MAC novo (o do Wi-Fi, com o guardado sendo o do cabo) ensina o MAC novo,
+        para a tabela ARP achá-la direto da próxima vez.
+        """
         if identity is not None and self.known.matches(identity):
-            return self._found(host, identity, "varredura")
-        return None
+            return self._found(host, identity, via)
+        if self._authenticate is None:
+            return None
+        if not probed and not await self._probe(host):
+            return None
+        if not await self._authenticate(host):
+            return None
+        mac = normalize_mac(identity.mac) if identity is not None and identity.mac else None
+        if mac is not None and mac != self.known.mac:
+            _log.info("a TV confirmou o certificado em outra placa de rede; guardo o MAC novo")
+            self.known.mac = mac
+        return Located(host, mac or self.known.mac, via)
 
     def _found(self, host: str, identity: TvIdentity, via: str) -> Located:
         self.known.learn(identity)

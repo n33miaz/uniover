@@ -1067,10 +1067,29 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         keepalive_lag_ms=keepalive_lag_ms,
         # Windows: a reconexão acorda quando a rede muda; nos outros sistemas, nada muda.
         network_watcher=network_change_watcher,
+        # Com o canal aberto, a troca de rede confere se ele segue de pé (um ping curto).
+        liveness=transport.check_alive,
     )
     # A API passou a listar uma capacidade nova (ex.: depois de um deploy dela): declara já, sem
     # esperar o `hello` de 5 minutos.
     features.on_added = supervisor.hello_now
+    if tv is not None:
+        # O `adb` apareceu depois da partida (baixado em segundo plano): o `hello` leva já o que ele
+        # declarou, sem esperar o periódico.
+        hellos: set[asyncio.Task[None]] = set()
+
+        async def hello_after_adb() -> None:
+            try:
+                await supervisor.hello_now()
+            except Exception as exc:
+                _log.info("hello com o adb novo fica para o periódico (%s)", type(exc).__name__)
+
+        def hello_soon() -> None:
+            task = asyncio.get_running_loop().create_task(hello_after_adb())
+            hellos.add(task)
+            task.add_done_callback(hellos.discard)
+
+        tv.adb_declared.append(hello_soon)
     # O sinal de vida do agente reflete o laço de conexão: preso, ele deixa de ser dado.
     diary.require_healthy(lambda: not supervisor.is_stalled())
     _log.info("agente %s iniciando (api %s)", agent_id, api_url)
@@ -1247,6 +1266,9 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         if tv is not None
         else None
     )
+    if tv is not None and relocator is not None:
+        # Alguém pediu a TV pelo app e ela não atendeu: o vigia confere e procura já.
+        tv.manager.on_wanted_unreachable(relocator.nudge)
 
     async def watch_exit_request() -> None:
         """A execução em uso sai de forma ordenada quando o supervisor pede (numa passagem sem

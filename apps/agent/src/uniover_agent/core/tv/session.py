@@ -236,6 +236,7 @@ class TvSessionManager:
         self._listeners: list[Callable[[TvState], None]] = []
         self._session_opened: list[Callable[[float], None]] = []
         self._wake_failed: list[Callable[[], None]] = []
+        self._wanted_unreachable: list[Callable[[], None]] = []
         self._repair_callbacks: list[tuple[Callable[[], None], Callable[[], None]]] = []
         self._last_emitted: TvState | None = None
         self._tasks: set[asyncio.Task[None]] = set()
@@ -287,6 +288,12 @@ class TvSessionManager:
     def on_session_opened(self, callback: Callable[[float], None]) -> None:
         """Avisa quando a TV acabou de responder e a sessão Remote v2 ficou pronta."""
         self._session_opened.append(callback)
+
+    def on_wanted_unreachable(self, callback: Callable[[], None]) -> None:
+        """Avisa quando alguém pediu a TV (tecla, ou o app aberto pedindo para aquecer) e ela não
+        atendeu: quem vigia o endereço da TV pode conferir e procurar já, sem esperar a cadência.
+        A reabertura sozinha (`unattended`) não avisa: é o próprio vigia que a pede."""
+        self._wanted_unreachable.append(callback)
 
     def on_wake_failed(self, callback: Callable[[], None]) -> None:
         """Avisa quando o Wake-on-LAN saiu e a TV não respondeu dentro da espera."""
@@ -805,6 +812,10 @@ class TvSessionManager:
                 self._begin_waking()
         try:
             await self._open_locked(interactive=interactive, unattended=unattended)
+        except TvSessionError as exc:
+            if exc.code == TV_UNREACHABLE and not unattended:
+                self._signal_wanted_unreachable()
+            raise
         finally:
             if waiting:
                 self._interactive_waiters -= 1
@@ -1037,6 +1048,13 @@ class TvSessionManager:
             _log.warning("fechar canal da TV passou do tempo maximo")
         except TvChannelError as exc:
             _log.warning("falha ao fechar canal da TV: %s", exc)
+
+    def _signal_wanted_unreachable(self) -> None:
+        for callback in self._wanted_unreachable:
+            try:
+                callback()
+            except Exception:
+                _log.exception("falha no aviso de TV sem resposta")
 
     def _signal_needs_repair(self, *, from_command: bool = False) -> None:
         for automatic, command in self._repair_callbacks:

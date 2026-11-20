@@ -21,8 +21,6 @@ import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from uniover_agent.adapters.tv_discovery import local_ipv4
-
 _log = logging.getLogger(__name__)
 
 # Uma varredura nunca passa disto: as redes das placas (a da rota padrão primeiro) e, por último,
@@ -93,6 +91,21 @@ class AdapterRow:
     friendly_name: str
     if_type: int
     up: bool
+
+
+def local_ipv4() -> str | None:
+    """Endereço da placa com rota padrão (o `connect` UDP só consulta a rota; nada sai pela rede).
+
+    `None` sem rota padrão: um cabo de rede local sem roteador, por exemplo, não tem rota padrão e
+    nem por isso deixa de levar à TV (ver `local_interfaces`).
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.connect(("192.0.2.1", 9))
+            address: str = probe.getsockname()[0]
+        except OSError:
+            return None
+    return None if address.startswith("0.") else address
 
 
 def is_virtual_adapter(description: str, friendly_name: str = "") -> bool:

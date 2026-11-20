@@ -47,6 +47,9 @@ PING_TIMEOUT_SECONDS: Final = 20.0
 # laço tenta de novo (com espera crescente) em vez de deixar o agente fora do ar por minutos. O
 # prazo do laço de conexão (`CONNECT_TIMEOUT_SECONDS`, 120 s) é a segunda barreira, acima deste.
 OPEN_TIMEOUT_SECONDS: Final = 105.0
+# Com IPv6 e IPv4 (ou várias placas), a tentativa seguinte começa depois deste atraso em vez de
+# esperar a anterior estourar (RFC 8305): um endereço numa rota morta não segura a abertura.
+HAPPY_EYEBALLS_DELAY_SECONDS: Final = 0.25
 
 _REPLACED_REASON: Final = "replaced"
 _HANDOVER_REASON: Final = "handover"
@@ -188,6 +191,9 @@ class WebSocketTransport:
             self._reach.forget()
             raise
         try:
+            # Sem endereço local nem placa escolhida: a rota é a do sistema na hora da abertura,
+            # então, se a rota padrão trocou de placa (cabo sem internet, ponto de acesso do
+            # celular), a reconexão já sai pela placa nova.
             self._ws = await connect(
                 url,
                 ssl=tls,
@@ -197,6 +203,7 @@ class WebSocketTransport:
                 ping_timeout=self._ping_timeout,
                 max_size=MAX_MESSAGE_BYTES,
                 open_timeout=self._open_timeout,
+                happy_eyeballs_delay=HAPPY_EYEBALLS_DELAY_SECONDS,
             )
         except InvalidStatus as exc:
             status = exc.response.status_code
@@ -267,6 +274,20 @@ class WebSocketTransport:
         outcome = _close_outcome(received)
         if outcome is not None:
             raise outcome
+
+    async def check_alive(self, within: float) -> bool:
+        """O canal aberto ainda responde? Um ping do WebSocket com prazo curto (usado quando a rede
+        do PC muda: um canal que ficou na placa que caiu não responde mais)."""
+        ws = self._ws
+        if ws is None:
+            return False
+        try:
+            async with asyncio.timeout(within):
+                pong = await ws.ping()
+                await pong
+        except TimeoutError, OSError, WebSocketException:
+            return False
+        return True
 
     async def close(self) -> None:
         ws, self._ws = self._ws, None
