@@ -100,11 +100,15 @@ export function knownActionLabel(code: string): string | null {
     case 'pc_restart':
       return $localize`:@@settings.audit.action.pc-restart:Reinício do PC pedido`;
     case 'pc_logoff':
-      return $localize`:@@settings.audit.action.pc-logoff:Sessão do PC encerrada`;
+      return $localize`:@@settings.audit.action.pc-logoff:Pedido de encerramento da sessão aceito`;
     case 'pc_hibernate':
-      return $localize`:@@settings.audit.action.pc-hibernate:PC hibernado`;
+      return $localize`:@@settings.audit.action.pc-hibernate:Pedido de hibernação do PC aceito`;
     case 'pc_monitor_off':
       return $localize`:@@settings.audit.action.pc-monitor-off:Monitor do PC desligado`;
+    case 'pc_clipboard_read':
+      return $localize`:@@settings.audit.action.pc-clipboard-read:Área de transferência do PC lida`;
+    case 'pc_clipboard_write':
+      return $localize`:@@settings.audit.action.pc-clipboard-write:Texto enviado à área de transferência do PC`;
     case 'pc_app_launch':
       return $localize`:@@settings.audit.action.pc-app-launch:App aberto no PC`;
     case 'pc_lock_failed':
@@ -123,6 +127,10 @@ export function knownActionLabel(code: string): string | null {
       return $localize`:@@settings.audit.action.pc-hibernate-failed:Hibernação do PC falhou`;
     case 'pc_monitor_off_failed':
       return $localize`:@@settings.audit.action.pc-monitor-off-failed:Desligar o monitor do PC falhou`;
+    case 'pc_clipboard_read_failed':
+      return $localize`:@@settings.audit.action.pc-clipboard-read-failed:Leitura da área de transferência do PC falhou`;
+    case 'pc_clipboard_write_failed':
+      return $localize`:@@settings.audit.action.pc-clipboard-write-failed:Envio à área de transferência do PC falhou`;
     case 'pc_app_launch_failed':
       return $localize`:@@settings.audit.action.pc-app-launch-failed:Abertura de app no PC falhou`;
     // TV
@@ -407,6 +415,8 @@ function describeBaseTarget(action: string, target: string): string | null {
     case 'pc_logoff':
     case 'pc_hibernate':
     case 'pc_monitor_off':
+    case 'pc_clipboard_read':
+    case 'pc_clipboard_write':
     case 'pc_lock_failed':
     case 'pc_sleep_failed':
     case 'pc_shutdown_failed':
@@ -415,6 +425,8 @@ function describeBaseTarget(action: string, target: string): string | null {
     case 'pc_logoff_failed':
     case 'pc_hibernate_failed':
     case 'pc_monitor_off_failed':
+    case 'pc_clipboard_read_failed':
+    case 'pc_clipboard_write_failed':
     case 'pc_app_launch_failed':
       // Nesta fonte o alvo é o nome do aparelho no cadastro (texto de gente).
       return target;

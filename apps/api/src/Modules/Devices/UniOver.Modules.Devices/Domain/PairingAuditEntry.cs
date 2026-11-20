@@ -42,6 +42,8 @@ public static class PairingEvents
     public const string PcLogoff = "pc_logoff";
     public const string PcHibernate = "pc_hibernate";
     public const string PcMonitorOff = "pc_monitor_off";
+    public const string PcClipboardRead = "pc_clipboard_read";
+    public const string PcClipboardWrite = "pc_clipboard_write";
     public const string PcAppLaunch = "pc_app_launch";
 
     // Canal direto (WebRTC) do controle do PC: negociado e entregue ao app, e fechado (por quem pediu ou pelo agente). Sem SDP e sem token.
@@ -58,13 +60,15 @@ public static class PairingEvents
     public const string PcLogoffFailed = "pc_logoff_failed";
     public const string PcHibernateFailed = "pc_hibernate_failed";
     public const string PcMonitorOffFailed = "pc_monitor_off_failed";
+    public const string PcClipboardReadFailed = "pc_clipboard_read_failed";
+    public const string PcClipboardWriteFailed = "pc_clipboard_write_failed";
     public const string PcAppLaunchFailed = "pc_app_launch_failed";
 
     /// <summary>As linhas de tentativa que não deu certo (a falha do controle do PC).</summary>
     public static readonly string[] PcFailures =
         [
             PcLockFailed, PcSleepFailed, PcShutdownFailed, PcShutdownCancelFailed, PcRestartFailed, PcLogoffFailed, PcHibernateFailed,
-            PcMonitorOffFailed, PcAppLaunchFailed,
+            PcMonitorOffFailed, PcClipboardReadFailed, PcClipboardWriteFailed, PcAppLaunchFailed,
         ];
 
     /// <summary>A linha de tentativa que corresponde a uma ação do PC auditada no sucesso; nulo para o que não é dessas.</summary>
@@ -78,6 +82,8 @@ public static class PairingEvents
         PcLogoff => PcLogoffFailed,
         PcHibernate => PcHibernateFailed,
         PcMonitorOff => PcMonitorOffFailed,
+        PcClipboardRead => PcClipboardReadFailed,
+        PcClipboardWrite => PcClipboardWriteFailed,
         PcAppLaunch => PcAppLaunchFailed,
         _ => null,
     };

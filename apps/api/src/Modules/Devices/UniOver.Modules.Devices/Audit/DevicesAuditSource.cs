@@ -36,6 +36,8 @@ internal static class DevicesAuditActions
         (PairingEvents.PcLogoff, "pc_logoff"),
         (PairingEvents.PcHibernate, "pc_hibernate"),
         (PairingEvents.PcMonitorOff, "pc_monitor_off"),
+        (PairingEvents.PcClipboardRead, "pc_clipboard_read"),
+        (PairingEvents.PcClipboardWrite, "pc_clipboard_write"),
         (PairingEvents.PcAppLaunch, "pc_app_launch"),
         (PairingEvents.PcDirectOpened, "pc_direct_opened"),
         (PairingEvents.PcDirectClosed, "pc_direct_closed"),
@@ -47,6 +49,8 @@ internal static class DevicesAuditActions
         (PairingEvents.PcLogoffFailed, "pc_logoff_failed"),
         (PairingEvents.PcHibernateFailed, "pc_hibernate_failed"),
         (PairingEvents.PcMonitorOffFailed, "pc_monitor_off_failed"),
+        (PairingEvents.PcClipboardReadFailed, "pc_clipboard_read_failed"),
+        (PairingEvents.PcClipboardWriteFailed, "pc_clipboard_write_failed"),
         (PairingEvents.PcAppLaunchFailed, "pc_app_launch_failed"),
     ];
 

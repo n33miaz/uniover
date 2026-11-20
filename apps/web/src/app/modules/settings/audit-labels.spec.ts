@@ -65,6 +65,8 @@ const DEVICES_ACTIONS = [
   'pc_logoff',
   'pc_hibernate',
   'pc_monitor_off',
+  'pc_clipboard_read',
+  'pc_clipboard_write',
   'pc_app_launch',
   'pc_lock_failed',
   'pc_sleep_failed',
@@ -74,6 +76,8 @@ const DEVICES_ACTIONS = [
   'pc_logoff_failed',
   'pc_hibernate_failed',
   'pc_monitor_off_failed',
+  'pc_clipboard_read_failed',
+  'pc_clipboard_write_failed',
   'pc_app_launch_failed',
 ];
 const TV_ACTIONS = [
@@ -226,6 +230,9 @@ describe('describeTarget', () => {
     'pc_logoff_failed',
     'pc_hibernate_failed',
     'pc_monitor_off_failed',
+    'pc_clipboard_read',
+    'pc_clipboard_read_failed',
+    'pc_clipboard_write_failed',
     'pc_app_launch_failed',
   ])('shows the device name as the target of %s', (action) => {
     expect(describeTarget(item({ action, target: 'PC da sala' }))).toBe('PC da sala');
