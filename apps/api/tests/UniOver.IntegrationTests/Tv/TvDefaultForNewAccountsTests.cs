@@ -2,14 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using UniOver.BuildingBlocks.Messaging;
 using UniOver.IntegrationTests.Identity;
 using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Identity.Passkeys;
 using UniOver.IntegrationTests.Infrastructure;
-using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
 
@@ -17,8 +13,8 @@ namespace UniOver.IntegrationTests.Tv;
 
 /// <summary>
 /// A TV padrão do dono deixa de ser o padrão de toda conta sem filiação. Só a segue a conta antiga (marca gravada pela migration
-/// do Identity) e a conta com a concessão vigente do módulo da TV (lida no Identity na hora, e também materializada como marca
-/// pelo aviso da outbox). A conta retirada da TV não a vê e recebe 404, como para uma TV que não existe.
+/// do Identity) e a conta com a concessão vigente do módulo da TV, lida no Identity a cada pedido: concedida, vale na hora;
+/// retirada, some na hora. A conta retirada da TV não a vê e recebe 404, como para uma TV que não existe.
 /// </summary>
 [Collection(PostgresGroup.Name)]
 public sealed class TvDefaultForNewAccountsTests(PostgresFixture postgres)
@@ -57,12 +53,6 @@ public sealed class TvDefaultForNewAccountsTests(PostgresFixture postgres)
         return await db.Users.Where(u => u.Id == userId).Select(u => u.PredatesModuleInvites).SingleAsync(Ct);
     }
 
-    private static async Task<bool> FollowsDefaultAsync(TvApp app, Guid userId)
-    {
-        await using var db = app.Db();
-        return await db.TvDefaultFollowers.AnyAsync(f => f.UserId == userId, Ct);
-    }
-
     [Fact]
     public async Task AcceptingAnInviteWithTheTv_FollowsTheDefaultTv_ButTheAccountIsNotOld()
     {
@@ -73,7 +63,6 @@ public sealed class TvDefaultForNewAccountsTests(PostgresFixture postgres)
 
         // O EF tem de gravar o false de verdade: se a coluna caísse no padrão do banco (true), toda conta nova seria antiga.
         (await PredatesModuleInvitesAsync(app, guest.UserId)).Should().BeFalse();
-        (await FollowsDefaultAsync(app, guest.UserId)).Should().BeTrue("o aceite com o módulo da TV avisa o módulo TV pela outbox");
 
         (await VisibleTvsAsync(app, guest.Login.AccessToken)).Should().Equal(defaultTvId);
         using var state = await app.GetAsync($"/api/v1/tv/state?tvId={defaultTvId}", bearer: guest.Login.AccessToken);
@@ -81,10 +70,9 @@ public sealed class TvDefaultForNewAccountsTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task FirstRequestRightAfterTheInvite_SeesTheDefaultTv_EvenWithTheConsumerSuspended()
+    public async Task FirstRequestRightAfterTheInvite_SeesTheDefaultTv_WithoutWaitingForTheOutbox()
     {
-        // Sem o consumidor, o aviso nunca vira marca: é a janela antes da entrega e também o aviso que foi para dead letter.
-        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { ConfigureServices = SuspendTheConsumer });
+        await using var app = await TvApp.StartAsync(postgres);
         var defaultTvId = await DefaultTvIdAsync(app);
 
         var (_, token) = await GuestSeed.InsertInviteAsync(app.Database, app.Time.GetUtcNow(), "Apressada");
@@ -95,22 +83,43 @@ public sealed class TvDefaultForNewAccountsTests(PostgresFixture postgres)
         (await VisibleTvsAsync(app, login.AccessToken)).Should().Equal(defaultTvId);
         using var state = await app.GetAsync($"/api/v1/tv/state?tvId={defaultTvId}", bearer: login.AccessToken);
         ReachedTheTv(state.StatusCode).Should().BeTrue();
-
-        await using var db = app.Db();
-        (await db.TvDefaultFollowers.AnyAsync(Ct)).Should().BeFalse("o consumidor estava suspenso");
     }
 
     [Fact]
-    public async Task FirstRequestAfterTheOwnerAddsTheTv_SeesTheDefaultTv_EvenWithTheConsumerSuspended()
+    public async Task FirstRequestAfterTheOwnerAddsTheTv_SeesTheDefaultTv_WithoutWaitingForTheOutbox()
     {
-        await using var app = await TvApp.StartAsync(postgres, new TvAppOptions { ConfigureServices = SuspendTheConsumer });
+        await using var app = await TvApp.StartAsync(postgres);
         var defaultTvId = await DefaultTvIdAsync(app);
         var guest = await app.NewGuestAsync("Treino depois TV", OnlyTraining, 76);
 
-        await AddTheTvModuleAsync(app, guest.UserId);
+        await SetPermissionsAsync(app, guest.UserId, TrainingAndTv);
 
-        (await FollowsDefaultAsync(app, guest.UserId)).Should().BeFalse("o consumidor estava suspenso");
         (await VisibleTvsAsync(app, guest.Login.AccessToken)).Should().Equal(defaultTvId);
+    }
+
+    [Fact]
+    public async Task RemovingTheTvModule_TakesTheDefaultTvAway_RightAway()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var defaultTvId = await DefaultTvIdAsync(app);
+        var guest = await app.NewGuestAsync("Perde a TV", TrainingAndTv, 77);
+        (await VisibleTvsAsync(app, guest.Login.AccessToken)).Should().Equal(defaultTvId);
+
+        await SetPermissionsAsync(app, guest.UserId, OnlyTraining);
+
+        // Sem o módulo a TV some, com o mesmo token: nem a lista a mostra nem a rota da TV a alcança.
+        using var list = await app.GetAsync("/api/v1/tv/tvs", bearer: guest.Login.AccessToken);
+        if (list.StatusCode == HttpStatusCode.OK)
+        {
+            (await TvApp.JsonAsync(list)).GetProperty("items").GetArrayLength().Should().Be(0);
+        }
+        else
+        {
+            list.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        }
+
+        using var state = await app.GetAsync($"/api/v1/tv/state?tvId={defaultTvId}", bearer: guest.Login.AccessToken);
+        ReachedTheTv(state.StatusCode).Should().BeFalse("a concessão retirada não deixa cópia que mantenha a TV");
     }
 
     [Fact]
@@ -152,11 +161,13 @@ public sealed class TvDefaultForNewAccountsTests(PostgresFixture postgres)
         var defaultTvId = await DefaultTvIdAsync(app);
         var guest = await app.NewGuestAsync("Treino", OnlyTraining, 73);
 
-        (await FollowsDefaultAsync(app, guest.UserId)).Should().BeFalse();
+        using (var before = await app.GetAsync($"/api/v1/tv/state?tvId={defaultTvId}", bearer: guest.Login.AccessToken))
+        {
+            ReachedTheTv(before.StatusCode).Should().BeFalse("sem o módulo da TV a conta nova não segue a TV do dono");
+        }
 
-        await AddTheTvModuleAsync(app, guest.UserId);
-        await GuestSeed.WaitForIdentityOutboxAsync(app.Database);
-        (await FollowsDefaultAsync(app, guest.UserId)).Should().BeTrue("o módulo da TV acrescentado depois tem o mesmo efeito do convite");
+        // O módulo da TV acrescentado depois tem o mesmo efeito do convite.
+        await SetPermissionsAsync(app, guest.UserId, TrainingAndTv);
         (await VisibleTvsAsync(app, guest.Login.AccessToken)).Should().Equal(defaultTvId);
     }
 
@@ -167,7 +178,6 @@ public sealed class TvDefaultForNewAccountsTests(PostgresFixture postgres)
         var defaultTvId = await DefaultTvIdAsync(app);
 
         (await PredatesModuleInvitesAsync(app, OldId)).Should().BeTrue("a migration marca toda conta que já existia");
-        (await FollowsDefaultAsync(app, OldId)).Should().BeFalse();
         await using (var db = app.Db())
         {
             (await db.TvMembers.AnyAsync(m => m.UserId == OldId, Ct)).Should().BeFalse();
@@ -183,17 +193,13 @@ public sealed class TvDefaultForNewAccountsTests(PostgresFixture postgres)
         (await PredatesModuleInvitesAsync(app, newcomer.UserId)).Should().BeFalse();
     }
 
-    /// <summary>Tira o consumidor do aviso do Identity: o evento é entregue sem ninguém para gravar a marca de seguidor.</summary>
-    private static void SuspendTheConsumer(IServiceCollection services) =>
-        services.RemoveAll<IIntegrationEventHandler<GuestModulesGranted>>();
-
-    private static async Task AddTheTvModuleAsync(TvApp app, Guid guestId)
+    private static async Task SetPermissionsAsync(TvApp app, Guid guestId, string[] permissions)
     {
         using var authenticator = new VirtualAuthenticator();
         await app.RegisterOwnerPasskeyAsync(authenticator);
         await app.ConfirmOwnerActionAsync(authenticator, "identity.permissions-change");
         using var put = await app.SendAsync(
-            HttpMethod.Put, $"/api/v1/identity/guests/{guestId}/permissions", new { permissions = TrainingAndTv });
+            HttpMethod.Put, $"/api/v1/identity/guests/{guestId}/permissions", new { permissions });
         put.StatusCode.Should().Be(HttpStatusCode.OK, await put.Content.ReadAsStringAsync(Ct));
     }
 
