@@ -89,10 +89,19 @@
   outline: 2px solid var(--a-accent);
   outline-offset: 2px;
 }
+/*
+ * O lado esquerdo espelha o direito: lá o ponto de estado encosta no desligar (folga zero e o ponto puxado 3 px para ele),
+ * e a distância desenhada entre o disco e o círculo fica em 11 px. Aqui os três pontos encostam no voltar e o desenho
+ * deles é puxado para o voltar pela folga à direita do botão (o alvo segue com 44 px). O teste de layout mede as duas
+ * distâncias desenhadas e exige que sejam iguais.
+ */
 .lead {
   display: flex;
-  gap: var(--gap);
+  gap: 0;
   justify-self: start;
+}
+.lead .circle.bare {
+  padding-right: 18px;
 }
 .power {
   color: var(--a-bad);

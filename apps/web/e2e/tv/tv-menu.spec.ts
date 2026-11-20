@@ -250,9 +250,12 @@ test.describe('menu dos três pontos', () => {
     expect(size.width).toBeCloseTo(44, 0);
     expect(size.height).toBeCloseTo(44, 0);
     expect(Math.abs(back.x - head.x), 'voltar na ponta esquerda').toBeLessThan(1.5);
-    expect(size.x - (back.x + back.width), 'menu logo depois de voltar').toBeGreaterThanOrEqual(4);
+    // Os alvos encostam, como o ponto e o desligar à direita; a folga fica no desenho (ver tv-header.spec.ts).
+    expect(size.x - (back.x + back.width), 'menu logo depois de voltar').toBeGreaterThanOrEqual(
+      -0.5,
+    );
     expect(size.x - (back.x + back.width), 'menu alinhado ao grupo esquerdo').toBeLessThanOrEqual(
-      10,
+      1,
     );
 
     await dots.click();

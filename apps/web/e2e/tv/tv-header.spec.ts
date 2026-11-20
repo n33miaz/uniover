@@ -159,8 +159,9 @@ async function expectTitleCentered(page: Page) {
   const power = await box(powerButton(page));
   expect(Math.abs(back.x - head.x), 'a seta na ponta esquerda').toBeLessThanOrEqual(1);
   expect(Math.abs(menu.y - back.y), 'o menu na mesma linha da seta').toBeLessThanOrEqual(1);
-  expect(menu.x - (back.x + back.width), 'o menu logo depois da seta').toBeGreaterThanOrEqual(3);
-  expect(menu.x - (back.x + back.width), 'e perto dela').toBeLessThanOrEqual(10);
+  // Os alvos encostam, como o ponto e o desligar à direita; o desenho dos pontos é que guarda a folga (ver `headerGaps`).
+  expect(menu.x - (back.x + back.width), 'o menu logo depois da seta').toBeGreaterThanOrEqual(-0.5);
+  expect(menu.x - (back.x + back.width), 'e encostado nela').toBeLessThanOrEqual(1);
   expect(menu.x + menu.width, 'o menu não encosta no nome').toBeLessThanOrEqual(title.x + 0.5);
   expect(dot.x, 'o ponto fica depois do nome').toBeGreaterThanOrEqual(title.x + title.width - 0.5);
   expect(
@@ -613,7 +614,7 @@ test.describe('Personalizar', () => {
     await sheet.getByRole('switch', { name: 'Teclas de mídia' }).uncheck();
     await sheet.getByRole('switch', { name: 'Canal' }).uncheck();
     await closeCustomize(page);
-    for (const name of ['Mudo', 'Anterior', 'Reproduzir ou pausar', 'Próxima', 'Próximo canal']) {
+    for (const name of ['Mudo', 'Anterior', 'Reproduzir', 'Próxima', 'Próximo canal']) {
       await expect(keyButton(page, name)).toHaveCount(0);
     }
     await expect(keyButton(page, 'Teclado')).toBeVisible();
@@ -1769,3 +1770,46 @@ test.describe('direcional em tela larga', () => {
     await expectNoHorizontalScroll(page);
   });
 });
+
+/**
+ * As folgas desenhadas dos dois lados do cabeçalho: à direita, do ponto de estado (o disco que se vê) até o círculo do
+ * desligar; à esquerda, do círculo do voltar até os três pontos (o traço que se vê). Mede o desenho, não o alvo de 44 px.
+ */
+async function headerGaps(page: Page) {
+  return page.evaluate(() => {
+    const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+    const power = rect('.head .actions .circle.power');
+    const dot = rect('.head app-status-indicator .dot');
+    const fill = document.querySelector('.head app-status-indicator .dot circle')!;
+    const dotRight = fill.getBoundingClientRect().right;
+    const back = rect('.head .lead .circle.back');
+    const morePath = document.querySelector('.head .lead .circle.bare svg path')!;
+    const svg = morePath.closest('svg')!;
+    // O traço tem 2 unidades da caixa de 24: metade dele sobra para fora da geometria do caminho.
+    const stroke = svg.getBoundingClientRect().width / 24;
+    const moreLeft = morePath.getBoundingClientRect().left - stroke;
+    return {
+      right: power.left - dotRight,
+      left: moreLeft - back.right,
+      dotWidth: dot.width,
+    };
+  });
+}
+
+for (const size of [
+  { width: 390, height: 664 },
+  { width: 411, height: 800 },
+  { width: 390, height: 844 },
+]) {
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`the left buttons keep the same drawn gap as the status dot and power (${size.width}x${size.height}, ${scheme})`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      await page.emulateMedia({ colorScheme: scheme });
+      await openTv(page);
+      const gaps = await headerGaps(page);
+      expect(Math.abs(gaps.left - gaps.right)).toBeLessThanOrEqual(1);
+    });
+  }
+}
