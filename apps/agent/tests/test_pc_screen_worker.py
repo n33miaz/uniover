@@ -22,6 +22,8 @@ from uniover_agent.adapters.pc_screen_worker import (
 )
 from uniover_agent.ports.pc_direct import SCREEN_MAX_LIFETIME_SECONDS
 
+WORKER = "uniover_agent.adapters.pc_screen_worker"
+
 
 class Channel:
     def __init__(self) -> None:
@@ -170,8 +172,8 @@ async def test_capture_respects_requested_frame_period(monkeypatch: pytest.Monke
         return b"jpeg"
 
     monkeypatch.setattr(pc_screen_worker, "monotonic", lambda: now)
-    monkeypatch.setattr(pc_screen_worker.asyncio, "sleep", sleep)
-    monkeypatch.setattr(pc_screen_worker.asyncio, "to_thread", capture_in_thread)
+    monkeypatch.setattr(f"{WORKER}.asyncio.sleep", sleep)
+    monkeypatch.setattr(f"{WORKER}.asyncio.to_thread", capture_in_thread)
     await measure.send_frames(lambda _request: b"", lambda: 40_000_000)
     assert captures == [100.0, 100.125]
 
@@ -207,7 +209,7 @@ async def test_worker_closes_when_the_screen_deadline_expires(
     async def capture_in_thread(_capture: Any, _request: FrameRequest) -> bytes:
         return b"jpeg"
 
-    monkeypatch.setattr(pc_screen_worker.asyncio, "to_thread", capture_in_thread)
+    monkeypatch.setattr(f"{WORKER}.asyncio.to_thread", capture_in_thread)
     monkeypatch.setattr(pc_screen_worker, "private_bytes", lambda: 0)
     channel.message(k="auth", token=offer.token)
     task = asyncio.create_task(measure.run(offer, asyncio.Event(), lambda _reply: None, viewing))

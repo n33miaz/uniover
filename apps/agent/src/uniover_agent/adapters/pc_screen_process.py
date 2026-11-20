@@ -46,7 +46,8 @@ class ScreenProcess:
             answer = json.loads(await process.stdout.readline())
             if not isinstance(answer, dict) or not isinstance(answer.get("sdp"), str):
                 raise RuntimeError("processo de medição não respondeu")
-            return answer["sdp"]
+            answer_sdp: str = answer["sdp"]
+            return answer_sdp
         except Exception, asyncio.CancelledError:
             self.stop()
             await process.wait()
