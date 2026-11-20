@@ -2261,6 +2261,125 @@ test.describe('Teclas do pc.key.v2', () => {
   });
 });
 
+test.describe('Texto colado longo num PC com área de transferência', () => {
+  const LONG = 'Um texto longo colado do chat, com acento e emoji 😀 que passa de quarenta letras.';
+  const declare = (system?: 'windows' | 'macos') => {
+    pc.status = {
+      ...READY,
+      apps: [...READY.apps],
+      capabilities: ['pc.key.v2', 'pc.text.v2', 'pc.text.v3', 'pc.clipboard.v1'],
+      ...(system ? { system } : {}),
+    };
+  };
+
+  async function openKeyboard(page: Page) {
+    await page.getByRole('button', { name: 'Teclado', exact: true }).click();
+    const field = page.getByLabel('Digitar no PC');
+    await expect(field).toBeFocused();
+    return field;
+  }
+
+  test('vai inteiro pela área de transferência do PC e um Ctrl+V, sem lotes de texto', async ({
+    page,
+  }) => {
+    declare('windows');
+    await openPc(page);
+    const field = await openKeyboard(page);
+    await page.keyboard.insertText(`${LONG}\nsegunda linha`);
+    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'V', modifiers: ['CTRL'] }]);
+    // No Windows a quebra de linha vai como CRLF, o que os programas dele esperam ao colar.
+    expect(pc.sent('/clipboard/write')).toEqual([{ text: `${LONG}\r\nsegunda linha` }]);
+    expect(pc.sent('/text')).toEqual([]);
+    // A área foi gravada antes de a tecla sair.
+    const order = pc.requests
+      .filter((r) => r.path === '/clipboard/write' || r.path === '/key')
+      .map((r) => r.path);
+    expect(order).toEqual(['/clipboard/write', '/key']);
+    await expect(field).toBeFocused();
+    // O texto curto digitado depois segue ao vivo.
+    await page.keyboard.type('ok');
+    await expect
+      .poll(() =>
+        pc
+          .sent('/text')
+          .map((body) => body['text'])
+          .join(''),
+      )
+      .toBe('ok');
+  });
+
+  test('num Mac o colar é ⌘V', async ({ page }) => {
+    declare('macos');
+    await openPc(page);
+    await openKeyboard(page);
+    await page.keyboard.insertText(LONG);
+    await expect.poll(() => pc.sent('/key')).toEqual([{ key: 'V', modifiers: ['WIN'] }]);
+    expect(pc.sent('/clipboard/write')).toEqual([{ text: LONG }]);
+  });
+
+  test('um texto curto colado segue digitado ao vivo, sem tocar na área de transferência', async ({
+    page,
+  }) => {
+    declare('windows');
+    await openPc(page);
+    await openKeyboard(page);
+    await page.keyboard.insertText('palavra curta');
+    await expect
+      .poll(() =>
+        pc
+          .sent('/text')
+          .map((body) => body['text'])
+          .join(''),
+      )
+      .toBe('palavra curta');
+    expect(pc.sent('/clipboard/write')).toEqual([]);
+    expect(pc.sent('/key')).toEqual([]);
+  });
+
+  test('sem a área de transferência no PC o texto longo vai em lotes, como antes', async ({
+    page,
+  }) => {
+    pc.status = {
+      ...READY,
+      apps: [...READY.apps],
+      capabilities: ['pc.key.v2', 'pc.text.v2', 'pc.text.v3'],
+    };
+    await openPc(page);
+    await openKeyboard(page);
+    await page.keyboard.insertText(LONG);
+    await expect
+      .poll(() =>
+        pc
+          .sent('/text')
+          .map((body) => body['text'])
+          .join(''),
+      )
+      .toBe(LONG);
+    expect(pc.sent('/clipboard/write')).toEqual([]);
+    expect(pc.sent('/key')).toEqual([]);
+  });
+
+  test('se a área de transferência falhar, o texto vai digitado e nenhum Ctrl+V sai', async ({
+    page,
+  }) => {
+    declare('windows');
+    pc.commandFailure = { status: 504, kind: 'timeout' };
+    pc.failOnly = (request) => request.path === '/clipboard/write';
+    await openPc(page);
+    await openKeyboard(page);
+    await page.keyboard.insertText(LONG);
+    await expect
+      .poll(() =>
+        pc
+          .sent('/text')
+          .map((body) => body['text'])
+          .join(''),
+      )
+      .toBe(LONG);
+    expect(pc.sent('/key')).toEqual([]);
+  });
+});
+
 test.describe('Texto e cliques do pc.text.v2 e do pc.click.v2', () => {
   const declared = (capabilities: string[]) => {
     pc.status = { ...READY, apps: [...READY.apps], capabilities };

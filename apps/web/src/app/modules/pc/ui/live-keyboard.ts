@@ -19,7 +19,14 @@ import { MAX_KEYS_IN_FLIGHT, PcInput, type InputKind } from '../data/pc-input';
 import { PcStore } from '../data/pc-store';
 import type { PcKey, PcLetter, PcModifier } from '../data/pc-types';
 import { tick } from '../input/haptics';
-import { PADDING_CHAR, fieldDiff, fieldState, type FieldState } from '../input/live-typing';
+import {
+  PADDING_CHAR,
+  fieldDiff,
+  fieldState,
+  isLongPaste,
+  lineText,
+  type FieldState,
+} from '../input/live-typing';
 import { TypedEcho, type EchoSegment } from '../input/typed-echo';
 
 /**
@@ -423,6 +430,14 @@ export class PcLiveKeyboard {
     }
     // Modificador não vale para texto: qualquer outro texto vai inteiro e as armadas se soltam do mesmo jeito.
     this.armed.clear();
+    // Um texto longo (ou com quebra de linha) que chegou num evento só foi colado: vai pela área de transferência do PC e um
+    // colar, inteiro de uma vez. O campo recomeça (o PC já tem o texto, como depois de um Enter).
+    if (isLongPaste(diff.insert) && this.input.canPaste(lineText(diff.insert))) {
+      this.input.paste(diff);
+      this.recordEcho((echo) => echo.edit(diff));
+      this.reset();
+      return;
+    }
     this.mirror = after;
     this.lastValue = field.value;
     this.input.edit(diff);

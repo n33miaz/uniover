@@ -79,6 +79,17 @@ export function fieldDiff(
   return { diff, after };
 }
 
+/** Acima disto de pontos de código, um texto que chega num evento só (colado) vai pela área de transferência do PC. */
+export const PASTE_MIN_CHARS = 40;
+
+/**
+ * Um texto que chegou de uma vez ao campo (num evento só) e é longo, ou tem quebra de linha: é colagem. Digitado ao vivo ele
+ * sairia em lotes; pela área de transferência do PC e um colar, chega inteiro de uma vez.
+ */
+export function isLongPaste(insert: string): boolean {
+  return /[\r\n]/.test(insert) || Array.from(insert).length > PASTE_MIN_CHARS;
+}
+
 /** Junta duas diferenças seguidas numa só: o que a segunda apaga do que a primeira ainda ia digitar nem chega a sair. */
 export function mergeDiff(first: TextDiff, second: TextDiff): TextDiff {
   const typed = Array.from(first.insert);
@@ -240,6 +251,15 @@ export interface TyperSender {
    * em ordem); sem isso viram as teclas Enter e Tab da `pc.text.v2`, como sempre.
    */
   canEditLines?(): boolean;
+  /**
+   * Grava o texto na área de transferência do PC (`pc.clipboard.set.v1`). Só existe, e só vale, com `canPaste`; nada é digitado
+   * por ela.
+   */
+  clipboard?(text: string): Promise<PcFailure | null>;
+  /** O PC aceita colar pela área de transferência agora, e este texto cabe nela? */
+  canPaste?(text: string): boolean;
+  /** Os modificadores do colar no sistema do PC (Ctrl, ou ⌘ no macOS). */
+  pasteModifiers?(): readonly PcModifier[];
 }
 
 export interface TyperEvents {
@@ -255,6 +275,7 @@ export interface TyperEvents {
 
 type Op =
   | { readonly kind: 'edit'; readonly diff: TextDiff }
+  | { readonly kind: 'paste'; readonly diff: TextDiff }
   | {
       readonly kind: 'key';
       readonly key: PcKey;
@@ -302,6 +323,17 @@ export class LiveTyper {
   }
 
   /**
+   * Um texto colado: na vez dele, apaga o que a diferença apaga, grava o texto na área de transferência do PC e manda o colar
+   * (chega inteiro, de uma vez). Não se junta com o que vem antes nem depois. Sem como colar (o PC não declarou a área de
+   * transferência, o texto não cabe nela ou a gravação falhou), vai digitado como qualquer edição.
+   */
+  paste(diff: TextDiff): void {
+    if (diff.erase === 0 && diff.insert === '') return;
+    this.queue.push({ kind: 'paste', diff });
+    void this.pump();
+  }
+
+  /**
    * Uma tecla na ordem da fila. `options.repeat` aperta várias vezes num pedido só; `options.action` `DOWN` segura um
    * modificador (o `DOWN` entra na fila para nunca passar na frente do texto digitado antes dele).
    */
@@ -334,10 +366,10 @@ export class LiveTyper {
         const op = this.queue.shift()!;
         const failure = await this.run(op, generation);
         if (failure !== null && generation === this.generation) {
-          const droppedEdits = this.queue.some((waiting) => waiting.kind === 'edit');
+          const droppedEdits = this.queue.some((waiting) => waiting.kind !== 'key');
           this.queue = [];
           this.generation++;
-          this.events.failed(failure, op.kind, droppedEdits);
+          this.events.failed(failure, op.kind === 'key' ? 'key' : 'edit', droppedEdits);
           break;
         }
       }
@@ -371,15 +403,41 @@ export class LiveTyper {
     return failure;
   }
 
+  /**
+   * O colar: apaga primeiro (se a diferença apaga), grava o texto na área de transferência e só com ela gravada manda o colar,
+   * para a tecla nunca chegar antes do texto. A gravação falhou: nada foi digitado, e o texto vai digitado como sempre. O colar
+   * falhou: o resultado é incerto, e a falha segue como a de qualquer edição.
+   */
+  private async runPaste(diff: TextDiff, generation: number): Promise<PcFailure | null> {
+    const text = lineText(diff.insert);
+    const clipboard = this.sender.clipboard?.bind(this.sender);
+    if (clipboard === undefined || text === '' || this.sender.canPaste?.(text) !== true) {
+      return this.runEdit(diff, generation);
+    }
+    if (diff.erase > 0) {
+      const failure = await this.runEdit({ erase: diff.erase, insert: '' }, generation);
+      if (failure || generation !== this.generation) return failure;
+    }
+    const wrote = await clipboard(text);
+    if (generation !== this.generation) return null;
+    if (wrote !== null) return this.runEdit({ erase: 0, insert: diff.insert }, generation);
+    return this.sender.key('V', this.sender.pasteModifiers?.() ?? ['CTRL']);
+  }
+
   private async run(op: Op, generation: number): Promise<PcFailure | null> {
     if (op.kind === 'key') {
       return op.options === undefined
         ? this.sender.key(op.key, op.modifiers)
         : this.sender.key(op.key, op.modifiers, op.options);
     }
+    if (op.kind === 'paste') return this.runPaste(op.diff, generation);
+    return this.runEdit(op.diff, generation);
+  }
+
+  private async runEdit(diff: TextDiff, generation: number): Promise<PcFailure | null> {
     if (this.sender.edit !== undefined && this.sender.canEdit?.() === true) {
       const lines = this.sender.canEditLines?.() === true;
-      for (const request of editRequests(op.diff, lines)) {
+      for (const request of editRequests(diff, lines)) {
         if (generation !== this.generation) return null;
         const failure = await this.sendEdit(
           this.sender.edit.bind(this.sender),
@@ -390,12 +448,12 @@ export class LiveTyper {
       }
       return null;
     }
-    for (let erased = 0; erased < op.diff.erase; erased++) {
+    for (let erased = 0; erased < diff.erase; erased++) {
       if (generation !== this.generation) return null;
       const failure = await this.sender.key('BACKSPACE', []);
       if (failure) return failure;
     }
-    for (const step of textSteps(op.diff.insert)) {
+    for (const step of textSteps(diff.insert)) {
       if (generation !== this.generation) return null;
       const failure =
         step.kind === 'key'

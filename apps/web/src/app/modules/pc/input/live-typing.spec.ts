@@ -14,6 +14,7 @@ import {
   editRequests,
   fieldDiff,
   fieldState,
+  isLongPaste,
   mergeDiff,
   textSteps,
 } from './live-typing';
@@ -843,5 +844,122 @@ describe('LiveTyper: a long text pasted with many lines, to a PC that takes line
       { text: 'a', key: 'ENTER' },
       { text: 'b' },
     ]);
+  });
+});
+
+describe('isLongPaste', () => {
+  it('a long text or one with a line break is a paste; a word or a short phrase is not', () => {
+    expect(isLongPaste('a'.repeat(41))).toBe(true);
+    expect(isLongPaste('um\ndois')).toBe(true);
+    expect(isLongPaste('a'.repeat(40))).toBe(false);
+    expect(isLongPaste('palavra ')).toBe(false);
+    // Em pontos de código: 40 emojis não passam do limite.
+    expect(isLongPaste('😀'.repeat(40))).toBe(false);
+  });
+});
+
+describe('LiveTyper: a long paste goes through the PC clipboard in one go', () => {
+  const TEXT = 'linha um do texto colado\r\nlinha dois, com acento e emoji 😀\tfim';
+  const LOST: PcFailure = { kind: 'timeout', message: 'O PC não respondeu a tempo.' };
+
+  function lab(
+    options: {
+      canPaste?: boolean;
+      clipboard?: PcFailure | null;
+      key?: PcFailure | null;
+      modifiers?: readonly PcModifier[];
+    } = {},
+  ) {
+    const steps: string[] = [];
+    const clipboardTexts: string[] = [];
+    const failures: [PcFailure, string, boolean][] = [];
+    const typer = new LiveTyper(
+      {
+        key: (key, modifiers) => {
+          steps.push(`key:${[...modifiers, key].join('+')}`);
+          return Promise.resolve(key === 'V' ? (options.key ?? null) : null);
+        },
+        text: () => Promise.resolve(null),
+        edit: (edit: PcTextEdit) => {
+          steps.push(`edit:${JSON.stringify(edit)}`);
+          return Promise.resolve(null);
+        },
+        canEdit: () => true,
+        canEditLines: () => true,
+        clipboard: (text) => {
+          clipboardTexts.push(text);
+          steps.push('clipboard');
+          return Promise.resolve(options.clipboard ?? null);
+        },
+        canPaste: () => options.canPaste ?? true,
+        pasteModifiers: () => options.modifiers ?? ['CTRL'],
+      },
+      {
+        failed: (failure, kind, dropped) => failures.push([failure, kind, dropped]),
+        idle: () => undefined,
+      },
+      () => Promise.resolve(),
+    );
+    const flush = async () => {
+      for (let round = 0; round < 100; round++) await Promise.resolve();
+    };
+    return { typer, steps, clipboardTexts, failures, flush };
+  }
+
+  it('writes the whole text to the clipboard and only then sends Ctrl+V', async () => {
+    const { typer, steps, clipboardTexts, failures, flush } = lab();
+    typer.paste({ erase: 0, insert: TEXT });
+    await flush();
+    expect(failures).toEqual([]);
+    expect(clipboardTexts).toEqual([TEXT.replaceAll('\r\n', '\n')]);
+    expect(steps).toEqual(['clipboard', 'key:CTRL+V']);
+  });
+
+  it('on a Mac the paste is Command+V', async () => {
+    const { typer, steps, flush } = lab({ modifiers: ['WIN'] });
+    typer.paste({ erase: 0, insert: TEXT });
+    await flush();
+    expect(steps).toEqual(['clipboard', 'key:WIN+V']);
+  });
+
+  it('what the paste replaces is erased first, and the text typed before goes before it', async () => {
+    const { typer, steps, flush } = lab();
+    typer.edit({ erase: 0, insert: 'oi ' });
+    typer.paste({ erase: 2, insert: TEXT });
+    typer.edit({ erase: 0, insert: '!' });
+    await flush();
+    expect(steps).toEqual([
+      'edit:{"text":"oi "}',
+      'edit:{"erase":2}',
+      'clipboard',
+      'key:CTRL+V',
+      'edit:{"text":"!"}',
+    ]);
+  });
+
+  it('a clipboard that could not be written types the text the usual way', async () => {
+    const { typer, steps, failures, flush } = lab({ clipboard: LOST });
+    typer.paste({ erase: 0, insert: TEXT });
+    await flush();
+    expect(failures).toEqual([]);
+    expect(steps[0]).toBe('clipboard');
+    expect(steps.slice(1).every((step) => step.startsWith('edit:'))).toBe(true);
+    expect(steps).not.toContain('key:CTRL+V');
+  });
+
+  it('without the clipboard on the PC it is typed in batches, as before', async () => {
+    const { typer, steps, clipboardTexts, flush } = lab({ canPaste: false });
+    typer.paste({ erase: 0, insert: TEXT });
+    await flush();
+    expect(clipboardTexts).toEqual([]);
+    expect(steps.every((step) => step.startsWith('edit:'))).toBe(true);
+  });
+
+  it('a paste key that failed is a failed edit and drops what waited behind it', async () => {
+    const { typer, failures, flush } = lab({ key: LOST });
+    typer.paste({ erase: 0, insert: TEXT });
+    typer.edit({ erase: 0, insert: 'x' });
+    await flush();
+    expect(failures).toEqual([[LOST, 'edit', true]]);
   });
 });
