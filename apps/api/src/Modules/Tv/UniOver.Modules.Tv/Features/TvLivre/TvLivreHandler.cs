@@ -80,8 +80,10 @@ internal sealed class TvLivreHandler(
         AgentInfo() is { Connected: true } info && info.Capabilities.Contains(TvCapabilities.LivreV2, StringComparer.Ordinal);
 
     /// <summary>
-    /// Se há como mandar a TV dormir agora: o TV Livre está instalado na TV e o agente está ao alcance. É o que a folha de
-    /// energia do controle consulta (o <c>GET /livre</c> inteiro é só do dono, e quem tem o controle não o lê).
+    /// Se há como mandar a TV dormir agora: o agente da TV está ao alcance com o TV Livre e a TV não foi lida como
+    /// incompatível. Não depende de o launcher já estar na TV: o agente o instala no próprio pedido de dormir (o estado
+    /// guardado pode ser de antes de um PC reinstalado, ou nem existir). É o que a folha de energia do controle consulta
+    /// (o <c>GET /livre</c> inteiro é só do dono, e quem tem o controle não o lê).
     /// </summary>
     public async Task<bool> SleepAvailableAsync(CancellationToken cancellationToken)
     {
@@ -92,7 +94,7 @@ internal sealed class TvLivreHandler(
 
         var tvId = TvId;
         var entry = await db.TvLivre.AsNoTracking().SingleOrDefaultAsync(e => e.TvId == tvId, cancellationToken);
-        return TvLivreView.From(entry, available: true, IsExtended()) is { Supported: not false, Installed: true };
+        return TvLivreView.From(entry, available: true, IsExtended()) is { Supported: not false };
     }
 
     // ---- o que o dono guarda (não fala com a TV) ----
@@ -167,12 +169,13 @@ internal sealed class TvLivreHandler(
             TvLivreAction.SetApps, longTimeout: true, cancellationToken, disable: disable, enable: enable);
 
     /// <summary>
-    /// O Modo Dormir só abre a tela; o estado não muda, então não espera por ele. O tempo até acordar vai no pedido, mas só
-    /// a agente que entende (um anterior recusaria o campo): sem ele o launcher usa o da configuração aplicada.
+    /// O Modo Dormir abre a tela preta; o estado não muda, então não espera por ele. Tem o tempo longo do TV Livre porque,
+    /// sem o launcher na TV, o agente o instala antes de abrir (download e cópia levam segundos). O tempo até acordar vai
+    /// no pedido, mas só a agente que entende (um anterior recusaria o campo): sem ele o launcher usa o da configuração.
     /// </summary>
     public Task<LivreStep> SleepAsync(TvCommandOrigin origin, int? minutes, CancellationToken cancellationToken) =>
         SingleAsync(
-            origin, TvCommandNames.LivreSleep, null, TvLivreAction.Sleep, longTimeout: false, cancellationToken,
+            origin, TvCommandNames.LivreSleep, null, TvLivreAction.Sleep, longTimeout: true, cancellationToken,
             waitForState: false, minutes: IsExtended() ? minutes : null);
 
     /// <summary>
