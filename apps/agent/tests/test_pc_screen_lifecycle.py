@@ -5,9 +5,10 @@ from collections.abc import AsyncIterator
 
 import pytest
 
+from uniover_agent.core.pc.devices import DeviceDecision
 from uniover_agent.core.pc.direct import DirectRefused
 
-from .test_pc_direct import SESSION, Lab, settle
+from .test_pc_direct import SESSION, Lab, _Approvals, settle
 
 _DEVICE = "iphone-da-casa"
 _SCREEN = "sessao-tela"
@@ -33,6 +34,7 @@ class FakeScreen:
 async def measurement() -> AsyncIterator[tuple[Lab, FakeScreen]]:
     screen = FakeScreen()
     lab = Lab(screen_factory=lambda: screen)
+    lab.service._devices = _Approvals(DeviceDecision.APPROVED)  # type: ignore[assignment]
     try:
         yield lab, screen
     finally:
