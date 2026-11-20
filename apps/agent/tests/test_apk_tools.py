@@ -111,6 +111,16 @@ async def test_dump_resources_keeps_the_file_lines_so_it_never_uses_no_values(
     assert runner.calls == [(["aapt2-falso", "dump", "resources", str(apk)], 12.0)]
 
 
+async def test_dump_xmltree_names_the_compiled_xml_as_an_argument(tmp_path: Path) -> None:
+    runner = Runner(AdbOutput(0, "N: android=http://schemas.android.com/apk/res/android\n"))
+    inspector = Aapt2Inspector(Path("aapt2-falso"), timeout=12.0, runner=runner)
+    apk = tmp_path / "app.apk"
+    assert "android" in await inspector.dump_xmltree(apk, "res/BW.xml")
+    assert runner.calls == [
+        (["aapt2-falso", "dump", "xmltree", "--file", "res/BW.xml", str(apk)], 12.0)
+    ]
+
+
 @pytest.mark.parametrize("what", ["dump_badging", "dump_resources"])
 @pytest.mark.parametrize(
     "reply",
@@ -181,14 +191,14 @@ def test_cache_round_trip_for_png_and_webp(tmp_path: Path) -> None:
     assert cache.load("com.a.b", 3) == CachedIcon(AppIcon("image/png", png_bytes()))
     cache.store("com.c.d", 1, AppIcon("image/webp", webp_bytes()))
     assert cache.load("com.c.d", 1) == CachedIcon(AppIcon("image/webp", webp_bytes()))
-    assert (tmp_path / "icons" / "com.a.b-3.r2.png").is_file()
+    assert (tmp_path / "icons" / "com.a.b-3.r3.png").is_file()
 
 
 def test_the_no_icon_marker_is_remembered(tmp_path: Path) -> None:
     cache = FileIconCache(tmp_path)
     cache.store("com.a.b", 3, None)
     assert cache.load("com.a.b", 3) == CachedIcon(None)
-    assert (tmp_path / "com.a.b-3.r2.none").is_file()
+    assert (tmp_path / "com.a.b-3.r3.none").is_file()
 
 
 def test_a_new_version_deletes_the_old_files_of_that_package_only(tmp_path: Path) -> None:
@@ -197,8 +207,8 @@ def test_a_new_version_deletes_the_old_files_of_that_package_only(tmp_path: Path
     cache.store("com.a.b2", 1, AppIcon("image/png", png_bytes()))
     cache.store("com.a.b", 2, AppIcon("image/webp", webp_bytes()))
     assert sorted(path.name for path in tmp_path.iterdir()) == [
-        "com.a.b-2.r2.webp",
-        "com.a.b2-1.r2.png",
+        "com.a.b-2.r3.webp",
+        "com.a.b2-1.r3.png",
     ]
     assert cache.load("com.a.b", 1) is None
 
@@ -207,7 +217,7 @@ def test_same_version_with_another_type_replaces_the_entry(tmp_path: Path) -> No
     cache = FileIconCache(tmp_path)
     cache.store("com.a.b", 1, AppIcon("image/png", png_bytes()))
     cache.store("com.a.b", 1, None)
-    assert [path.name for path in tmp_path.iterdir()] == ["com.a.b-1.r2.none"]
+    assert [path.name for path in tmp_path.iterdir()] == ["com.a.b-1.r3.none"]
 
 
 def test_entries_written_by_an_older_selection_rule_are_ignored_and_then_replaced(
@@ -223,8 +233,8 @@ def test_entries_written_by_an_older_selection_rule_are_ignored_and_then_replace
     cache.store("com.cnvs.apptv", 50, AppIcon("image/webp", webp_bytes(192)))
     cache.store("com.a.b", 7, None)
     assert sorted(path.name for path in tmp_path.iterdir()) == [
-        "com.a.b-7.r2.none",
-        "com.cnvs.apptv-50.r2.webp",
+        "com.a.b-7.r3.none",
+        "com.cnvs.apptv-50.r3.webp",
     ]
 
 
@@ -257,7 +267,7 @@ def test_a_cache_folder_that_cannot_be_written_only_logs(
 def test_an_unreadable_cache_file_is_treated_as_missing(tmp_path: Path) -> None:
     cache = FileIconCache(tmp_path)
     cache.store("com.a.b", 1, AppIcon("image/png", png_bytes()))
-    target = tmp_path / "com.a.b-1.r2.png"
+    target = tmp_path / "com.a.b-1.r3.png"
     target.chmod(0)
     try:
         if os.access(target, os.R_OK):

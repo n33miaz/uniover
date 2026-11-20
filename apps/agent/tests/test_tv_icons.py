@@ -41,7 +41,11 @@ from .support_icons import (
     BADGING_DENSITIES,
     BADGING_SPOTIFY,
     RESOURCES_CINEVS,
+    RESOURCES_CINEVS_NO_LEGACY,
     RESOURCES_SPOTIFY,
+    RESOURCES_VECTOR_ONLY,
+    XMLTREE_CINEVS,
+    XMLTREE_VECTOR_ONLY,
     FakeApkSource,
     FakeInspector,
     FolderScratch,
@@ -171,9 +175,49 @@ async def test_the_banner_is_never_published_as_an_icon(
     assert "res/Ec.png" not in rig.inspector.read
     assert rig.inspector.read == []
     assert rig.cache.entries == {(CINEVS, 50): None}
-    assert f"{CINEVS} ficou sem ícone: ícone adaptativo (XML) sem imagem PNG/WebP de reserva" in (
-        caplog.text
-    )
+    assert (
+        f"{CINEVS} ficou sem ícone: ícone adaptativo (XML) sem imagem PNG/WebP de reserva"
+        " nem camada da frente em PNG/WebP"
+    ) in caplog.text
+    assert rig.scratch.leftovers() == []
+
+
+async def test_the_legacy_image_wins_and_the_foreground_layer_is_not_even_looked_up(
+    rig: Rig,
+) -> None:
+    rig.inspector.xmltrees[(b"apk-cinevs", "res/BW.xml")] = XMLTREE_CINEVS
+    assert await rig.resolver.resolve(CINEVS, 50) == AppIcon("image/webp", CINEVS_ICON)
+    assert "res/5c.webp" not in rig.inspector.read
+
+
+async def test_without_a_legacy_image_the_foreground_layer_of_the_adaptive_icon_is_used(
+    rig: Rig,
+) -> None:
+    rig.inspector.resources = {b"apk-cinevs": RESOURCES_CINEVS_NO_LEGACY}
+    rig.inspector.xmltrees[(b"apk-cinevs", "res/BW.xml")] = XMLTREE_CINEVS
+    icon = await rig.resolver.resolve(CINEVS, 50)
+    # A camada da frente (a do XML, nunca a de fundo), da maior densidade que existe no APK.
+    assert icon == AppIcon("image/webp", webp_bytes(190))
+    assert "res/bg.webp" not in rig.inspector.read
+    assert rig.cache.entries == {(CINEVS, 50): icon}
+    assert rig.scratch.leftovers() == []
+
+
+async def test_a_vector_only_adaptive_icon_ends_without_an_icon_and_says_why(
+    rig: Rig, caplog: pytest.LogCaptureFixture
+) -> None:
+    rig.inspector.resources = {b"apk-cinevs": RESOURCES_VECTOR_ONLY}
+    rig.inspector.xmltrees[(b"apk-cinevs", "res/BW.xml")] = XMLTREE_VECTOR_ONLY
+    with caplog.at_level(logging.INFO):
+        assert await rig.resolver.resolve(CINEVS, 50) is None
+    assert "nem camada da frente em PNG/WebP" in caplog.text
+    assert rig.cache.entries == {(CINEVS, 50): None}
+
+
+async def test_an_unreadable_adaptive_xml_only_skips_the_foreground_layer(rig: Rig) -> None:
+    rig.inspector.resources = {b"apk-cinevs": RESOURCES_CINEVS_NO_LEGACY}
+    rig.inspector.xmltree_error = IconToolError("o aapt2 não conseguiu ler o APK")
+    assert await rig.resolver.resolve(CINEVS, 50) is None
     assert rig.scratch.leftovers() == []
 
 

@@ -81,12 +81,13 @@ class Aapt2Inspector:
 
     def __init__(
         self,
-        aapt_path: Path,
+        aapt_path: Path | Callable[[], Path | None],
         *,
         timeout: float = DEFAULT_AAPT_TIMEOUT_SECONDS,
         runner: Runner | None = None,
     ) -> None:
-        self._aapt = str(aapt_path)
+        # Caminho fixo ou procurado a cada uso (o `aapt2` pode aparecer depois da partida).
+        self._aapt_source = aapt_path
         self._timeout = timeout
         self._run: Runner = runner or run_process
 
@@ -97,9 +98,17 @@ class Aapt2Inspector:
         # Sem `--no-values`: ele tira justamente as linhas `(file)` de onde sai o ícone legado.
         return await self._dump("resources", apk)
 
-    async def _dump(self, what: str, apk: Path) -> str:
+    async def dump_xmltree(self, apk: Path, member: str) -> str:
+        # O nome do arquivo vem do `badging` do próprio APK: vai como argumento, nunca por shell.
+        return await self._dump("xmltree", apk, "--file", member)
+
+    async def _dump(self, what: str, apk: Path, *options: str) -> str:
+        source = self._aapt_source
+        aapt = source() if callable(source) else source
+        if aapt is None:
+            raise IconToolError("o aapt2 ainda não está disponível neste PC")
         try:
-            output = await self._run([self._aapt, "dump", what, str(apk)], self._timeout)
+            output = await self._run([str(aapt), "dump", what, *options, str(apk)], self._timeout)
         except TimeoutError:
             raise IconToolError("o aapt2 demorou demais") from None
         except OSError as exc:
@@ -140,7 +149,7 @@ _NONE_SUFFIX: Final = ".none"
 # Versão da regra que escolhe o ícone, gravada no nome do arquivo. Quem muda a regra sobe este
 # número: o que foi guardado pela regra antiga (um banner, ou um "sem ícone" que a regra nova
 # talvez resolva) deixa de ser lido e é apagado quando o app for resolvido de novo.
-_SELECTION_RULE: Final = 2
+_SELECTION_RULE: Final = 3
 
 
 class FileIconCache:

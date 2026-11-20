@@ -74,6 +74,13 @@ class ApkInspector(Protocol):
         """
         ...
 
+    async def dump_xmltree(self, apk: Path, member: str) -> str:
+        """Saída de `aapt2 dump xmltree --file <member>`: a árvore de um XML compilado do APK.
+
+        Serve para achar a camada da frente de um ícone adaptativo. Levanta `IconToolError`.
+        """
+        ...
+
     async def read_member(self, apk: Path, name: str, max_bytes: int) -> bytes | None:
         """Bytes do arquivo `name` do APK, ou `None` se não existe ou passa de `max_bytes`.
 
