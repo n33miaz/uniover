@@ -16,6 +16,8 @@ coverage/
 coverage.xml
 playwright-report/
 test-results/
+test-results-*/
+.npm-cache/
 
 # Python
 __pycache__/
@@ -23,6 +25,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+.pytest-*/
+.tmp/
 *.egg-info/
 
 # Ambiente
