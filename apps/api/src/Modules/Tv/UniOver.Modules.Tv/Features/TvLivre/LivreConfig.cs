@@ -22,7 +22,7 @@ internal sealed record LivreConfig(
         new LivreWallpaper("gradient", ["#1B2440", "#3A2D5C"], 315, 0.25),
         new LivreApps("all", [], [], false),
         new LivreIcons("medium", "always"),
-        new LivreBuiltin(true, false, true, true, true),
+        new LivreBuiltin(true, true, true, true, true),
         new LivreSleep(0));
 }
 
@@ -56,7 +56,7 @@ internal sealed record LivreIcons(string Size = "medium", string Labels = "alway
 /// <param name="Brand">O nome do sistema, pequeno, num canto da tela.</param>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record LivreBuiltin(
-    bool Settings = true, bool Sleep = false, bool Network = true, bool Inputs = true, bool Brand = true);
+    bool Settings = true, bool Sleep = true, bool Network = true, bool Inputs = true, bool Brand = true);
 
 /// <param name="MaxMinutes">Sai do Modo Dormir sozinho depois deste tempo (0 a 720); 0 só acorda com tecla.</param>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

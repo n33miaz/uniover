@@ -193,6 +193,57 @@ h2 {
   font-weight: 600;
 }
 
+/*
+ * Modo Dormir: o primeiro botão da folha, largo, com a lua na cor da paleta e uma linha que explica. Fica no topo para ser
+ * achado sem rolar; não é destrutivo, então não usa o vermelho.
+ */
+.sleep {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 10px 14px;
+  border: 1px solid var(--a-accent);
+  border-radius: var(--radius);
+  background: var(--a-accent-soft);
+  color: var(--a-ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.sleep:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.sleep:focus-visible {
+  outline: 2px solid var(--a-accent);
+  outline-offset: 2px;
+}
+.moon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  color: var(--a-accent);
+}
+.sleep-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sleep-title {
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+.sleep-hint {
+  color: var(--a-ink2);
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+
 .secondary {
   border: 1px solid var(--a-line);
   background: var(--a-surface);

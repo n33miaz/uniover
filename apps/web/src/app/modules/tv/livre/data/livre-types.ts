@@ -93,7 +93,7 @@ export const DEFAULT_LIVRE_CONFIG: LivreConfig = {
   wallpaper: { type: 'gradient', colors: ['#1b2440', '#3a2d5c'], angle: 315, dim: 0.25 },
   apps: { mode: 'all', items: [], hidden: [], showFactory: false },
   icons: { size: 'medium', labels: 'always' },
-  builtin: { settings: true, sleep: false, network: true, inputs: true, brand: true },
+  builtin: { settings: true, sleep: true, network: true, inputs: true, brand: true },
   sleep: { maxMinutes: 0 },
 };
 

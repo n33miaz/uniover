@@ -13,6 +13,32 @@
   @if (store.multiple() && store.selectedTv(); as tv) {
     <p class="target" i18n="@@tv.power.target">Para: {{ tv.name }}</p>
   }
+  @if (showSleep()) {
+    <!--
+      O Modo Dormir vem primeiro, logo abaixo do título: é o que mais se usa à noite e não desliga nada (a tela fica preta,
+      o som e o controle continuam). Aparece já ao abrir, esmaecido enquanto o app confere se o TV Livre está na TV.
+    -->
+    <button
+      type="button"
+      class="sleep"
+      [disabled]="busy() || sleepAvailable() !== true || !store.canSend()"
+      [attr.aria-busy]="sleepAvailable() === null ? 'true' : null"
+      aria-labelledby="power-sleep-title"
+      aria-describedby="power-sleep-hint"
+      (click)="blackOut()"
+    >
+      <app-tv-icon class="moon" name="sleep" />
+      <span class="sleep-text">
+        <span id="power-sleep-title" class="sleep-title" i18n="@@tv.power.black-out"
+          >Modo Dormir</span
+        >
+        <span id="power-sleep-hint" class="sleep-hint" i18n="@@tv.power.black-out-hint"
+          >Tela preta e TV ligada; qualquer botão acorda.</span
+        >
+      </span>
+    </button>
+  }
+
   @if (canPower()) {
     <p id="power-text" class="text" i18n="@@tv.power.text">
       Sem o emissor infravermelho, a TV só volta com o controle original.
@@ -32,22 +58,6 @@
 
   @if (error(); as text) {
     <p class="error" role="alert">{{ text }}</p>
-  }
-
-  @if (sleepAvailable()) {
-    <!-- A alternativa que não desliga: a tela fica preta, o som e o controle continuam. Acima de Desligar, dois toques. -->
-    <button
-      type="button"
-      class="secondary sleep"
-      [disabled]="busy() || !store.canSend()"
-      (click)="blackOut()"
-      i18n="@@tv.power.black-out"
-    >
-      Apagar a Tela
-    </button>
-    <p class="text" i18n="@@tv.power.black-out-hint">
-      Deixa a tela preta e a TV ligada; qualquer botão do controle acorda.
-    </p>
   }
 
   @if (canPower()) {

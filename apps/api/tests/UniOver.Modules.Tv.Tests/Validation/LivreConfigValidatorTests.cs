@@ -217,7 +217,7 @@ public class LivreConfigValidatorTests
             + "\"wallpaper\":{\"type\":\"gradient\",\"colors\":[\"#1B2440\",\"#3A2D5C\"],\"angle\":315,\"dim\":0.25},"
             + "\"apps\":{\"mode\":\"all\",\"items\":[],\"hidden\":[],\"showFactory\":false},"
             + "\"icons\":{\"size\":\"medium\",\"labels\":\"always\"},"
-            + "\"builtin\":{\"settings\":true,\"sleep\":false},"
+            + "\"builtin\":{\"settings\":true,\"sleep\":true},"
             + "\"sleep\":{\"maxMinutes\":0}}");
     }
 
@@ -249,7 +249,7 @@ public class LivreConfigValidatorTests
     [Fact]
     public void TheNewBuiltinFlags_AreOnByDefault_AndAnOldStoredConfigGetsThem()
     {
-        LivreConfig.Default.Builtin.Should().Be(new LivreBuiltin(true, false, true, true, true));
+        LivreConfig.Default.Builtin.Should().Be(new LivreBuiltin(true, true, true, true, true));
         // Uma configuração guardada antes dos três campos (a que o launcher antigo lê) volta com eles ligados.
         var stored = LivreConfigValidator.ToLauncherJson(Valid with { Builtin = new LivreBuiltin(true, true) });
         stored.Should().NotContain("network");

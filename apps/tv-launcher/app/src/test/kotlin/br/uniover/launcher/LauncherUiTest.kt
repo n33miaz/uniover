@@ -110,11 +110,12 @@ class LauncherUiTest {
     // ---------------------------------------------------------------- home: apps
 
     @Test
-    fun `without a config the home shows non factory apps alphabetically plus the settings tile`() {
+    fun `without a config the home shows non factory apps alphabetically plus the sleep and settings tiles`() {
         val activity = home().get()
         // YouTube é de sistema mas foi atualizado, então conta como app comum; Loja TCL e Config TV são de fábrica.
+        // Dormir vem ligado por padrão: sem configuração nenhuma o círculo já está na fileira.
         assertEquals(
-            listOf("com.netflix.ninja", "com.spotify.tv.android", "com.google.android.youtube.tv", "builtin:settings"),
+            listOf("com.netflix.ninja", "com.spotify.tv.android", "com.google.android.youtube.tv", "builtin:sleep", "builtin:settings"),
             tilesOf(activity).map { it.tileId },
         )
     }
@@ -125,7 +126,7 @@ class LauncherUiTest {
             "items": ["com.spotify.tv.android", "com.netflix.ninja", "com.not.installed"] } }""")
         val activity = home().get()
         assertEquals(
-            listOf("com.spotify.tv.android", "com.netflix.ninja", "builtin:settings"),
+            listOf("com.spotify.tv.android", "com.netflix.ninja", "builtin:sleep", "builtin:settings"),
             tilesOf(activity).map { it.tileId },
         )
     }
@@ -139,6 +140,12 @@ class LauncherUiTest {
             listOf("com.spotify.tv.android", "com.google.android.youtube.tv", "builtin:sleep"),
             tilesOf(activity).map { it.tileId },
         )
+    }
+
+    @Test
+    fun `the config can turn the sleep tile off`() {
+        writeConfig("""{ "schema": 1, "revision": 1, "builtin": { "sleep": false } }""")
+        assertTrue(tilesOf(home().get()).none { it.tileId == "builtin:sleep" })
     }
 
     @Test
@@ -266,7 +273,8 @@ class LauncherUiTest {
     @Test
     fun `a corrupt config never takes the home down`() {
         writeConfig("""{ "schema": 1, "revision": 1, "clock": {""")
-        assertEquals(4, tilesOf(home().get()).size)
+        // Três apps, Dormir e Configurações: o padrão de sempre.
+        assertEquals(5, tilesOf(home().get()).size)
     }
 
     // ---------------------------------------------------------------- dormir

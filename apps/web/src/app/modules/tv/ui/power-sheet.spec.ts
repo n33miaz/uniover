@@ -477,16 +477,20 @@ describe('PowerSheet leaving smoothly', () => {
   });
 });
 
-describe('PowerSheet, Apagar a Tela', () => {
+describe('PowerSheet, Modo Dormir', () => {
   let store: FakeTvStore;
   let livre: { sleepAvailable: ReturnType<typeof vi.fn>; sleep: ReturnType<typeof vi.fn> };
   let fixture: ReturnType<typeof TestBed.createComponent<PowerSheet>>;
   let root: HTMLElement;
   let closed: ReturnType<typeof vi.fn<() => void>>;
 
-  const blackOut = () =>
-    [...root.querySelectorAll<HTMLButtonElement>('button')].find(
-      (b) => b.textContent?.trim() === 'Apagar a Tela',
+  const blackOut = () => root.querySelector<HTMLButtonElement>('button.sleep') ?? undefined;
+  /** O nome de cada botão como o leitor de tela ouve: o do Modo Dormir vem só do título dele. */
+  const names = () =>
+    [...root.querySelectorAll<HTMLButtonElement>('button')].map((b) =>
+      b.classList.contains('sleep')
+        ? b.querySelector('.sleep-title')?.textContent?.trim()
+        : b.textContent?.trim(),
     );
 
   async function open(available: boolean) {
@@ -510,12 +514,43 @@ describe('PowerSheet, Apagar a Tela', () => {
     root = fixture.nativeElement;
   }
 
-  it('offers the button above Desligar only when the TV Livre is within reach', async () => {
+  it('puts Modo Dormir first, before the text and Desligar, when the TV Livre is within reach', async () => {
     await open(true);
-    const labels = [...root.querySelectorAll('button')].map((b) => b.textContent?.trim());
-    expect(labels.indexOf('Apagar a Tela')).toBeGreaterThanOrEqual(0);
-    expect(labels.indexOf('Apagar a Tela')).toBeLessThan(labels.indexOf('Desligar'));
-    expect(root.textContent).toContain('qualquer botão do controle acorda');
+    const labels = names();
+    expect(labels[0]).toBe('Modo Dormir');
+    expect(labels.indexOf('Modo Dormir')).toBeLessThan(labels.indexOf('Desligar'));
+    const sleep = blackOut()!;
+    expect(sleep.disabled).toBe(false);
+    expect(sleep.getAttribute('aria-labelledby')).toBe('power-sleep-title');
+    expect(sleep.compareDocumentPosition(root.querySelector('#power-text')!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(root.textContent).toContain('qualquer botão acorda');
+  });
+
+  it('shows the button right away, dimmed, while it asks whether the TV Livre is there', async () => {
+    store = createFakeTvStore();
+    let answer: (value: boolean) => void = () => undefined;
+    livre = {
+      sleepAvailable: vi.fn().mockReturnValue(new Promise<boolean>((done) => (answer = done))),
+      sleep: vi.fn().mockResolvedValue(undefined),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: TvStore, useValue: store },
+        { provide: TvLivreApi, useValue: livre },
+      ],
+    });
+    fixture = TestBed.createComponent(PowerSheet);
+    fixture.detectChanges();
+    root = fixture.nativeElement;
+    expect(blackOut()?.disabled).toBe(true);
+    expect(blackOut()?.getAttribute('aria-busy')).toBe('true');
+    answer(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(blackOut()?.disabled).toBe(false);
+    expect(blackOut()?.hasAttribute('aria-busy')).toBe(false);
   });
 
   it('hides it without the TV Livre, and when asking fails', async () => {
@@ -534,14 +569,10 @@ describe('PowerSheet, Apagar a Tela', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-    expect(
-      [...fixture.nativeElement.querySelectorAll('button')].some(
-        (b: HTMLButtonElement) => b.textContent?.trim() === 'Apagar a Tela',
-      ),
-    ).toBe(false);
+    expect(fixture.nativeElement.querySelector('button.sleep')).toBeNull();
   });
 
-  it('shows only Apagar a Tela, with no shutdown and no schedule, to someone who controls the TV but cannot power it off', async () => {
+  it('shows only Modo Dormir, with no shutdown and no schedule, to someone who controls the TV but cannot power it off', async () => {
     store = createFakeTvStore();
     livre = { sleepAvailable: vi.fn().mockResolvedValue(true), sleep: vi.fn() };
     TestBed.configureTestingModule({
@@ -558,8 +589,7 @@ describe('PowerSheet, Apagar a Tela', () => {
     root = fixture.nativeElement;
 
     expect(root.querySelector('h2')?.textContent).toBe('Apagar a Tela?');
-    const labels = [...root.querySelectorAll('button')].map((b) => b.textContent?.trim());
-    expect(labels).toEqual(['Apagar a Tela', 'Cancelar']);
+    expect(names()).toEqual(['Modo Dormir', 'Cancelar']);
     expect(root.textContent).not.toContain('emissor infravermelho');
     expect(root.querySelector('.schedule')).toBeNull();
   });
