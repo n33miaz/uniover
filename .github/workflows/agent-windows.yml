@@ -56,7 +56,7 @@ jobs:
       # enxergariam. Os mutex do supervisor e do lançador levam a pasta da instalação, que é a temporária de cada teste.
       - name: Suíte inteira do agente com testes obrigatórios do Windows
         run: |
-          uv run pytest -rs -p no:cacheprovider -n 4 --dist loadfile --durations=30 --junitxml=windows-tests.xml -o xfail_strict=true 2>&1 | Tee-Object -Variable lines
+          uv run pytest -rs -p no:cacheprovider -n 4 --dist loadfile --durations=30 --junitxml=windows-tests.xml
           $code = $LASTEXITCODE
           if ($code -ne 0) { throw "a suíte do agente falhou (código $code)" }
           # No Windows eles têm de rodar: pular aqui seria o mesmo que não ter o job. Os outros pulos da suíte (permissão
@@ -70,12 +70,40 @@ jobs:
             'test_scheduled_task'
             'test_update_path'
           )
-          $windowsOnly = $requiredModules -join '|'
-          $skipped = $lines | Where-Object { "$_" -match "^SKIPPED \[\d+\] tests[/\x5C]($windowsOnly)\.py" -or "$_" -match '^SKIPPED .*precisa do Windows' }
-          if ($skipped) { throw ("testes que só rodam no Windows foram pulados:`n" + ($skipped -join "`n")) }
+          $schedulerTests = @(
+            'test_the_real_launcher_swap_works_in_task_scheduler_and_rolls_back_on_failure'
+            'test_task_rename_keeps_the_old_task_until_the_new_one_is_verified'
+          )
+          $reportText = Get-Content -LiteralPath windows-tests.xml -Raw
+          if ([string]::IsNullOrWhiteSpace($reportText)) { throw 'XML JUnit sem testes aprovados' }
+          [xml]$report = $reportText
+          $passed = $report.SelectNodes('//testcase[not(skipped or failure or error)]')
+          if ($passed.Count -eq 0) { throw 'XML JUnit sem testes aprovados' }
+
+          $skipped = foreach ($test in $report.SelectNodes('//testcase[skipped]')) {
+            $class = $test.GetAttribute('classname')
+            $module = $class -creplace '^tests\.([^.]+)(\..*)?$', '$1'
+            $name = $test.GetAttribute('name')
+            if ($module -ceq 'test_update_path') {
+              if (($name -creplace '\[.*$', '') -cnotin $schedulerTests) { continue }
+            } elseif ($module -cnotin $requiredModules -and
+                      $test.SelectSingleNode('skipped').GetAttribute('message') -cnotmatch '^precisa do Windows') {
+              continue
+            }
+            "$class.$name"
+          }
+          if ($skipped) {
+            throw ("testes obrigatórios do Windows foram pulados:" + [Environment]::NewLine + ($skipped -join [Environment]::NewLine))
+          }
+
           # O relatório único do xdist precisa registrar pelo menos um teste aprovado de cada módulo.
-          [xml]$report = Get-Content -LiteralPath windows-tests.xml -Raw
-          $passedModules = $report.SelectNodes('//testcase[not(skipped or failure or error)]') |
+          $passedModules = $passed |
             ForEach-Object { $_.GetAttribute('classname') -creplace '^(tests\.[^.]+)\..*', '$1' }
           $missing = $requiredModules | Where-Object { "tests.$_" -cnotin $passedModules }
           if ($missing) { throw ("módulos obrigatórios sem testes aprovados: " + ($missing -join ', ')) }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: windows-tests
+          path: apps/agent/windows-tests.xml
+          if-no-files-found: ignore
