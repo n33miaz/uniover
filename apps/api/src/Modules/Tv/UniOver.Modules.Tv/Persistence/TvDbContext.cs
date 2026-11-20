@@ -26,8 +26,6 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
 
     public DbSet<TvMemberOptOut> TvMemberOptOuts => Set<TvMemberOptOut>();
 
-    public DbSet<TvDefaultFollower> TvDefaultFollowers => Set<TvDefaultFollower>();
-
     public DbSet<TvLayout> TvLayouts => Set<TvLayout>();
 
     public DbSet<PowerSchedule> PowerSchedules => Set<PowerSchedule>();
@@ -144,14 +142,6 @@ public sealed class TvDbContext(DbContextOptions<TvDbContext> options) : ModuleD
         modelBuilder.Entity<TvMemberOptOut>(e =>
         {
             e.ToTable("tv_member_optouts");
-            // Uma linha por conta; o usuário é do Identity, portanto só o UUID, sem FK entre schemas.
-            e.HasKey(x => x.UserId);
-            e.Property(x => x.UserId).ValueGeneratedNever();
-        });
-
-        modelBuilder.Entity<TvDefaultFollower>(e =>
-        {
-            e.ToTable("default_tv_followers");
             // Uma linha por conta; o usuário é do Identity, portanto só o UUID, sem FK entre schemas.
             e.HasKey(x => x.UserId);
             e.Property(x => x.UserId).ValueGeneratedNever();

@@ -54,9 +54,8 @@ internal enum MemberScope
 /// Quem tem filiação vê as TVs das quais é membro. Quem já teve e foi retirado (marca <see cref="TvMemberOptOut"/>) não vê TV
 /// nenhuma: perder a última TV não pode entregar a TV do dono. Quem NUNCA teve filiação só segue a TV padrão se a conta é de
 /// antes dos convites por módulo (marca do Identity, gravada uma única vez pela migration) ou se ganhou o módulo da TV depois
-/// disso (a concessão vigente de <c>module:tv</c> no Identity, que o aviso da outbox também grava aqui como
-/// <see cref="TvDefaultFollower"/>). Sem nenhuma das duas, nada. O
-/// administrador vê todas.
+/// disso (a concessão vigente de <c>module:tv</c>, lida no Identity a cada pedido: nenhuma cópia dela é lida aqui, então
+/// retirar o módulo tira a TV na hora). Sem nenhuma das duas, nada. O administrador vê todas.
 /// </summary>
 internal sealed class TvSelectionService(TvDbContext db, ITvAgentResolver defaultAgent, IAccountRoleDirectory accounts)
 {
@@ -139,26 +138,22 @@ internal sealed class TvSelectionService(TvDbContext db, ITvAgentResolver defaul
         db.Tvs.SingleOrDefaultAsync(t => t.AgentSlug == agentSlug, cancellationToken);
 
     /// <summary>
-    /// Ver <see cref="Decide"/>. Filiação, retirada e a marca de quem segue a TV padrão vão numa só consulta para virem do
-    /// mesmo instante: separadas, uma conta que entra ou sai de uma TV bem no meio poderia aparecer, por um instante, como
-    /// "nunca teve filiação". A marca de conta antiga (do Identity) só é lida quando falta o resto, e pode vir numa leitura à
-    /// parte: ela nunca muda depois de gravada.
+    /// Ver <see cref="Decide"/>. Filiação e retirada vão numa só consulta para virem do mesmo instante: separadas, uma conta
+    /// que entra ou sai de uma TV bem no meio poderia aparecer, por um instante, como "nunca teve filiação". A conta antiga e
+    /// a concessão do módulo da TV (ambas do Identity) só são lidas quando falta o resto, numa leitura à parte.
     /// </summary>
     private async Task<MemberScope> ScopeOfMemberAsync(Guid userId, CancellationToken cancellationToken)
     {
         var evidence = await db.TvMembers.AsNoTracking().Where(m => m.UserId == userId).Select(m => 1)
             .Concat(db.TvMemberOptOuts.AsNoTracking().Where(o => o.UserId == userId).Select(o => 2))
-            .Concat(db.TvDefaultFollowers.AsNoTracking().Where(f => f.UserId == userId).Select(f => 3))
             .Distinct()
             .ToListAsync(cancellationToken);
         var hasMembership = evidence.Contains(1);
         var hasOptOut = evidence.Contains(2);
-        // Sem a marca, vale a concessão VIGENTE do módulo da TV, lida no Identity: o aviso da outbox pode ainda não ter chegado
-        // (a primeira requisição logo depois do aceite) ou ter ido para dead letter, e nenhum dos dois pode tirar a TV de quem a
-        // recebeu. A marca só poupa essa leitura.
+        // Vale a concessão VIGENTE do módulo da TV, lida no Identity: é a única fonte, então a primeira requisição logo depois
+        // do aceite já vê a TV e a retirada do módulo a tira sem esperar aviso nenhum.
         var followsDefault = !hasMembership && !hasOptOut
-            && (evidence.Contains(3)
-                || await accounts.PredatesInvitesOrHoldsModuleAsync(userId, AccessPermissions.TvModule, cancellationToken));
+            && await accounts.PredatesInvitesOrHoldsModuleAsync(userId, AccessPermissions.TvModule, cancellationToken);
         return Decide(hasMembership, hasOptOut, followsDefault);
     }
 

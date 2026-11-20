@@ -574,22 +574,6 @@ namespace UniOver.Modules.Tv.Persistence.Migrations
                     b.ToTable("siri_tokens", "tv");
                 });
 
-            modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvDefaultFollower", b =>
-                {
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("user_id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.HasKey("UserId")
-                        .HasName("pk_default_tv_followers");
-
-                    b.ToTable("default_tv_followers", "tv");
-                });
-
             modelBuilder.Entity("UniOver.Modules.Tv.Domain.TvLayout", b =>
                 {
                     b.Property<Guid>("TvId")
