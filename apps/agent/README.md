@@ -10,6 +10,7 @@ uv sync
 uv run uniover-agent pair      # pareia este PC com um código curto
 uv run uniover-agent run       # conecta e roda em primeiro plano (é o padrão)
 uv run uniover-agent status    # diz se há token no cofre e se a API responde
+uv run uniover-agent restart   # pede ao supervisor que reinicie o agente (a bandeja continua; nunca mate processos à mão)
 uv run uniover-agent tv-pair --host <ip-da-tv>   # pareia uma Android TV (código mostrado na tela)
 uv run uniover-agent tv-pair --kind samsung --host <ip-da-tv>   # pareia uma Samsung (aviso na TV)
 uv run uniover-agent tv-find   # acha a TV na rede e grava tipo, endereço e identificador no agent.toml
@@ -67,14 +68,15 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_TV_HIBERNATE_SECONDS` | segundos sem comando até a sessão com a TV hibernar (padrão `300`) |
 | `UNIOVER_TV_POWER_OFF_READ_TIMEOUT_SECONDS` | quanto o desligar com leitura espera a TV informar se está ligada, antes de apertar `POWER` (padrão `2`) |
 | `UNIOVER_TV_POWER_OFF_CONFIRMATION_TIMEOUT_SECONDS` | quanto espera a confirmação depois da tecla (padrão `5`); sem ela o resultado é `uncertain` e a tecla não é repetida |
-| `UNIOVER_ADB_PATH` | caminho do `adb` (padrão: procura no `PATH` e em `%LOCALAPPDATA%\Android\Sdk\platform-tools`); habilita lista de apps, abrir app por pacote e digitação pelo ADB |
+| `UNIOVER_ADB_PATH` | caminho do `adb` (padrão: procura no `PATH`, em `<instalação>\tools\platform-tools`, no Android SDK e no pacote do winget; sem nenhum, o agente o baixa sozinho, ver "Ferramentas do Android"); habilita lista de apps, abrir app por pacote e digitação pelo ADB |
 | `UNIOVER_TV_WATCHDOG` | `0` desliga o vigia do serviço do controle (padrão: ligado; só age com o `adb` neste PC; ver "Vigia do serviço do controle") |
 | `UNIOVER_TV_ADB_PORT` | porta do ADB da TV (padrão `5555`) |
 | `UNIOVER_ADB_TIMEOUT_SECONDS` | tempo máximo de cada comando `adb` (padrão `5`) |
 | `UNIOVER_ADB_PULL_TIMEOUT_SECONDS` | tempo máximo para copiar o APK de um app da TV (padrão `120`) |
 | `UNIOVER_TV_TEXT_BY_KEYS` | `1` digita o acréscimo (só letras minúsculas, dígitos, espaço e `. , - /`) pelas **teclas do controle remoto**, sem o processo `adb` de cada trecho (padrão: desligado; ver "Texto" abaixo) |
 | `UNIOVER_TV_TEXT_KEY_PAUSE_MS` | pausa, em milissegundos, entre as teclas da digitação por teclas (padrão `0`; aumente se a TV perder letras) |
-| `UNIOVER_AAPT_PATH` | caminho do `aapt2` (padrão: o mais novo em `%LOCALAPPDATA%\Android\Sdk\build-tools`, ou em `ANDROID_HOME`); sem ele a lista de apps segue sem ícones |
+| `UNIOVER_AAPT_PATH` | caminho do `aapt2` (padrão: o mais novo em `%LOCALAPPDATA%\Android\Sdk\build-tools`, ou em `ANDROID_HOME`, senão `<instalação>\tools\aapt2`; sem nenhum, o agente o baixa sozinho); sem ele a lista de apps segue sem ícones |
+| `UNIOVER_ANDROID_TOOLS_DOWNLOAD` | `0` desliga o download automático do `adb` e do `aapt2` (padrão ligado; a procura no disco continua; ver "Ferramentas do Android") |
 | `UNIOVER_ICONS_DIR` | pasta do cache de ícones (padrão `%LOCALAPPDATA%\UniOver\icons`; um arquivo por pacote e versão do app, e o nome leva a versão da regra de escolha do ícone: ao mudar a regra, o que a antiga guardou é ignorado e refeito) |
 | `UNIOVER_UPDATE_CHANNEL` | `main` e `develop` são valores legados de produção e seguem `production_ref` publicado em `tools/update-channel.json` na `main`; `homolog` fixa a branch de homologação para um PC. O instalador grava o valor de `-Ref` em `agent.toml` |
 | `UNIOVER_SELF_CARE` | `0` desliga o auto-diagnóstico periódico, o auto-reparo e o envio das ocorrências à API (padrão ligado; ver "Auto-diagnóstico") |
@@ -91,10 +93,32 @@ Variáveis de ambiente (vencem o arquivo):
 Arquivo local (fora do repositório): `%LOCALAPPDATA%\UniOver\config\agent.toml`, com `api_url` e `agent_id`. Nunca
 guarda segredo.
 
+### Ferramentas do Android (`adb` e `aapt2`)
+
+Sem `adb` (lista de apps, abrir app, digitação pelo ADB) ou sem `aapt2` (ícones dos apps), e sem caminho configurado,
+o agente as prepara sozinho no Windows, em segundo plano e sem reiniciar:
+
+- **Origem:** só da Google, por HTTPS: o `platform-tools-latest-windows.zip` (`dl.google.com/android/repository`) e o
+  `aapt2-<versão>-windows.jar` do Maven da Google, numa versão fixa (`AAPT2_VERSION` em `adapters/android_tools.py`).
+- **Conferência:** o `adb.exe` só é aceito com assinatura Authenticode válida da Google LLC (conferida pelo
+  `WinVerifyTrust` do Windows). O `aapt2.exe` não vem assinado: o `.jar` é aceito só quando o SHA-256 publicado ao
+  lado dele no Maven e o SHA-256 fixado no código (`AAPT2_SHA256`) batem com o arquivo baixado.
+- **Instalação:** em `<instalação>\tools\platform-tools` e `<instalação>\tools\aapt2`, sem administrador e sem janela.
+  Tudo é extraído numa pasta temporária ao lado, conferido e só então renomeado; ZIP com nome que escapa da pasta, link
+  simbólico, entradas demais ou tamanho fora do limite é recusado inteiro.
+- **Rede:** sem internet ou em rede tarifada o download fica para depois; falhas seguidas esperam 5 min, 15 min, 1 h
+  e depois 6 h entre tentativas (nunca em laço). O registro diz em uma linha se está baixando ou por que falhou.
+- **Sem reiniciar:** enquanto falta, a ferramenta é procurada de novo a cada minuto no disco: a que o agente baixou, a
+  que o instalador pôs ou a que a pessoa instalou passa a valer na hora (o `hello` sai de novo com `tv.adb`).
+- `UNIOVER_ANDROID_TOOLS_DOWNLOAD=0` desliga o download; um caminho em `UNIOVER_ADB_PATH`/`UNIOVER_AAPT_PATH` também.
+
+Os binários da Google **não** vão no repositório nem no pacote do UniOver: o download acontece no PC de quem usa, a
+partir do site da Google, sob os termos dela.
+
 ## Pasta de instalação
 
-Na primeira instalação uma janela do Windows pergunta onde guardar o UniOver (`-InstallDir` pula a pergunta; cancelar
-usa a pasta padrão). A escolha vira uma subpasta `UniOver` (nunca arquivos soltos numa pasta de uso geral) e é recusada
+A instalação usa a pasta padrão sem perguntar nada (cada janela a mais é um passo que a pessoa não precisava dar).
+Escolher outra pasta é a opção avançada `-InstallDir`. A escolha vira uma subpasta `UniOver` (nunca arquivos soltos numa pasta de uso geral) e é recusada
 com uma frase simples se for de rede, de disco removível, protegida pelo Windows, longa demais, sem 1 GB livre ou sem
 escrita. Uma reinstalação mantém a pasta que já existe.
 
@@ -552,17 +576,26 @@ Sem nenhum caminho possível o volume fica desconhecido e o app mostra só o ret
 
 ### Instalação em um clique
 
-Para quem não é técnico: baixar e abrir **um** arquivo, `apps/agent/tools/conectar-uniover.cmd`. Ele roda o instalador
-sem parâmetros (modo automático), que:
+Para quem não é técnico: abrir **um** link no PC (`/conectar` do app, que baixa
+`apps/agent/tools/conectar-uniover.cmd`) e escanear **um** QR com o celular em que já entrou no UniOver. O `.cmd` só
+grava um script do Windows Script Host e sai; o instalador roda sem janela (no Windows 10 2004 em diante, dentro de
+`conhost.exe --headless`, para o Terminal do Windows nunca abrir uma janela para ele) e mostra o andamento numa página
+local (`web\conectar.html`) com as etapas, no visual do app, clara e escura. A única janela é o aviso de permissão do
+Windows (UAC), uma vez, logo no começo. O modo automático:
 
-1. instala o `uv` pelo `winget` se faltar e baixa o agente (commit exato da `main`, com `.version`);
-2. **acha a TV** na rede (`tv-find`): varre o /24 da interface com rota padrão em menos de 10 s, procurando Samsung
-   (`GET http://<ip>:8001/api/v2/` com `device.type` `Samsung SmartTV`) e Android TV (porta 6466). Uma TV achada é
-   usada; várias, pergunta qual. Não achando, aceita o IP digitado ou segue sem a TV;
-3. **pareia o agente**: mostra o código e o QR para escanear com o celular onde a pessoa usa o UniOver
-   (já pareado, não repete);
-4. **pareia a TV** (na Samsung, aceitar o aviso na tela; já pareada, não repete);
-5. cria a tarefa **UniOver** (ao entrar no Windows, sem janela, sem perguntar) que roda o
+1. pede a permissão do Windows (energia, rede, firewall) logo de início;
+2. acha o `uv` (PATH, `WinGet\Packages\astral-sh.uv_*`, `%USERPROFILE%\.local\bin`...) ou o instala pelo `winget`
+   (sem ele, pelo instalador oficial do uv), relê o PATH do registro e segue sozinho; o caminho achado fica em
+   `runtime\uv-path.txt` para o supervisor;
+3. baixa o agente (commit exato, com `.version`), prepara e examina a versão;
+4. instala o `adb` se faltar (`winget` `Google.PlatformTools`; sem ele, o pacote oficial da Google em
+   `tools\platform-tools`, aceito só com a assinatura digital válida da Google). Sem `adb` a instalação segue: o
+   controle funciona e a lista de apps fica para depois;
+5. **liga o PC ao celular**: a página mostra o QR e o código; o celular aprova (já pareado, não repete);
+6. **acha a TV** na rede (`tv-find`) e, na Samsung, pede o "Permitir" na tela da TV. Na Android TV o código de 6
+   caracteres que a TV mostra é digitado **no app do celular** (aviso "TV não pareada" na tela da TV), nunca numa janela
+   no PC (`tv-pair --code-on-phone` devolve o código 8 e o instalador mostra o que falta);
+7. cria a tarefa **UniOver** (ao entrar no Windows, sem janela, sem perguntar) que roda o
    lançador estável `%LOCALAPPDATA%\UniOver\launcher.ps1`. O instalador também deixa um atalho **UniOver** no
    Menu Iniciar. Os rótulos da tarefa e de **Aplicativos de inicialização** ficam em
    `tools/windows-startup.json`; a atualização do agente os aplica na conta do usuário, sem novo UAC.
@@ -1103,7 +1136,10 @@ APK pelo ADB (sem a trava dos comandos curtos), lê só a imagem de dentro dele 
 - **Onde procurar.** Nas linhas `application-icon-*` do `aapt2 dump badging`. Ícone adaptativo (XML), que a tela
   não desenha, quase sempre traz o ícone legado em PNG/WebP no **mesmo recurso**, e ele só aparece em
   `aapt2 dump resources` (pedido só quando o `badging` não deu uma imagem quadrada). As camadas do adaptativo
-  (`foreground`/`background`) nunca entram: são quadradas, mas não são o ícone.
+  (`foreground`/`background`) não entram enquanto houver legado. Sem legado nenhum, vale a camada da frente em
+  PNG/WebP, achada pela referência do próprio XML (`aapt2 dump xmltree --file <xml>`), sem o fundo (não há
+  biblioteca para compor): a tela apara a margem transparente e, se a tinta for clara, põe um fundo escuro.
+  Camada em vetor (como a do lançador do UniOver) deixa o app sem ícone, com o motivo no log.
 - **Tamanho padronizado.** Não há biblioteca de imagem para reduzir; por isso, entre as imagens quadradas do APK
   que cabem no teto, vale a **maior de até 192 px** de lado (o ícone de lançador `xxxhdpi`). Se todas passam de
   192 px, vale a menor delas.

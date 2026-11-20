@@ -168,10 +168,12 @@ _DEVICE_MESSAGE: Final = "outro aparelho responde no endereço da TV; o ADB não
 Runner = Callable[[Sequence[str], float], Awaitable[AdbOutput]]
 
 
-def locate_adb(configured: str | None) -> Path | None:
-    """Acha o `adb`: o caminho configurado, senão o `PATH`, senão o `platform-tools` do Android SDK.
+def locate_adb(configured: str | None, base: Path | None = None) -> Path | None:
+    """Acha o `adb`: o caminho configurado, senão o `PATH`, senão os lugares conhecidos.
 
-    Caminho configurado que não existe **não** cai nos outros: foi uma escolha explícita errada.
+    Os lugares conhecidos, nesta ordem: o `platform-tools` que o instalador do UniOver baixa para
+    a pasta de instalação (`tools/platform-tools`), o do Android SDK e o pacote do winget. Caminho
+    configurado que não existe **não** cai nos outros: foi uma escolha explícita errada.
     """
     if configured:
         path = Path(configured)
@@ -179,12 +181,36 @@ def locate_adb(configured: str | None) -> Path | None:
     on_path = shutil.which("adb")
     if on_path:
         return Path(on_path)
+    for candidate in _known_adb_places(base):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _known_adb_places(base: Path | None) -> list[Path]:
+    places: list[Path] = []
+    root = base if base is not None else _installation_base()
+    if root is not None:
+        places.append(root / "tools" / "platform-tools" / _ADB_EXECUTABLE)
     local = os.environ.get("LOCALAPPDATA")
     if local:
-        sdk = Path(local) / "Android" / "Sdk" / "platform-tools" / _ADB_EXECUTABLE
-        if sdk.is_file():
-            return sdk
-    return None
+        places.append(Path(local) / "Android" / "Sdk" / "platform-tools" / _ADB_EXECUTABLE)
+        packages = Path(local) / "Microsoft" / "WinGet" / "Packages"
+        try:
+            found = sorted(packages.glob("Google.PlatformTools_*"), reverse=True)
+        except OSError:
+            found = []
+        places.extend(folder / "platform-tools" / _ADB_EXECUTABLE for folder in found)
+    return places
+
+
+def _installation_base() -> Path | None:
+    from uniover_agent.adapters.installation import installation_base  # noqa: PLC0415
+
+    try:
+        return installation_base()
+    except OSError:
+        return None
 
 
 async def run_process(argv: Sequence[str], seconds: float) -> AdbOutput:
@@ -226,7 +252,7 @@ class AdbTv:
 
     def __init__(  # noqa: PLR0913 - todas são configuração independente
         self,
-        adb_path: Path,
+        adb_path: Path | Callable[[], Path | None],
         host: str,
         port: int = DEFAULT_PORT,
         *,
@@ -247,7 +273,8 @@ class AdbTv:
         settle_seconds: float = DEFAULT_SETTLE_SECONDS,
         permission: AdbPermissionSink | None = None,
     ) -> None:
-        self._adb = str(adb_path)
+        # Caminho fixo ou procurado a cada comando (o `adb` pode aparecer depois da partida).
+        self._adb_source = adb_path
         self._serial = f"{host}:{port}"
         self._timeout = timeout
         self._retry_after = retry_after
@@ -1490,11 +1517,20 @@ class AdbTv:
             raise AdbUnreachable("a conexão ADB com a TV caiu")
         return output
 
+    def _adb_executable(self) -> str:
+        """O `adb` de agora; sem ele (ainda sendo baixado, por exemplo), `AdbUnavailable`."""
+        source = self._adb_source
+        path = source() if callable(source) else source
+        if path is None:
+            raise AdbUnavailable("o adb ainda não está disponível neste PC")
+        return str(path)
+
     async def _exec(self, *args: str, timeout: float | None = None) -> AdbOutput:  # noqa: ASYNC109
+        adb = self._adb_executable()
         # Antes de qualquer `adb`: se o `adbkey` sumiu, ele gera outro e a TV pergunta de novo.
         self._authorization.prepare()
         try:
-            output = await self._run([self._adb, *args], timeout or self._timeout)
+            output = await self._run([adb, *args], timeout or self._timeout)
         except TimeoutError:
             # Pode ter executado ou não: ao reconectar no próximo pedido o canal se refaz. Cópia
             # lenta de APK não prova que o canal caiu: ela só falha, sem derrubar os comandos.
@@ -1530,7 +1566,7 @@ class AdbTv:
         # TV desligada ou lenta também esgota o tempo: só o servidor mudo (nem `devices`, que
         # não fala com a TV, responde) justifica derrubá-lo.
         try:
-            await self._run([self._adb, "devices"], self._timeout)
+            await self._run([self._adb_executable(), "devices"], self._timeout)
         except TimeoutError:
             hung = True
         except Exception:
@@ -1543,6 +1579,6 @@ class AdbTv:
         # O servidor novo não conhece a TV: o próximo pedido reconecta.
         self._connected = False
         try:
-            await self._run([self._adb, "kill-server"], self._timeout)
+            await self._run([self._adb_executable(), "kill-server"], self._timeout)
         except Exception as exc:
             _log.info("adb kill-server não concluiu (%s)", type(exc).__name__)
