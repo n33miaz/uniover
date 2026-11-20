@@ -1152,7 +1152,7 @@ test.describe('folha de desligar', () => {
     await expect(sheet).toBeVisible();
 
     // O desligar imediato continua disponível, mesmo quando o agente não oferece a operação segura.
-    await expect(sheet.getByRole('button')).toHaveText(['Desligar', 'Cancelar']);
+    await expect(sheet.getByRole('button')).toHaveText([/^Modo Dormir/, 'Desligar', 'Cancelar']);
     const row = sheet.getByRole('region', { name: 'Agendar' });
     await expect(row).toBeVisible();
     await expect(row).toContainText('O agendamento precisa da TV configurada');

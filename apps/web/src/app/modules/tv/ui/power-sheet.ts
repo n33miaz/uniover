@@ -52,15 +52,13 @@ export class PowerSheet {
 
   protected readonly busy = signal(false);
   /**
-   * O TV Livre está na TV e o agente ao alcance: então o Modo Dormir tem como agir. `null` enquanto a pergunta não volta;
-   * nesse meio-tempo o botão já aparece (esmaecido) numa TV Android, para não surgir depois e empurrar a folha.
+   * O Modo Dormir está sempre na folha de uma TV Android: ele nunca some. Não depende de o TV Livre já estar na TV, porque
+   * o computador o instala no próprio pedido quando falta; se algo impedir, o motivo aparece aqui dentro. Só a Samsung,
+   * que não roda o TV Livre, fica sem ele.
    */
-  protected readonly sleepAvailable = signal<boolean | null>(null);
-  protected readonly showSleep = computed(() => {
-    const available = this.sleepAvailable();
-    if (available !== null) return available;
-    return this.store.selectedTv()?.kind !== 'samsung';
-  });
+  protected readonly showSleep = computed(() => showsSleep(this.store.selectedTv()?.kind));
+  /** O pedido de dormir está em curso (pode incluir a instalação do TV Livre): o botão se anuncia ocupado. */
+  protected readonly sleeping = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly chosen = signal<Date | null>(null);
   /** O tempo pronto escolhido (em minutos), ou "personalizar" (o horário do dia), ou nada. */
@@ -90,10 +88,6 @@ export class PowerSheet {
       // O fundo escurecido é o próprio <dialog>; só fecha se o toque começou e terminou fora da folha.
       onDialogBackdropClick(dialog, () => this.cancel());
       void this.store.refreshPowerSchedule();
-      void this.livre.sleepAvailable().then(
-        (available) => this.sleepAvailable.set(available),
-        () => this.sleepAvailable.set(false),
-      );
       // A folha pode ficar aberta no disparo; a leitura periódica traz o desfecho sem reenviar comando.
       const poll = window.setInterval(() => {
         this.now.set(Date.now());
@@ -127,11 +121,13 @@ export class PowerSheet {
 
   /**
    * "Modo Dormir" (apagar a tela): abre o Modo Dormir do TV Livre (tela preta; qualquer botão acorda). É a saída mais curta para quem
-   * quer a TV escura sem desligá-la. Como o desligamento, fecha a folha se der certo e explica aqui dentro se não der.
+   * quer a TV escura sem desligá-la. Sem o TV Livre na TV, o computador o instala antes (leva alguns segundos, com o botão
+   * ocupado). Como o desligamento, fecha a folha se der certo e explica aqui dentro se não der.
    */
   protected async blackOut(): Promise<void> {
     if (this.busy() || this.leaving) return;
     this.busy.set(true);
+    this.sleeping.set(true);
     this.error.set(null);
     try {
       await this.livre.sleep();
@@ -139,6 +135,7 @@ export class PowerSheet {
     } catch (failure) {
       this.error.set(describeLivreFailure(failure).message);
     } finally {
+      this.sleeping.set(false);
       if (!this.leaving) this.busy.set(false);
     }
   }
@@ -273,4 +270,9 @@ export class PowerSheet {
       this.closed.emit();
     });
   }
+}
+
+/** O Modo Dormir vale para toda TV que não seja Samsung (a Samsung não roda o TV Livre). */
+export function showsSleep(kind: string | null | undefined): boolean {
+  return kind !== 'samsung';
 }

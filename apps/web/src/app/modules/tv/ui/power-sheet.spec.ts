@@ -76,7 +76,10 @@ describe('PowerSheet', () => {
   });
 
   it('puts the one destructive action first and big, then the schedule, and Cancelar last', () => {
-    const order = buttons().map((b) => b.textContent?.trim());
+    // O Modo Dormir (não destrutivo) vem antes de tudo; ver o bloco dele abaixo.
+    const order = buttons()
+      .filter((b) => !b.classList.contains('sleep'))
+      .map((b) => b.textContent?.trim());
     expect(order[0]).toBe('Desligar');
     expect(order.at(-1)).toBe('Cancelar');
     expect(root.querySelector('button.danger.now')).not.toBeNull();
@@ -479,7 +482,7 @@ describe('PowerSheet leaving smoothly', () => {
 
 describe('PowerSheet, Modo Dormir', () => {
   let store: FakeTvStore;
-  let livre: { sleepAvailable: ReturnType<typeof vi.fn>; sleep: ReturnType<typeof vi.fn> };
+  let livre: { sleep: ReturnType<typeof vi.fn> };
   let fixture: ReturnType<typeof TestBed.createComponent<PowerSheet>>;
   let root: HTMLElement;
   let closed: ReturnType<typeof vi.fn<() => void>>;
@@ -493,12 +496,11 @@ describe('PowerSheet, Modo Dormir', () => {
         : b.textContent?.trim(),
     );
 
-  async function open(available: boolean) {
+  async function open(kind: 'android' | 'samsung' | null = 'android') {
     store = createFakeTvStore();
-    livre = {
-      sleepAvailable: vi.fn().mockResolvedValue(available),
-      sleep: vi.fn().mockResolvedValue(undefined),
-    };
+    store.tvs.set([makeTv('sala', { name: 'Sala', kind })]);
+    // Só o pedido de dormir: a folha não pergunta nada antes de mostrar o botão.
+    livre = { sleep: vi.fn().mockResolvedValue(undefined) };
     TestBed.configureTestingModule({
       providers: [
         { provide: TvStore, useValue: store },
@@ -514,8 +516,8 @@ describe('PowerSheet, Modo Dormir', () => {
     root = fixture.nativeElement;
   }
 
-  it('puts Modo Dormir first, before the text and Desligar, when the TV Livre is within reach', async () => {
-    await open(true);
+  it('puts Modo Dormir first, before the text and Desligar', async () => {
+    await open();
     const labels = names();
     expect(labels[0]).toBe('Modo Dormir');
     expect(labels.indexOf('Modo Dormir')).toBeLessThan(labels.indexOf('Desligar'));
@@ -528,53 +530,37 @@ describe('PowerSheet, Modo Dormir', () => {
     expect(root.textContent).toContain('qualquer botão acorda');
   });
 
-  it('shows the button right away, dimmed, while it asks whether the TV Livre is there', async () => {
-    store = createFakeTvStore();
-    let answer: (value: boolean) => void = () => undefined;
-    livre = {
-      sleepAvailable: vi.fn().mockReturnValue(new Promise<boolean>((done) => (answer = done))),
-      sleep: vi.fn().mockResolvedValue(undefined),
-    };
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: TvStore, useValue: store },
-        { provide: TvLivreApi, useValue: livre },
-      ],
-    });
-    fixture = TestBed.createComponent(PowerSheet);
-    fixture.detectChanges();
-    root = fixture.nativeElement;
-    expect(blackOut()?.disabled).toBe(true);
-    expect(blackOut()?.getAttribute('aria-busy')).toBe('true');
-    answer(true);
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(blackOut()?.disabled).toBe(false);
-    expect(blackOut()?.hasAttribute('aria-busy')).toBe(false);
+  it('never hides it on an Android TV, ready from the first frame, even before knowing the kind', async () => {
+    // O dono perdeu o Modo Dormir quando a resposta "o TV Livre está na TV?" voltou falsa: agora não há pergunta.
+    for (const kind of ['android', null] as const) {
+      TestBed.resetTestingModule();
+      await open(kind);
+      expect(blackOut()?.disabled).toBe(false);
+      expect(blackOut()?.hasAttribute('aria-busy')).toBe(false);
+    }
   });
 
-  it('hides it without the TV Livre, and when asking fails', async () => {
-    await open(false);
+  it('hides it only on a Samsung, which does not run the TV Livre', async () => {
+    await open('samsung');
     expect(blackOut()).toBeUndefined();
-    TestBed.resetTestingModule();
-    store = createFakeTvStore();
-    livre = { sleepAvailable: vi.fn().mockRejectedValue(new Error('x')), sleep: vi.fn() };
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: TvStore, useValue: store },
-        { provide: TvLivreApi, useValue: livre },
-      ],
-    });
-    fixture = TestBed.createComponent(PowerSheet);
+  });
+
+  it('announces itself busy while the computer installs the TV Livre and opens the sleep mode', async () => {
+    await open();
+    let done: () => void = () => undefined;
+    livre.sleep.mockReturnValue(new Promise<void>((resolve) => (done = resolve)));
+    blackOut()!.click();
     fixture.detectChanges();
+    expect(blackOut()?.getAttribute('aria-busy')).toBe('true');
+    expect(blackOut()?.disabled).toBe(true);
+    done();
     await fixture.whenStable();
-    fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('button.sleep')).toBeNull();
+    expect(livre.sleep).toHaveBeenCalledTimes(1);
   });
 
   it('shows only Modo Dormir, with no shutdown and no schedule, to someone who controls the TV but cannot power it off', async () => {
     store = createFakeTvStore();
-    livre = { sleepAvailable: vi.fn().mockResolvedValue(true), sleep: vi.fn() };
+    livre = { sleep: vi.fn() };
     TestBed.configureTestingModule({
       providers: [
         { provide: TvStore, useValue: store },
@@ -595,14 +581,14 @@ describe('PowerSheet, Modo Dormir', () => {
   });
 
   it('opens the sleep mode with no time (the TV keeps its own) and leaves the sheet', async () => {
-    await open(true);
+    await open();
     blackOut()!.click();
     await fixture.whenStable();
     expect(livre.sleep).toHaveBeenCalledWith();
   });
 
   it('says why in the sheet when the TV does not take it, and stays open', async () => {
-    await open(true);
+    await open();
     livre.sleep.mockRejectedValue(new HttpErrorResponse({ status: 503 }));
     blackOut()!.click();
     await fixture.whenStable();
