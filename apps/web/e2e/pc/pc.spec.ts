@@ -1726,8 +1726,8 @@ test.describe('Estados', () => {
     pc.status = { available: false, online: false, apps: [] };
     await page.goto('/pc');
     await expect(page.getByRole('heading', { name: 'Nenhum PC Seu Conectado' })).toBeVisible();
-    await expect(page.getByText('Instale o conector e ligue o controle do PC.')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Instalar o Conector' })).toHaveAttribute(
+    await expect(page.getByText('Conecte o PC com um link e um QR: o controle já vem ligado.')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Conectar o PC' })).toHaveAttribute(
       'href',
       '/conectar',
     );

@@ -53,7 +53,7 @@ describe('PcPage', () => {
     expect(root.querySelector('h2')?.textContent).toBe('Nenhum PC Seu Conectado');
     expect(root.querySelector('.empty a')?.getAttribute('href')).toBe('/conectar');
     expect(root.querySelector('.empty p')?.textContent).toBe(
-      'Instale o conector e ligue o controle do PC.',
+      'Conecte o PC com um link e um QR: o controle já vem ligado.',
     );
     expect(root.querySelector('code')).toBeNull();
     expect(root.querySelector('router-outlet')).toBeNull();

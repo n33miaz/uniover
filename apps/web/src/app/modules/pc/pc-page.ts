@@ -70,9 +70,9 @@ import { watchAvailableHeight, type ViewportWatch } from './input/viewport-fit';
               <path [attr.d]="'M8 20h8M12 16v4'" />
             </svg>
             <h2 i18n="@@pc.unavailable.title">Nenhum PC Seu Conectado</h2>
-            <p i18n="@@pc.unavailable.text">Instale o conector e ligue o controle do PC.</p>
+            <p i18n="@@pc.unavailable.text">Conecte o PC com um link e um QR: o controle já vem ligado.</p>
             <a routerLink="/conectar" class="ui-btn" i18n="@@pc.unavailable.install">
-              Instalar o Conector
+              Conectar o PC
             </a>
           </div>
         }
