@@ -747,10 +747,69 @@ async def test_sleep_refuses_a_time_outside_the_contract(tmp_path: Path, minutes
     assert not any(command.startswith("am start") for command in android.log)
 
 
-async def test_sleep_requires_the_launcher(tmp_path: Path) -> None:
-    livre, _, _, _ = make(tmp_path)
+async def test_sleep_without_the_launcher_installs_it_and_then_sleeps(tmp_path: Path) -> None:
+    # O Modo Dormir nunca some: sem o launcher na TV (um PC novo, uma TV restaurada), o próprio
+    # pedido instala o TV Livre (sem trocar a tela inicial) e abre a tela preta.
+    livre, android, state, apk = make(tmp_path)
 
-    await expect_error(livre, {"action": "sleep"}, "not_installed")
+    await livre.run({"action": "sleep", "minutes": 30})
+
+    assert apk.fetches == 1
+    assert android.installed is True
+    assert android.index("install") < android.index(f"am start -n {PACKAGE}/.SleepActivity")
+    assert android.log[-1] == (
+        f"am start -n {PACKAGE}/.SleepActivity --ei {PACKAGE}.extra.MAX_MINUTES 30"
+    )
+    # Instalar para dormir não troca a tela inicial, e a volta ao original fica guardada.
+    assert android.home == FACTORY
+    assert state.load()["factory"] == FACTORY
+
+
+async def test_sleep_with_the_launcher_does_not_download_it_again(tmp_path: Path) -> None:
+    livre, _, _, apk = await installed(tmp_path)
+    fetches = apk.fetches
+
+    await livre.run({"action": "sleep"})
+
+    assert apk.fetches == fetches
+
+
+async def test_sleep_that_cannot_install_reports_why_and_opens_nothing(tmp_path: Path) -> None:
+    error = LauncherApkError("apk_unavailable", "sem publicação")
+    livre, android, _, _ = make(tmp_path, error=error)
+
+    with pytest.raises(LauncherApkError) as raised:
+        await livre.run({"action": "sleep"})
+
+    assert raised.value.code == "apk_unavailable"
+    assert android.installed is False
+    assert not any(command.startswith("am start") for command in android.log)
+
+
+async def test_sleep_arms_the_remote_guard_only_when_it_installs(tmp_path: Path) -> None:
+    class Guard:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def expect_remote_drop(self) -> None:
+            self.calls.append("expect")
+
+        def settle_remote_drop(self) -> None:
+            self.calls.append("settle")
+
+    guard = Guard()
+    livre = TvLivre(
+        FakeAndroid(),
+        FakeApkSource(tmp_path, None),
+        LivreStateFile(tmp_path / "state" / "tv-livre.json"),
+        PhotoStaging(FakeClock()),
+        FakeClock(),
+        remote_guard=guard,
+    )
+    await livre.run({"action": "sleep"})
+    assert guard.calls == ["expect", "settle"]
+    await livre.run({"action": "sleep"})
+    assert guard.calls == ["expect", "settle"]  # já instalado: só abre a tela preta
 
 
 async def test_unknown_action_is_rejected(tmp_path: Path) -> None:

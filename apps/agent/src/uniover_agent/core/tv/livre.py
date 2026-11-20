@@ -473,8 +473,11 @@ class TvLivre:
             raise AdbNotReady("a TV ainda está inicializando")
         return "android.software.leanback" in result.text
 
+    async def _is_installed(self) -> bool:
+        return "package:" in (await self._adb.shell(f"pm path {PACKAGE}")).text
+
     async def _require_installed(self) -> None:
-        if "package:" not in (await self._adb.shell(f"pm path {PACKAGE}")).text:
+        if not await self._is_installed():
             raise LivreError(
                 "not_installed", "O TV Livre ainda não está instalado na TV.", rejected=True
             )
@@ -571,6 +574,21 @@ class TvLivre:
             # soltou o papel na troca do app, refaz a escolha, e nunca deixa a TV de fábrica.
             if not await self._set_home_activity(HOME_COMPONENT):
                 _log.warning("TV Livre: a atualização perdeu a tela inicial e não a recuperei")
+
+    async def _install_for_sleep(self) -> None:
+        """`_install` com a mesma vigia do controle que a ação "Instalar" arma em `run`."""
+        guard = self._remote_guard
+        if guard is not None:
+            guard.expect_remote_drop()
+        try:
+            _log.info("TV Livre: launcher ausente; instalo antes do Modo Dormir")
+            await self._install()
+        finally:
+            if guard is not None:
+                try:
+                    guard.settle_remote_drop()
+                except Exception:
+                    _log.exception("TV Livre: falha ao conferir o controle da TV")
 
     async def _apply(self, body: dict[str, Any]) -> None:
         await self._require_installed()
@@ -866,7 +884,11 @@ class TvLivre:
             or not 0 <= minutes <= MAX_SLEEP_MINUTES
         ):
             raise LivreError("invalid_minutes", "O tempo do Modo Dormir é inválido.", rejected=True)
-        await self._require_installed()
+        if not await self._is_installed():
+            # O Modo Dormir nunca some: sem o launcher (PC reinstalado, TV restaurada) o próprio
+            # pedido o instala, do mesmo jeito que "Instalar" (APK assinado, a tela inicial de
+            # fábrica continua a padrão), e então abre a tela preta.
+            await self._install_for_sleep()
         # O tempo vai no pedido: o Modo Dormir o usa sem depender da configuração aplicada. Um
         # launcher que não o conhece ignora o extra e usa a configuração, como sempre.
         extra = f" --ei {SLEEP_MINUTES_EXTRA} {minutes}" if minutes is not None else ""
