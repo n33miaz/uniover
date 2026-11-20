@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, output } from '@angular/core';
+import { Component, computed, effect, inject, output, signal, untracked } from '@angular/core';
 import { TvAccess } from '../data/tv-access';
 import { TvPrefs } from '../data/tv-prefs';
 import { TvRoundKeys } from '../data/tv-round-keys';
@@ -35,6 +35,31 @@ export class BottomKeys {
       (this.roundKeys.base() + this.roundKeys.shown().length) / this.roundKeys.gridColumns(),
     ),
   );
+
+  /**
+   * O que o play/pause mostra, como no YouTube: ▶ com a mídia parada, ❚❚ tocando. O agente não informa se a TV está
+   * tocando, então o desenho troca a cada toque que a TV aceitou e volta ao ▶ quando o app em foco na TV muda (a mídia do
+   * app anterior não vale mais). É um palpite assumido: a tecla enviada é sempre a mesma (`PLAY_PAUSE`).
+   */
+  protected readonly playing = signal(false);
+  protected readonly playPauseLabel = computed(() =>
+    this.playing() ? $localize`:@@tv.key.pause:Pausar` : $localize`:@@tv.key.play:Reproduzir`,
+  );
+
+  constructor() {
+    let app: string | null | undefined;
+    effect(() => {
+      const current = this.store.state()?.app ?? null;
+      untracked(() => {
+        if (app !== undefined && current !== app) this.playing.set(false);
+        app = current;
+      });
+    });
+  }
+
+  protected playPauseSent(ok: boolean): void {
+    if (ok) this.playing.update((value) => !value);
+  }
 
   /** Leva o botão tocado: o painel devolve o foco a ele ao fechar (o Safari não foca botão ao toque). */
   readonly openKeyboard = output<HTMLElement>();

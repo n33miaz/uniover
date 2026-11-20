@@ -1,4 +1,4 @@
-import { DestroyRef, Directive, inject, input, signal } from '@angular/core';
+import { DestroyRef, Directive, inject, input, output, signal } from '@angular/core';
 import { TV_CONFIG } from '../data/tv-config';
 import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
@@ -38,6 +38,8 @@ export class KeyButton {
   readonly appKey = input.required<TvKey>();
   /** Segurar repete a tecla (setas e volume). */
   readonly repeat = input(false);
+  /** Cada envio que terminou: `true` se a TV aceitou a tecla (o play/pause troca o desenho só então). */
+  readonly keySent = output<boolean>();
 
   protected readonly pressed = signal(false);
 
@@ -95,6 +97,7 @@ export class KeyButton {
     vibrate(this.prefs.vibration());
     void this.store.sendKey(this.appKey()).then((ok) => {
       if (!ok) this.repeater.stop();
+      this.keySent.emit(ok);
     });
   }
 }

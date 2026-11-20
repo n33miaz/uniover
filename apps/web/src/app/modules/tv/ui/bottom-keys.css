@@ -267,3 +267,39 @@ button:disabled,
     align-self: start;
   }
 }
+
+/*
+ * Mídia: anterior, play/pause e próxima com desenhos cheios. O play/pause tem dois estados (▶ parado, ❚❚ tocando): os
+ * dois desenhos ocupam o mesmo lugar e a troca é um cruzamento curto (some girando um pouco, o outro aparece crescendo).
+ * Quem pediu menos movimento vê a troca seca.
+ */
+.media app-tv-icon {
+  width: 1.45em;
+  height: 1.45em;
+}
+.play-pause {
+  display: grid;
+  place-items: center;
+}
+.play-pause .state {
+  grid-area: 1 / 1;
+  width: 1.6em;
+  height: 1.6em;
+}
+.play-pause .pause,
+.play-pause.playing .play {
+  opacity: 0;
+  transform: scale(0.6) rotate(-90deg);
+}
+.play-pause .play,
+.play-pause.playing .pause {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .play-pause .state {
+    transition:
+      opacity 160ms ease-out,
+      transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+}

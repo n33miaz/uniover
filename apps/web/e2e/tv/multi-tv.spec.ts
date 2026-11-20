@@ -584,13 +584,7 @@ test.describe('capacidades da TV', () => {
       ),
     );
     await openTv(page, 'Raphael');
-    for (const name of [
-      'Entradas',
-      'Menu',
-      'Próximo canal',
-      'Canal anterior',
-      'Reproduzir ou pausar',
-    ]) {
+    for (const name of ['Entradas', 'Menu', 'Próximo canal', 'Canal anterior', 'Reproduzir']) {
       await expect(page.getByRole('button', { name, exact: true }).first()).toBeVisible();
     }
   });
