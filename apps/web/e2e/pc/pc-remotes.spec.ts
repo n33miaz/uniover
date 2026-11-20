@@ -177,12 +177,16 @@ test.describe('Controles', () => {
     expect(pc.sent('/key')).toEqual([]);
     const box = (await close.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    // O dedo só sai depois de o PC receber a tecla: soltar num tempo fixo corria com o temporizador do toque longo
+    // num executor lento (o soltar chegava antes e virava só a dica).
     await page.mouse.down();
-    await page.waitForTimeout(900);
-    await page.mouse.up();
     await expect
       .poll(() => pc.sent('/key'))
       .toEqual([{ key: 'W', modifiers: ['CTRL'], target: 'browser' }]);
+    await page.mouse.up();
+    // Soltar não manda outra.
+    await expect(page.locator('app-pc-remote-pad .cell.holding')).toHaveCount(0);
+    expect(pc.sent('/key')).toEqual([{ key: 'W', modifiers: ['CTRL'], target: 'browser' }]);
   });
 
   test('um PC que não confere o programa da frente: teclas desligadas, mídia segue', async ({

@@ -9,8 +9,8 @@ const REVEAL_MARGIN_PX = 24;
 const KEYBOARD_SETTLE_MS = 300;
 const VIEWPORT_SETTLE_MS = 100;
 /**
- * Depois de a moldura rolar a página, por quanto tempo uma mudança da área visível é tida como efeito da própria
- * rolagem (no iPhone a barra do navegador encolhe ao rolar) e não pede outra: senão as duas brigam e a tela salta.
+ * Depois de a moldura rolar a página, por quanto tempo uma mudança da área visível espera a rolagem acabar antes de ser
+ * conferida (no iPhone a barra do navegador encolhe ao rolar): senão as duas brigam e a tela salta.
  */
 const OWN_SCROLL_MS = 700;
 
@@ -59,12 +59,14 @@ export class AuthLayout {
     const viewport = this.win?.visualViewport;
     if (viewport) {
       // A rolagem da área visível (a da pessoa ou a nossa) só atualiza o espaço do teclado: quem pede outra revelação
-      // é o teclado subindo ou descendo (`resize`), e nem ele enquanto a rolagem que a moldura fez não acabou.
+      // é o teclado subindo ou descendo (`resize`). Durante a rolagem que a moldura fez, a conferência fica para quando
+      // ela acabar (e não é descartada): o teclado que sobe em dois passos cobriria o campo de vez. Como `reveal` só
+      // rola o que está cortado, a mudança causada pela própria rolagem não pede outra.
       const onScroll = () => this.keyboardInset.set(this.measureInset(viewport));
       const onResize = () => {
         onScroll();
-        if (this.focusedField() && Date.now() >= this.ownScrollUntil) {
-          this.scheduleReveal(VIEWPORT_SETTLE_MS);
+        if (this.focusedField()) {
+          this.scheduleReveal(Math.max(VIEWPORT_SETTLE_MS, this.ownScrollUntil - Date.now()));
         }
       };
       viewport.addEventListener('resize', onResize);

@@ -10,9 +10,10 @@ const DATABASE = `uniover-offline-${OWNER_ID}`;
 
 /**
  * `up`: aceita · `down`: a rede não entrega · `waking`: o Render ainda está acordando (503 com o cabeçalho de
- * roteamento) · `lose-response`: o servidor grava mas a resposta se perde no caminho.
+ * roteamento) · `lose-one-response`: o servidor grava mas a resposta da próxima execução se perde no caminho; depois
+ * dela volta a `up` sozinho.
  */
-type Mode = 'up' | 'down' | 'waking' | 'lose-response';
+type Mode = 'up' | 'down' | 'waking' | 'lose-one-response';
 
 interface OrdersServer {
   mode: Mode;
@@ -72,7 +73,9 @@ async function mockOrdersApi(context: BrowserContext): Promise<OrdersServer> {
     server.executions.set(key, (server.executions.get(key) ?? 0) + 1);
     const body = JSON.stringify({ id: key });
     server.stored.set(key, { status: 201, body });
-    if (server.mode === 'lose-response') {
+    if (server.mode === 'lose-one-response') {
+      // Só uma resposta se perde: virar o modo daqui (e não do teste) não depende de quando o motor tenta de novo.
+      server.mode = 'up';
       hit('executed-response-lost');
       return route.abort('connectionreset');
     }
@@ -213,16 +216,16 @@ test.describe('fila de escrita offline', () => {
     context,
   }) => {
     await signIn(page);
-    server.mode = 'lose-response';
+    server.mode = 'lose-one-response';
     const ids = await insertQueued(page, 2);
 
     await networkBack(context);
-    // 1ª tentativa de cada item: o servidor gravou, a resposta sumiu, o item continua na fila.
-    await expect.poll(() => server.executions.size).toBeGreaterThanOrEqual(1);
-    await expect.poll(async () => (await queuedIds(page)).length).toBeGreaterThan(0);
+    // 1ª tentativa: o servidor gravou o primeiro item e a resposta sumiu. O item continua na fila (o reenvio dele,
+    // conferido no fim, prova isso).
+    await expect.poll(() => server.hits.map((h) => h.outcome)).toContain('executed-response-lost');
 
-    // O reenvio com a mesma chave devolve o que foi guardado, sem executar outra vez.
-    server.mode = 'up';
+    // O reenvio com a mesma chave devolve o que foi guardado, sem executar outra vez. A rede de volta faz o motor
+    // tentar já, sem esperar o backoff.
     await networkBack(context);
     await expect.poll(() => queuedIds(page)).toEqual([]);
     await networkBack(context);

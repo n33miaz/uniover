@@ -159,19 +159,39 @@ describe('AuthLayout', () => {
 
   it('ignores a resize caused by its own scroll, and answers the keyboard afterwards', () => {
     const { input } = setup();
-    boxAt(600, 648);
+    const box = boxAt(600, 648);
     resizeTo(420); // teclado aberto: o campo ficou atrás dele
     focusField(input);
     vi.advanceTimersByTime(350);
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    box.mockReturnValue({ top: 186, bottom: 234 } as DOMRect); // a rolagem trouxe o campo para a parte visível
     // A barra do navegador encolhe durante a rolagem que a moldura pediu: não é motivo para outra.
     resizeTo(460);
     vi.advanceTimersByTime(150);
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    // Nem depois de ela acabar: o campo já está à vista.
+    vi.advanceTimersByTime(600);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    box.mockReturnValue({ top: 600, bottom: 648 } as DOMRect);
     // Passada a rolagem, o teclado mudando de altura volta a ser atendido.
     vi.advanceTimersByTime(600);
     resizeTo(400);
     vi.advanceTimersByTime(150);
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  it('answers a keyboard that rises again during its own scroll, once that scroll is over', () => {
+    const { input } = setup();
+    boxAt(600, 648);
+    resizeTo(420); // primeiro passo do teclado: o campo ficou atrás dele
+    focusField(input);
+    vi.advanceTimersByTime(350);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    // O segundo passo chega no meio da rolagem e o campo continua cortado: a conferência espera e não se perde.
+    resizeTo(300);
+    vi.advanceTimersByTime(150);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(600);
     expect(scrollIntoView).toHaveBeenCalledTimes(2);
   });
 

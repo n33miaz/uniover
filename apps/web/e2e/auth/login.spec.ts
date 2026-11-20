@@ -332,6 +332,20 @@ test.describe('tela de entrada: teclado virtual', () => {
     await email(page).focus();
     await expect(email(page)).toBeInViewport({ ratio: 1 });
   });
+
+  test('o teclado que sobe em dois passos, o segundo no meio da rolagem, não deixa o campo coberto', async ({
+    page,
+  }) => {
+    await openLogin(page);
+    await password(page).focus();
+    const width = page.viewportSize()!.width;
+    // Primeiro passo: a moldura rola um pouco para mostrar o campo e o botão.
+    await page.setViewportSize({ width, height: 450 });
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    // Segundo passo, ainda dentro da rolagem que a moldura pediu.
+    await page.setViewportSize({ width, height: 300 });
+    await expect(password(page)).toBeInViewport({ ratio: 1 });
+  });
 });
 
 test.describe('tela de entrada: acessibilidade (axe, qualquer gravidade)', () => {
