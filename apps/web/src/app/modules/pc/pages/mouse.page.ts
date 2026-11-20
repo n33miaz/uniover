@@ -1,3 +1,5 @@
+import { PcAvailability } from '../../../core/modules/pc-availability';
+import { modifierLabel } from '../data/pc-key-label';
 import { DOCUMENT } from '@angular/common';
 import {
   ChangeDetectionStrategy,
@@ -30,14 +32,6 @@ import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
 import { PcShortcutSheet } from '../ui/shortcut-sheet';
 import { ScreenWakeLock } from '../ui/wake-lock';
 
-/** Os nomes das teclas modificadoras não se traduzem: são as que estão no teclado do PC. */
-const MODIFIER_LABEL: Readonly<Record<PcModifier, string>> = {
-  CTRL: 'Ctrl',
-  SHIFT: 'Shift',
-  ALT: 'Alt',
-  WIN: 'Win',
-};
-
 /** Quanto tempo a falha de uma tecla fica na tela. */
 const ERROR_MS = 4_000;
 
@@ -60,6 +54,7 @@ interface Ring {
  */
 @Component({
   selector: 'app-pc-mouse-page',
+  host: { '[attr.data-typing]': 'typing() ? "" : null' },
   imports: [PcActionBar, PcKeyPanel, PcLiveKeyboard, PcPadSettingsSheet, PcShortcutSheet],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -434,8 +429,10 @@ export class MousePage {
     }
   }
 
+  private readonly pcStatus = inject(PcAvailability).status;
+
   protected label(modifier: PcModifier): string {
-    return MODIFIER_LABEL[modifier];
+    return modifierLabel(modifier, this.pcStatus()?.system);
   }
 
   protected onDown(event: PointerEvent): void {

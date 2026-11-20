@@ -75,6 +75,9 @@ const HOME_BACK: ShellBack = {
     main.training-main {
       padding: 0;
     }
+    :host(:has(app-pc-mouse-page[data-typing])) .tabs {
+      display: none;
+    }
     .tabs {
       position: sticky;
       bottom: var(--kb-inset);

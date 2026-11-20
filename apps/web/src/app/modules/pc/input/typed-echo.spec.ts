@@ -115,6 +115,9 @@ describe('TypedEcho', () => {
     expect(keyLabel('V', ['CTRL', 'SHIFT'])).toBe('Ctrl+Shift+V');
     expect(keyLabel('SPACE', ['CTRL'])).toBe('Ctrl+Espaço');
     expect(keyLabel('F4', ['ALT'])).toBe('Alt+F4');
+    expect(keyLabel('C', ['WIN'], 'windows')).toBe('Win+C');
+    expect(keyLabel('C', ['WIN'], 'macos')).toBe('⌘+C');
+    expect(keyLabel('WIN', [], 'linux')).toBe('Super');
   });
 
   it('a failed send leaves a warning that Backspace does not take back', () => {

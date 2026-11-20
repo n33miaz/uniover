@@ -329,6 +329,20 @@ describe('PcLiveKeyboard', () => {
     field.dispatchEvent(new Event('compositionend'));
   });
 
+  it('sends only the committed composition even if the final input event follows it', async () => {
+    field.dispatchEvent(new Event('compositionstart'));
+    type(SENTINEL + 'ca');
+    type(SENTINEL + 'caf');
+    await flush();
+    expect(store.sendText).not.toHaveBeenCalled();
+
+    field.value = SENTINEL + 'café';
+    field.dispatchEvent(new Event('compositionend'));
+    type(SENTINEL + 'café');
+    await flush();
+    expect(store.sendText).toHaveBeenCalledExactlyOnceWith('café');
+  });
+
   it('tells when the keyboard mode turns on and off', () => {
     fixture.componentInstance.open();
     fixture.componentInstance.open();

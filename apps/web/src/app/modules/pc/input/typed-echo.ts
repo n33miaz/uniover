@@ -1,3 +1,5 @@
+import type { PcSystem } from '../../../core/modules/pc-availability';
+import { modifierLabel, systemKeyLabel } from '../data/pc-key-label';
 import type { PcKey, PcModifier } from '../data/pc-types';
 import { textSteps, type TextDiff } from './live-typing';
 
@@ -111,19 +113,16 @@ const KEY_ECHO: Readonly<Record<PcKey, { readonly text: string } | { readonly sy
   SHIFT: { symbol: 'Shift' },
 };
 
-const MODIFIER_ECHO: Readonly<Record<PcModifier, string>> = {
-  CTRL: 'Ctrl',
-  SHIFT: 'Shift',
-  ALT: 'Alt',
-  WIN: 'Win',
-};
-
 /** O nome curto de uma tecla com modificadores ("Ctrl+C"). */
-export function keyLabel(key: PcKey, modifiers: readonly PcModifier[] = []): string {
+export function keyLabel(
+  key: PcKey,
+  modifiers: readonly PcModifier[] = [],
+  system?: PcSystem,
+): string {
   const echo = KEY_ECHO[key];
   const base =
     'text' in echo ? (echo.text === ' ' ? 'Espaço' : echo.text.toUpperCase()) : echo.symbol;
-  return [...modifiers.map((modifier) => MODIFIER_ECHO[modifier]), base].join('+');
+  return [...modifiers.map((modifier) => modifierLabel(modifier, system)), key === 'WIN' ? systemKeyLabel(system) : base].join('+');
 }
 
 /**
@@ -133,6 +132,8 @@ export function keyLabel(key: PcKey, modifiers: readonly PcModifier[] = []): str
  */
 export class TypedEcho {
   private tokens: EchoToken[] = [];
+
+  constructor(private readonly system: () => PcSystem | undefined = () => undefined) {}
 
   /** Os pedaços guardados (para testes). */
   get all(): readonly EchoToken[] {
@@ -162,7 +163,7 @@ export class TypedEcho {
       // Enter e Tab entram no texto do campo do PC: o Backspace os tira; o resto só mexe no cursor ou na janela.
       return this.push({
         kind: 'key',
-        value: echo.symbol,
+        value: key === 'WIN' ? systemKeyLabel(this.system()) : echo.symbol,
         erasable: key === 'ENTER' || key === 'TAB',
       });
     }
@@ -176,7 +177,7 @@ export class TypedEcho {
     ) {
       return this.push({ kind: 'text', value: echo.text.toUpperCase(), erasable: true });
     }
-    this.push({ kind: 'key', value: keyLabel(key, modifiers), erasable: false });
+    this.push({ kind: 'key', value: keyLabel(key, modifiers, this.system()), erasable: false });
   }
 
   /** `count` apertos da mesma tecla (segurar apagar ou uma seta). */

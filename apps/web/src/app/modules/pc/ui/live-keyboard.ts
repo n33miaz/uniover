@@ -1,3 +1,4 @@
+import { PcAvailability } from '../../../core/modules/pc-availability';
 import { DOCUMENT } from '@angular/common';
 import {
   ChangeDetectionStrategy,
@@ -86,7 +87,7 @@ const NOTED_FAILURES: ReadonlySet<string> = new Set([
       aria-label="Digitar no PC"
       i18n-aria-label="@@pc.live.field"
       [disabled]="disabled()"
-      (input)="onInput()"
+      (input)="onInput($event)"
       (keydown)="onKeydown($event)"
       (beforeinput)="onBeforeInput($event)"
       (compositionstart)="composing = true"
@@ -143,7 +144,8 @@ export class PcLiveKeyboard {
    * O que se digitou no PC nesta sessão de digitação, só para a tela mostrar. Só na memória (o campo do PC pode ser uma senha):
    * não vai a armazenamento nem a registro, e se esvazia ao abrir e ao fechar o teclado.
    */
-  private readonly typedEcho = new TypedEcho();
+  private readonly pcStatus = inject(PcAvailability).status;
+  private readonly typedEcho = new TypedEcho(() => this.pcStatus()?.system);
   private readonly echoView = signal<readonly EchoSegment[]>([]);
   /** O eco para a tela: o fim do que se digitou, em trechos (texto e teclas). */
   readonly echo = this.echoView.asReadonly();
@@ -385,7 +387,9 @@ export class PcLiveKeyboard {
     } else if (!NOTED_FAILURES.has(failure.kind)) this.failed.emit(failure.message);
   }
 
-  protected onInput(): void {
+  protected onInput(event?: Event): void {
+    const input = event as InputEvent | undefined;
+    if (this.composing || input?.isComposing) return;
     const field = this.field().nativeElement;
     const { diff, after } = fieldDiff(this.mirror, field.value);
     if (diff.erase === 0 && diff.insert === '') {
@@ -395,7 +399,14 @@ export class PcLiveKeyboard {
     }
     const armed = this.armed.armed();
     // Com uma tecla armada, uma letra sozinha é o atalho (Ctrl armado e "c" é Ctrl+C), não texto: sai como tecla e some do campo.
-    if (armed.size > 0 && diff.erase === 0 && /^[a-z]$/i.test(diff.insert)) {
+    if (
+      input?.inputType !== 'insertFromPaste' &&
+      input?.inputType !== 'insertReplacementText' &&
+      input !== undefined &&
+      armed.size > 0 &&
+      diff.erase === 0 &&
+      /^[a-z]$/i.test(diff.insert)
+    ) {
       field.value = this.lastValue;
       const letter = diff.insert.toUpperCase() as PcLetter;
       const modifiers = this.armed.take();
@@ -420,7 +431,7 @@ export class PcLiveKeyboard {
 
   protected onKeydown(event: KeyboardEvent): void {
     // Durante a composição (predição do teclado do celular) as teclas são do teclado, não do PC.
-    if (event.isComposing || event.keyCode === 229) return;
+    if (this.composing || event.isComposing || event.keyCode === 229) return;
     if (event.key === 'Enter') {
       event.preventDefault();
       this.press('ENTER');
@@ -436,7 +447,11 @@ export class PcLiveKeyboard {
   /** Teclados de celular nem sempre mandam `keydown` com o nome da tecla: o `beforeinput` cobre Enter e apagar com o campo vazio. */
   protected onBeforeInput(event: Event): void {
     const { inputType: type, isComposing } = event as InputEvent;
-    if ((type === 'insertLineBreak' || type === 'insertParagraph') && !isComposing) {
+    if (
+      (type === 'insertLineBreak' || type === 'insertParagraph') &&
+      !isComposing &&
+      !this.composing
+    ) {
       event.preventDefault();
       this.press('ENTER');
     } else if (type === 'deleteContentBackward' && this.caretAtStart() && !this.composing) {
@@ -486,6 +501,7 @@ export class PcLiveKeyboard {
 
   protected onCompositionEnd(): void {
     this.composing = false;
+    this.onInput();
     if (!this.resetPending) return;
     // O `input` final da composição pode chegar depois deste evento: ele é processado primeiro e só então o campo recomeça.
     setTimeout(() => {

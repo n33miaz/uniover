@@ -181,7 +181,7 @@
   text-align: center;
 }
 
-/* O eco do que se digita: uma linha só, discreta, logo acima da barra. Mostra o fim (o começo some pela esquerda). */
+/* O eco da digitação começa à esquerda, logo acima da barra de ações. */
 .echo {
   display: flex;
   align-items: center;
@@ -198,15 +198,12 @@
   display: flex;
   flex: 1;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 2px;
   min-width: 0;
   margin: 0;
   overflow: hidden;
   white-space: pre;
-  /* O começo que não cabe some aos poucos pela esquerda. */
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--space-4, 20px));
-  mask-image: linear-gradient(to right, transparent, #000 var(--space-4, 20px));
 }
 .echo-text,
 .echo-key {
