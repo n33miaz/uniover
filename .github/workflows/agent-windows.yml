@@ -54,13 +54,28 @@ jobs:
       # num processo só e em sequência. Só o arquivo da baliza abre POSTs de baliza e só o da tarefa agendada registra
       # tarefas "UniOver teste"; como esses testes contam o que existe na máquina inteira, dois deles ao mesmo tempo se
       # enxergariam. Os mutex do supervisor e do lançador levam a pasta da instalação, que é a temporária de cada teste.
-      - name: Suíte inteira do agente (os testes do lançador, do supervisor e do instalador não podem ser pulados)
+      - name: Suíte inteira do agente com testes obrigatórios do Windows
         run: |
-          uv run pytest -rs -p no:cacheprovider -n 4 --dist loadfile --durations=30 2>&1 | Tee-Object -Variable lines
+          uv run pytest -rs -p no:cacheprovider -n 4 --dist loadfile --durations=30 --junitxml=windows-tests.xml -o xfail_strict=true 2>&1 | Tee-Object -Variable lines
           $code = $LASTEXITCODE
           if ($code -ne 0) { throw "a suíte do agente falhou (código $code)" }
           # No Windows eles têm de rodar: pular aqui seria o mesmo que não ter o job. Os outros pulos da suíte (permissão
           # do POSIX, ensaio visual opt-in) continuam permitidos.
-          $windowsOnly = 'test_launcher_recovery|test_run_agent_state|test_run_agent_sync|test_installer_swap|test_windows_installer|test_scheduled_task'
+          $requiredModules = @(
+            'test_launcher_recovery'
+            'test_run_agent_state'
+            'test_run_agent_sync'
+            'test_installer_swap'
+            'test_windows_installer'
+            'test_scheduled_task'
+            'test_update_path'
+          )
+          $windowsOnly = $requiredModules -join '|'
           $skipped = $lines | Where-Object { "$_" -match "^SKIPPED \[\d+\] tests[/\x5C]($windowsOnly)\.py" -or "$_" -match '^SKIPPED .*precisa do Windows' }
           if ($skipped) { throw ("testes que só rodam no Windows foram pulados:`n" + ($skipped -join "`n")) }
+          # O relatório único do xdist precisa registrar pelo menos um teste aprovado de cada módulo.
+          [xml]$report = Get-Content -LiteralPath windows-tests.xml -Raw
+          $passedModules = $report.SelectNodes('//testcase[not(skipped or failure or error)]') |
+            ForEach-Object { $_.GetAttribute('classname') -creplace '^(tests\.[^.]+)\..*', '$1' }
+          $missing = $requiredModules | Where-Object { "tests.$_" -cnotin $passedModules }
+          if ($missing) { throw ("módulos obrigatórios sem testes aprovados: " + ($missing -join ', ')) }
