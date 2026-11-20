@@ -54,6 +54,8 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "pytest-cov",
+    # Paralelismo da suíte no runner do Windows (agent-windows.yml); localmente só roda com `-n`.
+    "pytest-xdist==3.8.0",
     "ruff",
 ]
 
