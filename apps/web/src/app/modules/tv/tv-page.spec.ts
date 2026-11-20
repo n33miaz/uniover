@@ -1543,9 +1543,9 @@ describe('TvPage by permission', () => {
     localStorage.clear();
   });
 
-  it('control only: the whole control and the name opens Personalizar; the menu holds only the options and Personalizar, and there is no power', async () => {
+  it('control only: the whole control and the name opens Personalizar; the menu holds only the options and Personalizar, and power is only the sleep', async () => {
     await open('guest', 'module:tv', 'tv:control');
-    expect(labels()).toEqual(['Voltar ao Início', 'Mais opções', STATE]);
+    expect(labels()).toEqual(['Voltar ao Início', 'Mais opções', STATE, 'Apagar a tela da TV']);
     expect(root.querySelector('app-tv-control')).not.toBeNull();
     expect(root.querySelector('app-tv-view-only')).toBeNull();
     expect(titleButton()?.getAttribute('aria-label')).toBe('TV, personalizar');
