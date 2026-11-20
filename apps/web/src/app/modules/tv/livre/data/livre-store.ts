@@ -488,6 +488,8 @@ export class TvLivreStore {
     if (!view || this._busy() !== null) return;
     this._draft.set(normalizeApps(view.config));
     this._notice.set(null);
+  }
+
   /**
    * Troca o tempo do Modo Dormir já valendo: guarda só esse tempo (o resto da configuração fica como foi guardado e o
    * rascunho do que a pessoa está editando não é tocado) e o próximo Modo Dormir o usa. Sem o launcher novo, vira uma

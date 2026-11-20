@@ -695,6 +695,8 @@ describe('LivrePage', () => {
       const options = q('app-livre-display-options').textContent!;
       expect(options).not.toContain('Círculo Rede');
       expect(options).toContain('Relógio');
+      // O Dormir é do primeiro launcher: a chave aparece para qualquer TV com o TV Livre.
+      expect(options).toContain('Círculo Dormir');
     });
   });
 
@@ -740,6 +742,12 @@ describe('LivrePage', () => {
       tvApi.sendKey.mockResolvedValue(undefined);
     });
 
+    // A barra de Aplicar só aparece com uma mudança no rascunho.
+    const changeSomething = async () => {
+      q<HTMLInputElement>('input[aria-label="Mostrar Beta na Home"]').click();
+      await change();
+    };
+
     it('offers Mostrar Agora na TV when the apply only saved, and the Início key shows it', async () => {
       api.get.mockResolvedValue(view({ installed: true, isHome: true, extended: true }));
       await render();
@@ -747,6 +755,7 @@ describe('LivrePage', () => {
       api.apply.mockResolvedValue(
         view({ installed: true, isHome: true, extended: true, applyDeferred: true }),
       );
+      await changeSomething();
       button('Aplicar na TV')!.click();
       await change();
       await change();
@@ -763,12 +772,14 @@ describe('LivrePage', () => {
       await render();
       api.saveConfig.mockResolvedValue(view({ installed: true }));
       api.apply.mockResolvedValue(view({ installed: true, extended: true, applyDeferred: true }));
+      await changeSomething();
       button('Aplicar na TV')!.click();
       await change();
       await change();
       expect(button('Mostrar Agora na TV')).toBeUndefined();
 
       api.apply.mockResolvedValue(view({ installed: true, isHome: true, extended: true }));
+      await changeSomething();
       button('Aplicar na TV')!.click();
       await change();
       await change();
@@ -782,6 +793,7 @@ describe('LivrePage', () => {
       api.apply.mockResolvedValue(
         view({ installed: true, isHome: true, extended: true, applyDeferred: true }),
       );
+      await changeSomething();
       button('Aplicar na TV')!.click();
       await change();
       await change();
@@ -817,6 +829,8 @@ describe('LivrePage', () => {
       named('Mostrar a Data').click();
       named('Círculo Rede').click();
       named('Nome do Sistema no Canto').click();
+      expect(named('Círculo Dormir').checked).toBe(true);
+      named('Círculo Dormir').click();
       await change();
 
       api.saveConfig.mockResolvedValue(view({ installed: true }));
