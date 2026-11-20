@@ -221,13 +221,19 @@ def test_the_tray_never_holds_the_executable_that_the_sync_replaces() -> None:
 # ---- nenhuma janela de console, nem por um instante ----
 
 
-def _vbs_run_calls(script: str, tmp_path: Path) -> list[str]:
-    """Executa o VBS com um Shell falso que so anota `Run(comando, estilo, espera)`."""
+def _vbs_run_calls(script: str, tmp_path: Path, build: str = "26100") -> list[str]:
+    """Executa o VBS com um Shell falso que so anota `Run(comando, estilo, espera)`.
+
+    `build` e o numero da versao do Windows que o falso devolve ao `RegRead`.
+    """
     fake = (
         "Class FakeShell\r\n"
         "  Public Sub Run(a, b, c)\r\n"
         '    WScript.Echo "RUN|" & b & "|" & c & "|" & a\r\n'
         "  End Sub\r\n"
+        "  Public Function RegRead(a)\r\n"
+        f'    RegRead = "{build}"\r\n'
+        "  End Function\r\n"
         "  Public Function ExpandEnvironmentStrings(a)\r\n"
         '    ExpandEnvironmentStrings = "C:\\Fake"\r\n'
         "  End Function\r\n"
@@ -268,10 +274,19 @@ def test_launcher_vbs_is_ascii_and_opens_the_powershell_launcher_with_a_hidden_w
     style, wait, command = calls[0].split("|")[1:]
     assert style == "0", "estilo 0 = janela oculta desde a criacao"
     assert wait.lower() in ("false", "falso")
+    # Windows 10 2004 em diante: o PowerShell nasce num console sem janela (o Terminal do
+    # Windows nao o adota).
     assert command.startswith(
+        "C:\\Fake\\System32\\conhost.exe --headless powershell.exe -NoProfile"
+    )
+    assert "-ExecutionPolicy Bypass -WindowStyle Hidden -File" in command
+    assert command.endswith('\\launcher.ps1"')
+    # Windows mais antigo (sem `--headless`): o PowerShell oculto direto, como antes.
+    (old_style, _, old_command) = _vbs_run_calls(text, tmp_path, build="17763")[0].split("|")[1:]
+    assert old_style == "0"
+    assert old_command.startswith(
         "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File"
     )
-    assert command.endswith('\\launcher.ps1"')
 
 
 def test_the_vbs_written_by_the_migration_is_the_same_as_the_one_in_tools() -> None:
@@ -456,10 +471,26 @@ def test_the_installer_has_no_console_prompts_in_the_automatic_mode() -> None:
     assert "Read-Host" not in automatic
     assert "-Verb RunAs" in installer
     assert installer.count("Read-Host") == 1  # so o modo manual (terminal visivel)
-    assert "Write-Page 'Pronto. Pode fechar esta janela.' $false" in automatic
-    for step in ("Instalando o UniOver", "Procurando a TV", "Pareando a TV"):
-        assert step in automatic
+    assert "Write-Page 'Tudo pronto'" in automatic
     assert "pair --if-needed --no-browser --installing" in automatic
+    # Um aviso do Windows logo no comeco, depois o QR do celular, depois a TV, depois o inicio
+    # automatico.
+    order = [
+        "Set-SystemSettings",
+        "Find-Uv",
+        "Invoke-Prepare $uv",
+        "Install-Adb",
+        "uniover-agent pair",
+        "'tv-find'",
+        "tv-pair --if-needed --installing --code-on-phone",
+        "Register-AgentTask",
+    ]
+    positions = [automatic.index(item) for item in order]
+    assert positions == sorted(positions)
+    # Nenhuma janela alem do aviso do Windows: sem pergunta de pasta e sem caixa do codigo da
+    # TV no PC.
+    assert "Select-InstallFolder" not in installer
+    assert "FolderBrowserDialog" not in installer
 
 
 def test_the_elevated_part_only_applies_system_settings() -> None:
@@ -524,6 +555,14 @@ def test_the_cmd_writes_a_vbs_that_runs_the_installer_hidden(tmp_path: Path) -> 
     style, _wait, command = calls[0].split("|")[1:]
     assert style == "0"
     assert command.startswith(
+        "C:\\Fake\\System32\\conhost.exe --headless powershell.exe -NoProfile -ExecutionPolicy"
+        " Bypass -WindowStyle Hidden -Command"
+    )
+    (old_command,) = (
+        line.split("|", 3)[3]
+        for line in _vbs_run_calls(generated.read_text(encoding="ascii"), tmp_path, "17763")
+    )
+    assert old_command.startswith(
         "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command"
     )
     assert "/main/apps/agent/tools/update-channel.json" in command

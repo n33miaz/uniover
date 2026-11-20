@@ -49,7 +49,7 @@ $automatic = ($env:UNIOVER_TEST_AUTOMATIC -eq '1')
 $existingBase = $env:UNIOVER_TEST_EXISTING
 if (-not $existingBase) { $existingBase = $null }
 $script:dialogs = 0
-# A janela de escolha de pasta nunca abre no teste: este substituto so conta as chamadas.
+# A janela de escolha de pasta saiu do instalador: este substituto prova que ninguem a chama.
 function Select-InstallFolder { $script:dialogs++; return $null }
 function Out-Result([string]$Text) {
     [System.IO.File]::WriteAllText($env:UNIOVER_TEST_OUT, $Text, [System.Text.UTF8Encoding]::new($false))
@@ -210,14 +210,14 @@ def test_a_reinstall_keeps_the_existing_folder_and_writes_no_pointer(short: Path
     assert "foi mantida" in log
 
 
-def test_without_a_folder_the_automatic_install_asks_once_and_cancelling_uses_the_default(
+def test_without_a_folder_the_automatic_install_uses_the_default_without_asking(
     short: Path,
 ) -> None:
     anchor = short / "UniOver"
     body = "Initialize-InstallFolder; Out-Result ($base + '|' + $script:dialogs)"
     done, out = run(short, body, anchor=anchor, automatic=True)
     assert done.returncode == 0, done.stderr
-    assert result(out) == f"{anchor}|1"
+    assert result(out) == f"{anchor}|0"
     assert not (anchor / "location.txt").exists()
 
 
@@ -354,21 +354,6 @@ def test_the_texts_the_person_reads_have_no_jargon() -> None:
     assert len(strings) > 15, "o filtro deixou de achar os textos do instalador"
     offenders = [text for text in strings if JARGON.search(text)]
     assert offenders == []
-
-
-def test_the_folder_dialog_is_gentle_and_never_blocks_the_install() -> None:
-    text = INSTALLER.read_text(encoding="utf-8")
-    dialog = text[
-        text.index("function Select-InstallFolder") : text.index(
-            "function Initialize-InstallFolder"
-        )
-    ]
-    assert "FolderBrowserDialog" in dialog
-    assert "[regex]::Unescape" in dialog  # o arquivo e ASCII: os acentos vao por escape
-    assert "catch { }" in dialog and dialog.rstrip().endswith("return $null\n}".rstrip())
-    assert (
-        dialog.count("return $null") == 1
-    )  # cancelar ou falhar devolve `$null`: usa a pasta padrao
 
 
 def test_the_zip_comment_is_checked_before_anything_is_extracted() -> None:
