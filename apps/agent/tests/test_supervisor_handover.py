@@ -299,7 +299,13 @@ def test_the_window_of_a_handover_is_measured_when_the_new_one_is_ready(pc: Hand
         for field in ("new_start_to_connected_s", "connected_to_ready_s"):
             assert field in item["detail"]
         assert item["detail"].isascii()
-        assert not (pc.runtime / "update-window.json").exists()
+        # O supervisor grava o diagnóstico antes de apagar a janela (`Complete-UpdateWindow`): sob
+        # carga o teste pode ver o diagnóstico entre as duas ações, então espera a remoção.
+        window = pc.runtime / "update-window.json"
+        assert wait_for(lambda: not window.exists(), 30), pc.supervisor_log()
+        # Fechada uma vez só: a volta seguinte não mede de novo a mesma passagem.
+        time.sleep(2)
+        assert sum(i["kind"] == "update.window" for i in pc.diagnostics()) == 1
 
 
 def outcome(pc: HandoverPc) -> object:
