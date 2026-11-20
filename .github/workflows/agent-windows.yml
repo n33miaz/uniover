@@ -32,8 +32,9 @@ jobs:
   agent-windows:
     name: agent-windows
     runs-on: windows-latest
-    # O pytest inteiro leva poucos minutos; o teto existe para um teste de PowerShell travado não prender o runner.
-    timeout-minutes: 30
+    # A suíte inteira no Windows já passa de 25 minutos (testes reais de PowerShell e do supervisor); o teto existe para um
+    # teste travado não prender o runner.
+    timeout-minutes: 50
     defaults:
       run:
         working-directory: apps/agent
