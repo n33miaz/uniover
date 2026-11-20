@@ -93,6 +93,38 @@ internal static class GuestSeed
         var user = await db.Users.SingleAsync(u => u.Email == email, TestContext.Current.CancellationToken);
         return new GuestSession(user.Id, email, password, login);
     }
+
+    /// <summary>
+    /// Espera o despachante entregar tudo o que o Identity pôs na outbox (o aceite avisa os módulos do convite, e a TV liga a
+    /// conta à TV padrão por esse aviso). Sem isto, o teste que chama a TV logo depois do aceite correria contra a entrega.
+    /// </summary>
+    public static async Task WaitForIdentityOutboxAsync(TestDatabase database)
+    {
+        ArgumentNullException.ThrowIfNull(database);
+
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (true)
+        {
+            await using var db = IdentityApp.CreateContext(database.OwnerConnection);
+            var pending = await db.Set<UniOver.BuildingBlocks.Messaging.OutboxMessage>()
+                .Where(m => m.ProcessedAt == null)
+                .Select(m => new { m.Type, m.Attempts, m.LastError })
+                .ToListAsync(TestContext.Current.CancellationToken);
+            if (pending.Count == 0)
+            {
+                return;
+            }
+
+            if (DateTime.UtcNow > deadline)
+            {
+                // Uma entrega que falhou espera o backoff no relógio falso, que o teste não avança: diz qual e por quê.
+                var detail = string.Join("; ", pending.Select(m => $"{m.Type} tentativas={m.Attempts} erro={m.LastError}"));
+                throw new TimeoutException($"A outbox do Identity não esvaziou a tempo: {detail}");
+            }
+
+            await Task.Delay(25, TestContext.Current.CancellationToken);
+        }
+    }
 }
 
 internal sealed record GuestSession(Guid UserId, string Email, string Password, LoggedIn Login);

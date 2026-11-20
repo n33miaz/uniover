@@ -58,6 +58,13 @@ public sealed class User
 
     public bool IsDisplayNameConfirmed => DisplayNameConfirmedAt is not null;
 
+    /// <summary>
+    /// Conta que já existia antes de o acesso a um módulo passar a ser concedido conta a conta. Um módulo que mostrava algo
+    /// compartilhado a toda conta sem vínculo próprio (a TV padrão) continua mostrando só para ela. Gravada uma única vez
+    /// pela migration que criou a coluna; toda conta criada pelo código depois disso nasce sem a marca e nunca a ganha.
+    /// </summary>
+    public bool PredatesModuleInvites { get; private set; }
+
     public static User Create(string email, string displayName, string passwordHash, DateTimeOffset now) =>
         Build(email, displayName, passwordHash, now, AccountRoles.Owner);
 
@@ -79,6 +86,7 @@ public sealed class User
             PasswordHash = passwordHash,
             CreatedAt = now,
             Role = role,
+            PredatesModuleInvites = false,
         };
     }
 

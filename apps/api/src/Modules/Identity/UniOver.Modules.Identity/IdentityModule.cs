@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Persistence;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity.Adapters;
@@ -78,6 +79,12 @@ public static class IdentityModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddModuleDbContext<IdentityDbContext>(
             configuration, IdentityDbContext.SchemaName, typeof(IdentityDbContext).Assembly);
+
+        // Efeitos em outros módulos (a conta ganhou um módulo) saem pela outbox do schema identity; quem reage registra o
+        // próprio assinante.
+        services.AddModuleOutbox<IdentityDbContext>(Name, IdentityDbContext.SchemaName);
+        services.AddIntegrationEvent<UniOver.Modules.Identity.Contracts.GuestModulesGranted>(
+            UniOver.Modules.Identity.Contracts.GuestModulesGranted.EventType);
 
         // Cada escrita reenviável usa uma chave no schema identity; a ponte mantém o filtro HTTP sem referência ao EF.
         services.AddIdempotencyStore<IdentityDbContext>();

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Persistence;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity.Domain;
@@ -77,6 +78,11 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
             // A linha que já existia antes dos convidados é a do dono: o padrão do banco é `owner`.
             e.Property(x => x.Role).HasMaxLength(20).IsRequired().HasDefaultValue(AccountRoles.Owner);
+
+            // Toda linha que não veio deste código é antiga: as que já existiam na migration e as que a versão anterior da API
+            // ainda gravar durante a publicação (as migrations rodam minutos antes do código novo). Por isso o padrão do banco
+            // é true. O sentinela true faz o EF omitir só o true (o banco preenche o mesmo valor) e gravar sempre o false.
+            e.Property(x => x.PredatesModuleInvites).HasDefaultValue(true).HasSentinel(true);
         });
 
         modelBuilder.Entity<RefreshToken>(e =>
@@ -314,6 +320,10 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             e.HasIndex(x => x.Metric).IsUnique().HasFilter("recovered_at IS NULL");
             e.HasIndex(x => x.DetectedAt);
         });
+
+        // Eventos de integração do Identity (a conta ganhou um módulo, por exemplo) saem pela outbox do schema identity, na
+        // mesma transação da mudança.
+        modelBuilder.AddOutbox().AddDeadLetters();
     }
 }
 

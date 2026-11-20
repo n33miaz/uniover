@@ -419,6 +419,7 @@ internal sealed class TvApp : IAsyncDisposable
         using var response = await GuestSeed.AcceptAsync(
             Client, token, email, password, forwardedFor: $"203.0.113.{ipSuffix}");
         var login = await GuestSeed.ReadLoginAsync(response);
+        await GuestSeed.WaitForIdentityOutboxAsync(Database);
 
         await using var db = this.Identity();
         var user = await db.Users.SingleAsync(u => u.Email == email, TestContext.Current.CancellationToken);

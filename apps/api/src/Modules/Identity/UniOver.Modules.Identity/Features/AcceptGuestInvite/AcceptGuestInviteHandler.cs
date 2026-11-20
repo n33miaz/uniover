@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using UniOver.BuildingBlocks.Messaging;
 using UniOver.BuildingBlocks.Web;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Persistence;
 using UniOver.Modules.Identity.Security;
@@ -42,7 +44,8 @@ internal sealed class AcceptGuestInviteHandler(
     AccessTokenIssuer tokens,
     LoginAuditWriter audit,
     TimeProvider time,
-    IOptions<IdentityModuleOptions> options)
+    IOptions<IdentityModuleOptions> options,
+    IEventBus events)
 {
     public async Task<AcceptGuestInviteResult> HandleAsync(AcceptGuestInviteCommand command, CancellationToken cancellationToken = default)
     {
@@ -111,6 +114,14 @@ internal sealed class AcceptGuestInviteHandler(
         DeviceKeyRegistration.Add(db, familyId, user.Id, command.Client, now);
         audit.Add(user.Id, AuditEvents.GuestInviteAccepted, command.Client, inviteId.ToString("N"));
         audit.Add(user.Id, AuditEvents.LoginSucceeded, command.Client);
+
+        // Os módulos do convite saem na outbox, na MESMA transação da conta: cada módulo decide o vínculo (a TV passa a seguir a TV
+        // padrão). Uma conta nova não herda nada compartilhado sem esse aviso, então ele não pode se perder.
+        var modules = permissions.Permissions.Where(p => p.StartsWith("module:", StringComparison.Ordinal)).ToList();
+        if (modules.Count > 0)
+        {
+            await events.PublishAsync(new GuestModulesGranted(IdGenerator.NewId(), now, user.Id, modules), cancellationToken);
+        }
 
         try
         {

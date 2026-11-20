@@ -109,6 +109,9 @@ public static class TvModule
         services.AddScoped<ITvCommandAudit, EfCommandAudit>();
         services.AddScoped<ITvCurrentSelection, TvCurrentSelection>();
         services.AddScoped<TvSelectionService>();
+
+        // A conta que ganha o módulo da TV passa a seguir a TV padrão (o aviso vem da outbox do Identity).
+        services.AddScoped<IIntegrationEventHandler<GuestModulesGranted>, DefaultTvFollowerGrant>();
         services.AddScoped<ITvDirectChannels, TvDirectChannels>();
 
         // Auditoria: os comandos da TV são uma fonte da trilha do administrador. A retenção (30 dias) roda no banco; a aplicação só chama a função.

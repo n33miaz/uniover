@@ -271,8 +271,14 @@ internal sealed class DevicesApp : IAsyncDisposable
     public const string PairSelfAction = "devices.pair-self";
 
     /// <summary>Convidado novo, ativo, com as permissões dadas (padrão: só ver a TV).</summary>
-    public Task<GuestSession> NewGuestAsync(IReadOnlyCollection<string>? permissions = null, string label = "Raphael") =>
-        GuestSeed.CreateGuestAsync(Client, Database, Time.GetUtcNow(), label, permissions ?? ["module:tv"]);
+    public async Task<GuestSession> NewGuestAsync(IReadOnlyCollection<string>? permissions = null, string label = "Raphael")
+    {
+        var guest = await GuestSeed.CreateGuestAsync(Client, Database, Time.GetUtcNow(), label, permissions ?? ["module:tv"]);
+
+        // O aceite liga a conta à TV padrão por um aviso da outbox: espera a entrega antes de o teste usar a TV.
+        await GuestSeed.WaitForIdentityOutboxAsync(Database);
+        return guest;
+    }
 
     /// <summary>Entra de novo com o e-mail e a senha do convidado: uma sessão nova, sem nenhuma confirmação.</summary>
     public async Task<LoggedIn> LoginAsync(GuestSession guest)

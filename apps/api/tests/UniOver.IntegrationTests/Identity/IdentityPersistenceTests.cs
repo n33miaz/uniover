@@ -58,10 +58,10 @@ public sealed class IdentityPersistenceTests(PostgresFixture postgres) : IDispos
             + "WHERE schema_name NOT IN ('public', 'information_schema', 'identity') AND schema_name NOT LIKE 'pg_%'");
 
         tables.Should().Equal(
-            "__ef_migrations_history", "account_preferences", "account_recovery_codes", "capacity_alerts", "capacity_samples", "guest_invites",
-            "idempotency_keys", "install_hint_answers", "login_audit", "passkeys", "password_reset_tokens", "qr_login_requests", "refresh_device_keys",
-            "refresh_recovery_challenges", "refresh_tokens", "step_up_confirmations", "system_settings", "totp_factors", "user_grants",
-            "users", "webauthn_challenges");
+            "__ef_migrations_history", "account_preferences", "account_recovery_codes", "capacity_alerts", "capacity_samples", "dead_letters",
+            "guest_invites", "idempotency_keys", "install_hint_answers", "login_audit", "outbox_messages", "passkeys", "password_reset_tokens",
+            "qr_login_requests", "refresh_device_keys", "refresh_recovery_challenges", "refresh_tokens", "step_up_confirmations", "system_settings",
+            "totp_factors", "user_grants", "users", "webauthn_challenges");
         publicTables.Should().BeEmpty();
         otherSchemas.Should().BeEmpty();
     }
@@ -88,7 +88,7 @@ public sealed class IdentityPersistenceTests(PostgresFixture postgres) : IDispos
 
         columns.Should().Equal(
             "created_at", "disabled_at", "display_name", "display_name_confirmed_at", "email", "failed_login_count", "id", "last_failed_at",
-            "lockout_until", "password_hash", "paused_at", "role");
+            "lockout_until", "password_hash", "paused_at", "predates_module_invites", "role");
     }
 
     [Fact]
