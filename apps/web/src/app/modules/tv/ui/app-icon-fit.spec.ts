@@ -1,5 +1,6 @@
 import {
   ANALYSIS_SIDE,
+  DARK_PLATE,
   MAX_TRIM,
   analyzeIconEdges,
   cachedIconFit,
@@ -130,6 +131,13 @@ describe('analyzeIconEdges', () => {
     expect(result.trim.left).toBeGreaterThan(0);
     expect(result.trim.left).toBeLessThan(0.05);
     expect(result.background).toBeNull();
+  });
+
+  it('gives a dark plate to a light drawing on a transparent background (it would vanish on the light tile)', () => {
+    const glyph = pixels(64, (x, y) => (Math.hypot(x - 32, y - 32) < 16 ? WHITE : CLEAR));
+    expect(analyzeIconEdges(glyph, 64, 64).background).toEqual(DARK_PLATE);
+    const colored = pixels(64, (x, y) => (Math.hypot(x - 32, y - 32) < 16 ? AMBER : CLEAR));
+    expect(analyzeIconEdges(colored, 64, 64).background).toBeNull();
   });
 
   it('does not trim the side where a free-form drawing touches the border', () => {

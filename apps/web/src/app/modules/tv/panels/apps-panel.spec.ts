@@ -854,6 +854,68 @@ describe('AppsPanel', () => {
       expect(root.querySelector('.empty')).toBeNull();
       expect(names()).toEqual(['Atalho 1']);
     });
+
+    it('says why when the reason is known (the TV did not allow the ADB), with the one-tap request', async () => {
+      store.state.set({ ...store.state()!, adbPermission: 'missing' });
+      await render();
+      expect(root.querySelector('.empty-title')?.textContent?.trim()).toBe(
+        'Não Dá para Ver os Apps Agora',
+      );
+      expect(root.textContent).toContain('A TV ainda não liberou o UniOver para ver os apps.');
+      expect(buttonByText('Buscar apps da TV')).toBeUndefined();
+      buttonByText('Pedir permissão na TV').click();
+      await render();
+      expect(store.refreshShortcuts).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('swapping a shortcut (edit mode)', () => {
+    beforeEach(async () => {
+      store.shortcuts.set([
+        makeShortcut(1, { tvLabel: 'Spotify' }),
+        makeShortcut(2, { tvLabel: 'Netflix', package: 'com.netflix.ninja', enabled: false }),
+      ]);
+      await render();
+      await startEditing();
+    });
+
+    it('offers "Trocar" only on apps in the control, named by the app', () => {
+      const swap = byLabel('Trocar Spotify por outro app');
+      expect(swap.textContent?.trim()).toBe('Trocar');
+      expect(root.querySelector('[aria-label="Trocar Netflix por outro app"]')).toBeNull();
+    });
+
+    it('opens the picker in place of the grid, and Voltar brings the grid back unchanged', async () => {
+      byLabel('Trocar Spotify por outro app').click();
+      await render();
+      expect(root.querySelector('app-tv-app-picker')).not.toBeNull();
+      expect(root.querySelector('.grid')).toBeNull();
+      expect(root.textContent).toContain('Escolha o app que entra no lugar de Spotify.');
+      buttonByText('Voltar').click();
+      await render();
+      expect(root.querySelector('app-tv-app-picker')).toBeNull();
+      expect(store.setShortcutEnabled).not.toHaveBeenCalled();
+    });
+
+    it('choosing an app swaps it into the same place and returns to the grid', async () => {
+      byLabel('Trocar Spotify por outro app').click();
+      await render();
+      root.querySelector<HTMLButtonElement>('app-tv-app-picker button.option')!.click();
+      await render();
+      await render();
+      expect(store.reorder).toHaveBeenCalledWith(['s2', 's1']);
+      expect(store.setShortcutEnabled.mock.calls).toEqual([
+        ['s2', true],
+        ['s1', false],
+      ]);
+      await vi.waitFor(() => {
+        fixture.detectChanges();
+        expect(root.querySelector('app-tv-app-picker')).toBeNull();
+      });
+      expect(root.querySelector('[data-reorder-status]')?.textContent).toContain(
+        'Netflix está no controle',
+      );
+    });
   });
 
   describe('before the first list arrives', () => {

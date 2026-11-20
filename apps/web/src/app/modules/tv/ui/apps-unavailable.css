@@ -1,0 +1,37 @@
+:host {
+  display: block;
+}
+
+.why {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.text {
+  margin: 0;
+  color: var(--a-ink2);
+}
+
+.fix[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Na fileira de atalhos: a frase curta ao lado do botão, quebrando para baixo quando a largura não dá. */
+:host(.compact) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+:host(.compact) .why {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+}
+:host(.compact) .text {
+  flex: 1 1 12rem;
+  font-size: var(--fs-small);
+}

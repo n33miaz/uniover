@@ -56,6 +56,7 @@
         (pin)="toggle($event)"
         (rename)="startRename($event)"
         (move)="move($event)"
+        (swap)="startSwap($event)"
       />
     }
   </li>
@@ -86,6 +87,22 @@
         <span class="ui-skeleton"></span>
       </div>
     }
+  </div>
+} @else if (swapping(); as old) {
+  <!-- Trocando um atalho: o seletor ocupa o painel; "Voltar" devolve a grade sem mudar nada. -->
+  <div class="swap-head">
+    <button type="button" class="secondary" (click)="endSwap(old, null)" i18n="@@tv.apps.swap-back">
+      Voltar
+    </button>
+    <p class="note">{{ swapText(old) }}</p>
+  </div>
+  <app-tv-app-picker [replacing]="old" (done)="endSwap(old, $event)" />
+} @else if (all().length === 0 && blockedReason()) {
+  <!-- Sabe-se por que não há lista: o motivo e o conserto, sem o "Buscar apps" que não adiantaria. -->
+  <div class="empty">
+    <app-tv-icon name="apps" />
+    <p class="empty-title" i18n="@@tv.apps.blocked-title">Não Dá para Ver os Apps Agora</p>
+    <app-tv-apps-unavailable />
   </div>
 } @else if (all().length === 0) {
   <div class="empty">

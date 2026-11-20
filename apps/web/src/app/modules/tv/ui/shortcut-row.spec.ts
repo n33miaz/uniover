@@ -3,10 +3,9 @@ import { SessionState } from '../../../core/session/session-state';
 import { TvAdbPermission } from '../data/tv-adb-permission';
 import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
-import { TV_SUGGESTED_APPS } from '../data/tv-suggestions';
 import { TvShortcut } from '../data/tv-types';
 import { FakeTvStore, createFakeTvStore, makeShortcut, pngIcon } from '../tv-test-kit';
-import { ShortcutRow, TvSuggestionRequest } from './shortcut-row';
+import { ShortcutRow, TvPickRequest, TvSuggestionRequest } from './shortcut-row';
 
 describe('ShortcutRow', () => {
   let store: FakeTvStore;
@@ -177,13 +176,19 @@ describe('ShortcutRow', () => {
       expect(hint()).toBe('Nenhum app fixado no controle.');
     });
 
-    it('says nothing while the list has not arrived yet, and the hint takes over once it is known to be empty', () => {
+    it('says nothing while the list has not arrived yet, and says why once it is known to be empty', () => {
       store.shortcuts.set(null);
       empty();
       expect(root.querySelector('.hint')).toBeNull();
+      expect(root.querySelector('app-tv-apps-unavailable')).toBeNull();
       store.shortcuts.set([]);
       fixture.detectChanges();
-      expect(hint()).toBe('Fixe apps aqui: abra o menu, no topo.');
+      // Nunca uma faixa vazia sem explicação: o motivo e o conserto de um toque.
+      expect(root.querySelector('.hint')).toBeNull();
+      const why = root.querySelector('app-tv-apps-unavailable')!;
+      expect(why.textContent).toContain('A TV ainda não informou os apps instalados.');
+      why.querySelector<HTMLButtonElement>('button')!.click();
+      expect(store.refreshShortcuts).toHaveBeenCalledTimes(1);
     });
 
     it('draws a skeleton of tiles, same size as the real ones, only while the store says it is loading and the list is missing', () => {
@@ -226,10 +231,32 @@ describe('ShortcutRow', () => {
     const suggestions = () => [...root.querySelectorAll<HTMLButtonElement>('.shortcut.suggestion')];
     const suggestionNames = () => suggestions().map((el) => el.getAttribute('aria-label'));
 
+    /** O que a TV informou: nenhum app no controle, as marcas conhecidas fora de ordem e um app que saiu da TV. */
+    const tvApps = (): TvShortcut[] => [
+      makeShortcut(1, { package: 'com.exemplo.zebra', tvLabel: 'Zebra', enabled: false }),
+      makeShortcut(2, { package: 'com.globo.globotv', tvLabel: 'Globoplay', enabled: false }),
+      makeShortcut(3, { package: 'com.netflix.ninja', tvLabel: 'Netflix', enabled: false }),
+      makeShortcut(4, { package: 'com.exemplo.agua', tvLabel: 'Água', enabled: false }),
+      makeShortcut(5, {
+        package: 'com.google.android.youtube.tv',
+        tvLabel: 'YouTube',
+        enabled: false,
+        iconDataUri: pngIcon(96, 96),
+      }),
+      makeShortcut(6, { package: 'com.disney.disneyplus', tvLabel: 'Disney+', enabled: false }),
+      makeShortcut(7, {
+        package: 'com.wbd.stream',
+        tvLabel: 'Max',
+        installed: false,
+        enabled: false,
+      }),
+    ];
+
     /** Monta a fileira de novo com a faixa medindo `widthOfStrip` (o jsdom não faz layout: a medida vem do dublê). */
-    const mount = (shortcuts: TvShortcut[] = [], guest = false) => {
+    const mount = (shortcuts: TvShortcut[] = [], guest = false, list: TvShortcut[] = tvApps()) => {
       TestBed.resetTestingModule();
       store = createFakeTvStore();
+      store.shortcuts.set(list);
       TestBed.configureTestingModule({ providers: [{ provide: TvStore, useValue: store }] });
       if (guest) {
         TestBed.inject(SessionState).setUser({
@@ -268,16 +295,23 @@ describe('ShortcutRow', () => {
       TestBed.inject(TvPrefs).reset();
     });
 
-    it('offers as many known apps as fit the measured width with room to spare, in catalog order', () => {
+    it('offers only the apps installed on the TV, well-known brands first, as many as fit', () => {
       mount();
       expect(suggestionNames()).toEqual([
         'Sugestão: YouTube',
         'Sugestão: Netflix',
-        'Sugestão: Prime Video',
-        'Sugestão: Max',
         'Sugestão: Disney+',
+        'Sugestão: Globoplay',
+        'Sugestão: Água',
       ]);
+      // Max saiu da TV: nunca é sugerido.
+      expect(suggestionNames()).not.toContain('Sugestão: Max');
       expect(root.querySelector('.hint')).toBeNull();
+    });
+
+    it('shows the icon the TV sent for the app', () => {
+      mount();
+      expect(suggestions()[0]!.querySelector('app-tv-app-icon img')).not.toBeNull();
     });
 
     it('recounts when the strip changes size', () => {
@@ -290,52 +324,50 @@ describe('ShortcutRow', () => {
       expect(suggestions()).toHaveLength(1);
     });
 
-    it('never fills more than the catalog has, however wide the strip is', () => {
+    it('never offers more than the TV has installed, however wide the strip is', () => {
       widthOfStrip = 900;
       mount();
-      expect(suggestions()).toHaveLength(TV_SUGGESTED_APPS.length);
+      expect(suggestions()).toHaveLength(6);
     });
 
-    it('looks like a suggestion, not like a shortcut: a labelled button that opens a dialog, with no pretence of an app', () => {
+    it('looks like a suggestion, not like a shortcut: a labelled button that opens a dialog', () => {
       mount();
       const first = suggestions()[0]!;
       expect(first.getAttribute('aria-haspopup')).toBe('dialog');
       expect(first.getAttribute('title')).toBe('Sugestão: YouTube');
-      expect(first.querySelectorAll('app-tv-app-icon')).toHaveLength(1);
       expect(root.querySelector('ul.shortcuts')!.getAttribute('aria-label')).toBe(
         'Sugestões de atalhos',
       );
-      // Nenhum botão de atalho de verdade (não abre app nenhum).
       expect(tiles().filter((el) => !el.classList.contains('suggestion'))).toHaveLength(0);
     });
 
-    it('tells the screen which app and which button was tapped', () => {
+    it('tells the screen which installed app and which button was tapped', () => {
       mount();
       const requests: TvSuggestionRequest[] = [];
       fixture.componentInstance.suggest.subscribe((request) => requests.push(request));
       suggestions()[1]!.click();
       expect(requests).toHaveLength(1);
-      expect(requests[0]!.app.key).toBe('netflix');
+      expect(requests[0]!.app.id).toBe('s3');
       expect(requests[0]!.opener).toBe(suggestions()[1]);
     });
 
     it('does not offer an app the person removed, and fills its place with the next one', () => {
       mount();
-      TestBed.inject(TvPrefs).set({ dismissedSuggestions: ['netflix'] });
+      TestBed.inject(TvPrefs).set({ dismissedSuggestions: ['com.netflix.ninja'] });
       fixture.detectChanges();
       expect(suggestionNames()).toEqual([
         'Sugestão: YouTube',
-        'Sugestão: Prime Video',
-        'Sugestão: Max',
         'Sugestão: Disney+',
         'Sugestão: Globoplay',
+        'Sugestão: Água',
+        'Sugestão: Zebra',
       ]);
     });
 
     it('falls back to the hint once every suggestion was removed, and when nothing can be measured', () => {
       mount();
       TestBed.inject(TvPrefs).set({
-        dismissedSuggestions: TV_SUGGESTED_APPS.map((app) => app.key),
+        dismissedSuggestions: tvApps().map((app) => app.package),
       });
       fixture.detectChanges();
       expect(suggestions()).toHaveLength(0);
@@ -353,11 +385,43 @@ describe('ShortcutRow', () => {
       expect(hint()).toBe('Nenhum app fixado no controle.');
     });
 
-    it('gives way to the real shortcuts as soon as one is chosen, and waits while the list has not arrived', () => {
-      mount([makeShortcut(1)]);
+    it('says why there is nothing to suggest when the computer has no ADB, instead of fake suggestions', () => {
+      mount([], false, []);
+      store.tvs.set([
+        {
+          id: 'tv1',
+          name: 'Sala',
+          isDefault: true,
+          agentSlug: null,
+          kind: 'android',
+          online: true,
+          capabilities: ['tv.kind.android'],
+        },
+      ]);
+      fixture.detectChanges();
       expect(suggestions()).toHaveLength(0);
-      expect(names()).toEqual(['Atalho 1']);
-      mount();
+      const why = root.querySelector('app-tv-apps-unavailable')!;
+      expect(why.textContent).toContain('ele instala o ADB sozinho');
+      why.querySelector<HTMLButtonElement>('button')!.click();
+      expect(store.refresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives way to the real shortcuts, with the picker tile while some app is still out of the control', () => {
+      const list = tvApps();
+      list[4] = { ...list[4]!, enabled: true };
+      mount([list[4]!], false, list);
+      expect(suggestions()).toHaveLength(0);
+      expect(names()).toEqual(['YouTube', 'Escolher apps para o controle']);
+      const add = root.querySelector<HTMLButtonElement>('.shortcut.add')!;
+      expect(add.getAttribute('aria-haspopup')).toBe('dialog');
+      const requests: TvPickRequest[] = [];
+      fixture.componentInstance.pick.subscribe((request) => requests.push(request));
+      add.click();
+      expect(requests).toEqual([{ replacing: null, opener: add }]);
+    });
+
+    it('waits while the list has not arrived', () => {
+      mount([], false, []);
       store.shortcuts.set(null);
       fixture.detectChanges();
       expect(suggestions()).toHaveLength(0);

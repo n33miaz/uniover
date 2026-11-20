@@ -13,6 +13,7 @@ import {
   readIconPixels,
   rememberIconFit,
 } from './app-icon-fit';
+import { knownApp } from '../data/tv-suggestions';
 
 /** Como o azulejo lê os pixels de um ícone carregado; os testes põem um leitor de mentira (o jsdom não tem canvas). */
 export const ICON_PIXEL_READER = new InjectionToken<IconPixelReader>('ICON_PIXEL_READER', {
@@ -70,8 +71,15 @@ export class AppIcon {
 
   protected readonly fit = computed(() => (this.source() ? this.measuredFit() : null));
 
-  protected readonly hue = computed(() => `hue-${fallbackHue(this.shortcut().package)}`);
-  protected readonly glyph = computed(() => fallbackGlyph(this.shortcut()));
+  /**
+   * Marca conhecida sem ícone: a reserva usa uma cor parecida com a da marca (e a tinta que contrasta com ela), nunca
+   * um logotipo. Os demais apps ficam com a cor estável do pacote.
+   */
+  protected readonly brand = computed(() => knownApp(this.shortcut().package));
+  protected readonly hue = computed(() =>
+    this.brand() ? 'brand' : `hue-${fallbackHue(this.shortcut().package)}`,
+  );
+  protected readonly glyph = computed(() => this.brand()?.mark ?? fallbackGlyph(this.shortcut()));
 
   protected markFailed(uri: string): void {
     this.failed.set(uri);

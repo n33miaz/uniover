@@ -174,11 +174,13 @@
         [attr.inert]="store.pcOff() ? '' : null"
         (openKeyboard)="open('keyboard', $event)"
         (suggest)="openSuggestion($event)"
+        (pick)="openPicker($event)"
       />
     } @else {
       <app-tv-view-only
         [attr.inert]="store.pcOff() ? '' : null"
         (suggest)="openSuggestion($event)"
+        (pick)="openPicker($event)"
       />
     }
     @if (store.pcOff()) {
@@ -233,15 +235,28 @@
   @if (access.editShortcuts()) {
     <app-tv-panel
       #suggestionPanel
-      [heading]="request.app.label"
+      [heading]="appName(request.app)"
       [opener]="request.opener"
       (closed)="suggestionClosed()"
     >
       <app-tv-suggestion
         [app]="request.app"
         (done)="suggestionPanel.close()"
-        (openApps)="suggestionToApps(suggestionPanel)"
+        (choose)="suggestionToPicker(suggestionPanel)"
       />
+    </app-tv-panel>
+  }
+}
+
+@if (picker(); as request) {
+  @if (access.editShortcuts()) {
+    <app-tv-panel
+      #pickerPanel
+      [heading]="pickerTitle"
+      [opener]="request.opener"
+      (closed)="picker.set(null)"
+    >
+      <app-tv-app-picker [replacing]="request.replacing" (done)="pickerPanel.close()" />
     </app-tv-panel>
   }
 }

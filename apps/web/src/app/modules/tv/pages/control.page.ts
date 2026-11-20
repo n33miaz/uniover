@@ -20,7 +20,7 @@ import { BottomKeys } from '../ui/bottom-keys';
 import { DirectionalRing } from '../ui/directional-ring';
 import { NumberPad } from '../ui/number-pad';
 import { PageDots } from '../ui/page-dots';
-import { ShortcutRow, TvSuggestionRequest } from '../ui/shortcut-row';
+import { ShortcutRow, TvPickRequest, TvSuggestionRequest } from '../ui/shortcut-row';
 
 /** Páginas do palco central, nesta ordem: direções com o OK, números e, por último, o touchpad. */
 const PAGE_COUNT = 3;
@@ -61,6 +61,8 @@ export class ControlPage {
   readonly openKeyboard = output<HTMLElement>();
   /** Tocaram numa sugestão de atalho: a tela abre o painel dela. */
   readonly suggest = output<TvSuggestionRequest>();
+  /** Pediu o seletor de apps (o azulejo de escolher apps da fileira). */
+  readonly pick = output<TvPickRequest>();
 
   protected readonly pageCount = PAGE_COUNT;
   private readonly stage = new StagePager(

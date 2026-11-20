@@ -286,3 +286,24 @@ app-tv-icon.spin {
     transform: translateY(8px) scale(0.96);
   }
 }
+
+/* Cabeçalho do seletor de troca: "Voltar" e qual atalho sai. */
+.swap-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.swap-head button {
+  flex: 0 0 auto;
+  min-height: var(--tap);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font-weight: 650;
+}
+.swap-head .note {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

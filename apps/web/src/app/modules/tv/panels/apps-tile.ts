@@ -83,6 +83,8 @@ export class AppsTile {
   readonly pin = output<TvShortcut>();
   readonly rename = output<TvShortcut>();
   readonly move = output<TileMove>();
+  /** Pede para trocar este atalho do controle por outro app instalado. */
+  readonly swap = output<TvShortcut>();
 
   protected readonly name = computed(() => shortcutLabel(this.shortcut()));
   /** A marca "No controle" chega ao leitor de tela como descrição do botão, sem mudar o nome dele. */
@@ -91,6 +93,11 @@ export class AppsTile {
   protected readonly renameLabel = computed(() => {
     const name = this.name();
     return $localize`:@@tv.apps.rename-label:Renomear ${name}:name:`;
+  });
+
+  protected readonly swapLabel = computed(() => {
+    const name = this.name();
+    return $localize`:@@tv.apps.swap-label:Trocar ${name}:name: por outro app`;
   });
 
   protected readonly moveLeftLabel = computed(() => {

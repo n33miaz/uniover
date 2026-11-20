@@ -126,6 +126,20 @@ button:disabled {
   gap: 6px;
   justify-content: center;
 }
+/* Trocar por outro app: botão de texto na largura do azulejo, com o alvo mínimo de toque. */
+.swap {
+  min-height: var(--tap);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius);
+  background: var(--a-surface);
+  color: var(--a-ink);
+  font-weight: 650;
+}
+.swap[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}
 .tool,
 .move {
   display: grid;

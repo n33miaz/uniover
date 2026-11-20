@@ -40,6 +40,12 @@ describe('samsungIconSource', () => {
     );
     expect(samsungIconSource('samsung.app.iddesconhecido')).toBeNull();
   });
+
+  it("uses the app's own icon for the UniOver launcher, whose APK only has a vector icon", () => {
+    expect(samsungIconSource('br.uniover.launcher')).toBe('/icons/icon-192.png');
+    // Os apps de terceiros da Android TV não ganham imagem empacotada: vale o ícone da TV ou a reserva.
+    expect(samsungIconSource('com.netflix.ninja')).toBeNull();
+  });
 });
 
 describe('fallbackHue', () => {

@@ -33,6 +33,23 @@
           }
         </li>
       }
+      @if (canPick()) {
+        <!-- Escolher mais um app instalado para a fileira: abre o seletor (só para quem edita os atalhos). -->
+        <li>
+          <button
+            type="button"
+            class="shortcut add"
+            aria-label="Escolher apps para o controle"
+            i18n-aria-label="@@tv.shortcuts.pick"
+            title="Escolher apps para o controle"
+            i18n-title="@@tv.shortcuts.pick-title"
+            [attr.aria-haspopup]="'dialog'"
+            (click)="pickApp($event)"
+          >
+            <app-tv-icon name="plus" />
+          </button>
+        </li>
+      }
     </ul>
   } @else if (showSkeleton()) {
     <!-- A primeira leitura demorou: azulejos de espera, do tamanho dos reais, para nada saltar quando os atalhos chegarem. -->
@@ -45,13 +62,13 @@
     <!-- A lista não veio no prazo: uma frase curta no lugar da fileira, e o painel Apps oferece tentar de novo. -->
     <p class="hint" i18n="@@tv.shortcuts.failed">Os atalhos não carregaram.</p>
   } @else if (suggestions().length > 0) {
-    <!-- Sugestões, não atalhos: cada uma abre um painel onde a pessoa confirma ou remove. -->
+    <!-- Sugestões, não atalhos: apps instalados na TV; cada uma abre um painel onde a pessoa confirma, troca ou remove. -->
     <ul
       class="shortcuts"
       aria-label="Sugestões de atalhos"
       i18n-aria-label="@@tv.suggestions.label"
     >
-      @for (app of suggestions(); track app.key) {
+      @for (app of suggestions(); track app.id) {
         @let name = suggestionLabel(app);
         <li>
           <button
@@ -62,11 +79,14 @@
             [attr.aria-haspopup]="'dialog'"
             (click)="suggestApp(app, $event)"
           >
-            <app-tv-app-icon [shortcut]="subject(app)" />
+            <app-tv-app-icon [shortcut]="app" />
           </button>
         </li>
       }
     </ul>
+  } @else if (unavailable()) {
+    <!-- Sem lista de apps: o motivo e, quando existe, o conserto de um toque (nunca uma faixa vazia sem explicação). -->
+    <app-tv-apps-unavailable [compact]="true" />
   } @else if (showHint()) {
     @if (canEdit()) {
       <p class="hint" i18n="@@tv.shortcuts.empty-owner">Fixe apps aqui: abra o menu, no topo.</p>

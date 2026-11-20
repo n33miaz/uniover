@@ -59,6 +59,19 @@
       <app-tv-icon name="rename" />
     </button>
   </div>
+  @if (s.enabled) {
+    <!-- Trocar este atalho por outro app instalado, no mesmo lugar da fileira (abre o seletor). Linha própria: a coluna é estreita. -->
+    <button
+      type="button"
+      class="swap"
+      [attr.aria-label]="swapLabel()"
+      [attr.data-swap]="s.id"
+      [attr.aria-disabled]="busy() ? 'true' : null"
+      (click)="swap.emit(s)"
+    >
+      <span i18n="@@tv.apps.swap">Trocar</span>
+    </button>
+  }
 } @else {
   @if (launchable()) {
     <button

@@ -77,3 +77,9 @@
 .hue-5 {
   --hue: #9a7416;
 }
+/* Marca conhecida sem ícone: fundo parecido com a cor da marca e tinta escolhida para AA (iguais nos dois temas). */
+.fallback.brand {
+  background: var(--brand-tint);
+  color: var(--brand-ink);
+  letter-spacing: -0.02em;
+}

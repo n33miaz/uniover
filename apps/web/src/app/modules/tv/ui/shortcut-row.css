@@ -197,6 +197,28 @@ button {
   line-height: 1.25;
 }
 
+/* Escolher apps: o mesmo azulejo, tracejado e com o sinal de mais, sem ícone de app (não é um atalho). */
+.shortcut.add {
+  border-style: dashed;
+  border-color: var(--a-ink3);
+  color: var(--a-ink2);
+}
+.shortcut.add app-tv-icon {
+  width: 24px;
+  height: 24px;
+}
+
+/* Sem lista de apps: o motivo ocupa a fileira, com a mesma moldura discreta da dica. */
+app-tv-apps-unavailable {
+  box-sizing: border-box;
+  min-height: var(--tv-top);
+  padding: 6px 12px;
+  border: 1px dashed var(--a-line);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+}
+
 /* Paisagem: o controle vira grade de duas colunas e esta fileira fica à direita, em cima, colada no bloco de baixo. */
 @media (min-aspect-ratio: 6/5) {
   .top {

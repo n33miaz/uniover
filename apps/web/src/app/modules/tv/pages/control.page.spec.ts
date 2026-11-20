@@ -84,7 +84,14 @@ describe('ControlPage', () => {
       ]);
       render();
       // A ordem é a da lista do store (que já vem ordenada por posição); o controle não reordena.
-      expect(shortcutNames()).toEqual(['Sala', 'Atalho 3', 'Atalho 5', 'Quarto']);
+      // No fim, o azulejo de escolher apps: há um app instalado fora do controle (o 2).
+      expect(shortcutNames()).toEqual([
+        'Sala',
+        'Atalho 3',
+        'Atalho 5',
+        'Quarto',
+        'Escolher apps para o controle',
+      ]);
     });
 
     it('opens a shortcut on tap, only when the remote can send', () => {
@@ -136,7 +143,8 @@ describe('ControlPage', () => {
     });
 
     it('with no shortcuts the row shows a quiet hint where to pin apps, not an error and not a button', () => {
-      store.shortcuts.set([]);
+      // A TV tem apps, nenhum no controle (e a faixa sem medida não sugere nenhum).
+      store.shortcuts.set([makeShortcut(1, { enabled: false })]);
       render();
       expect(root.querySelectorAll('.shortcut')).toHaveLength(0);
       expect(root.querySelector('.shortcuts')).toBeNull();

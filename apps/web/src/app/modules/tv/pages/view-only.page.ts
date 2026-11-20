@@ -4,7 +4,7 @@ import { TvPrefs } from '../data/tv-prefs';
 import { TvStore } from '../data/tv-store';
 import { TvShortcut } from '../data/tv-types';
 import { vibrate } from '../input/key-button';
-import { ShortcutRow, TvSuggestionRequest } from '../ui/shortcut-row';
+import { ShortcutRow, TvPickRequest, TvSuggestionRequest } from '../ui/shortcut-row';
 import { TvIcon } from '../ui/tv-icon';
 
 /**
@@ -27,6 +27,8 @@ export class ViewOnlyPage {
 
   /** Tocaram numa sugestão de atalho (quem edita os atalhos as vê): a tela abre o painel dela. */
   readonly suggest = output<TvSuggestionRequest>();
+  /** Pediu o seletor de apps (o azulejo de escolher apps da fileira). */
+  readonly pick = output<TvPickRequest>();
 
   /** Só os atalhos ativos, na ordem da posição (a mesma fileira do controle). */
   protected readonly shortcuts = computed(() =>

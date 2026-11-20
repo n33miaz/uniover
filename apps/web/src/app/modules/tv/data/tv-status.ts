@@ -24,6 +24,8 @@ export function statusLabel(status: TvStatus): string {
       return $localize`:@@tv.status.pc-off:PC desligado`;
     case 'unresponsive':
       return $localize`:@@tv.status.unresponsive:sem resposta`;
+    case 'tv-unreachable':
+      return $localize`:@@tv.status.tv-unreachable:PC não alcança a TV`;
     default:
       return $localize`:@@tv.status.loading:reconectando…`;
   }
@@ -45,6 +47,7 @@ export type TvIndicator =
   | 'connecting'
   | 'waking'
   | 'unresponsive'
+  | 'tv-unreachable'
   | 'agent-off'
   | 'pc-off'
   | 'not-configured'
@@ -77,6 +80,8 @@ export function deriveIndicator(status: TvStatus, watchdogKind: string | null): 
       return 'offline';
     case 'unresponsive':
       return 'unresponsive';
+    case 'tv-unreachable':
+      return 'tv-unreachable';
     case 'pc-off':
       return 'pc-off';
     case 'unconfigured':
@@ -106,6 +111,7 @@ export function indicatorPhase(indicator: TvIndicator): TvPhase {
     case 'waking':
       return 'connecting';
     case 'unresponsive':
+    case 'tv-unreachable':
       return 'no-reply';
     case 'agent-off':
       return 'agent-off';
@@ -156,6 +162,30 @@ export function remoteServiceHints(): readonly TvIndicatorHint[] {
     {
       title: $localize`:@@tv.indicator.hint.box.title:Caixa de TV`,
       body: $localize`:@@tv.indicator.hint.box.body:Algumas caixas desligam todos os serviços ao desligar. Ligue a caixa e espere o sistema abrir.`,
+    },
+  ];
+}
+
+/** Por que o PC não alcança a TV, do mais comum ao mais raro, e o que fazer em cada caso. */
+export function tvUnreachableHints(): readonly TvIndicatorHint[] {
+  return [
+    {
+      title: $localize`:@@tv.indicator.hint.tv-off.title:A TV Está Ligada?`,
+      body: $localize`:@@tv.indicator.hint.tv-off.body:Ligue a TV pelo controle dela; o UniOver volta sozinho quando ela responder.`,
+    },
+    {
+      title: $localize`:@@tv.indicator.hint.network.title:Outra Rede`,
+      body: $localize`:@@tv.indicator.hint.network.body:A TV precisa estar no cabo ou no Wi-Fi de uma rede do PC. O PC procura nas redes todas.`,
+    },
+    {
+      title: $localize`:@@tv.indicator.hint.router.title:Roteador Desligado`,
+      body: $localize`:@@tv.indicator.hint.router.body:Ligue o roteador de novo, mesmo sem internet. Sem ele, o PC não chega à TV.`,
+    },
+    {
+      // A TV pode ter entrado sozinha noutra rede salva nela (o ponto de acesso do celular), onde o PC não está: o passo
+      // físico é trazê-la de volta pela própria TV, ou religar o roteador.
+      title: $localize`:@@tv.indicator.hint.left.title:A TV Saiu da Rede`,
+      body: $localize`:@@tv.indicator.hint.left.body:Na TV, abra Configurações > Rede e escolha a rede em que o PC está.`,
     },
   ];
 }
@@ -220,6 +250,16 @@ export function indicatorText(
         action: 'retry',
         actionLabel: retry,
         hints: NO_HINTS,
+      };
+    case 'tv-unreachable':
+      return {
+        title: $localize`:@@tv.indicator.tv-unreachable.title:O PC não alcança a TV`,
+        meaning: canControl
+          ? $localize`:@@tv.indicator.tv-unreachable.meaning:O computador está ligado, mas não consegue falar com a TV. Ele procura a TV sozinho; tocar abaixo pede a procura agora.`
+          : $localize`:@@tv.indicator.tv-unreachable.meaning-view:O computador está ligado, mas não consegue falar com a TV. Ele procura a TV sozinho.`,
+        action: 'retry',
+        actionLabel: $localize`:@@tv.indicator.tv-unreachable.action:Procurar a TV`,
+        hints: tvUnreachableHints(),
       };
     case 'pc-off':
       return {
