@@ -307,7 +307,7 @@ async def test_the_session_dropping_after_the_key_is_uncertain_without_a_network
     assert await rig.manager.power_off() is PowerOffResult.UNCERTAIN
 
 
-# --- a TV que não reage a POWER: a tecla de dormir, que nunca liga a TV ----------------------------
+# --- a TV que não reage a POWER: a tecla de dormir, que nunca liga a TV ---
 
 
 async def test_power_ignored_then_the_sleep_key_turns_the_tv_off() -> None:
