@@ -32,6 +32,8 @@ public class DevicesAuditNormalizerTests
     [InlineData(PairingEvents.PcLogoff, "pc_logoff", AuditOutcome.Success)]
     [InlineData(PairingEvents.PcHibernate, "pc_hibernate", AuditOutcome.Success)]
     [InlineData(PairingEvents.PcMonitorOff, "pc_monitor_off", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcClipboardRead, "pc_clipboard_read", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcClipboardWrite, "pc_clipboard_write", AuditOutcome.Success)]
     [InlineData(PairingEvents.PcAppLaunch, "pc_app_launch", AuditOutcome.Success)]
     [InlineData(PairingEvents.PcLockFailed, "pc_lock_failed", AuditOutcome.Failure)]
     [InlineData(PairingEvents.PcSleepFailed, "pc_sleep_failed", AuditOutcome.Failure)]
@@ -41,6 +43,8 @@ public class DevicesAuditNormalizerTests
     [InlineData(PairingEvents.PcLogoffFailed, "pc_logoff_failed", AuditOutcome.Failure)]
     [InlineData(PairingEvents.PcHibernateFailed, "pc_hibernate_failed", AuditOutcome.Failure)]
     [InlineData(PairingEvents.PcMonitorOffFailed, "pc_monitor_off_failed", AuditOutcome.Failure)]
+    [InlineData(PairingEvents.PcClipboardReadFailed, "pc_clipboard_read_failed", AuditOutcome.Failure)]
+    [InlineData(PairingEvents.PcClipboardWriteFailed, "pc_clipboard_write_failed", AuditOutcome.Failure)]
     [InlineData(PairingEvents.PcAppLaunchFailed, "pc_app_launch_failed", AuditOutcome.Failure)]
     public void EachStoredEvent_BecomesAnUnambiguousActionWithAnOutcome(string stored, string action, AuditOutcome outcome)
     {
@@ -106,6 +110,8 @@ public class DevicesAuditNormalizerTests
     [InlineData(PairingEvents.PcSleep, PairingEvents.PcSleepFailed)]
     [InlineData(PairingEvents.PcShutdown, PairingEvents.PcShutdownFailed)]
     [InlineData(PairingEvents.PcShutdownCancelled, PairingEvents.PcShutdownCancelFailed)]
+    [InlineData(PairingEvents.PcClipboardRead, PairingEvents.PcClipboardReadFailed)]
+    [InlineData(PairingEvents.PcClipboardWrite, PairingEvents.PcClipboardWriteFailed)]
     [InlineData(PairingEvents.PcAppLaunch, PairingEvents.PcAppLaunchFailed)]
     public void EveryAuditedPcAction_HasATryThatFailedCounterpart_ThatFitsTheColumn(string succeeded, string failed)
     {
@@ -119,6 +125,6 @@ public class DevicesAuditNormalizerTests
     {
         PairingEvents.PcFailureOf(PairingEvents.Approved).Should().BeNull();
         PairingEvents.PcFailureOf("pc_text").Should().BeNull();
-        PairingEvents.PcFailures.Should().HaveCount(9).And.OnlyHaveUniqueItems();
+        PairingEvents.PcFailures.Should().HaveCount(11).And.OnlyHaveUniqueItems();
     }
 }
