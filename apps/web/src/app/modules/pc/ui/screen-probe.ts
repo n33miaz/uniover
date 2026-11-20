@@ -110,11 +110,15 @@ const DIRECT_LOST = $localize`:@@pc.screenProbe.directLost:O canal direto do pon
     <p role="status" [hidden]="!status()">{{ status() }}</p>
     @if (running() && current(); as sample) {
       <p i18n="@@pc.screenProbe.progress">
-        {{ elapsed() }}/60 s · {{ sample.frames }} quadros. Use o touchpad para medir o atraso do
-        toque.
+        {{ elapsed() }}/60 s · {{ sample.frames }} quadros. Use o touchpad para medir do toque até a
+        exibição do quadro marcado.
       </p>
     }
     @if (result()) {
+      <p i18n="@@pc.screenProbe.touchHelp">
+        O marcador identifica o quadro pedido pelo toque. A resposta visual do PC ao comando
+        precisa de uma medição própria.
+      </p>
       <button type="button" (click)="copy()" i18n="@@pc.screenProbe.copy">Copiar resultados</button>
       @if (showTable()) {
         <textarea
@@ -402,8 +406,8 @@ export class PcScreenProbe {
       $localize`:@@pc.screenProbe.rowDuration:| Duração | ${display(result.seconds)}:DURATION: s | 60 s |`,
       $localize`:@@pc.screenProbe.rowWidth:| Largura (recebida / pedida) | ${display(result.width)}:RECEIVED: / ${display(result.widthTarget)}:TARGET: px | 1280 px |`,
       $localize`:@@pc.screenProbe.rowFps:| Quadros/s (medido / pedido) | ${display(result.fps)}:MEASURED: / ${display(result.fpsTarget)}:TARGET: | ≥ 5 em 1280 px |`,
-      $localize`:@@pc.screenProbe.rowTouchMedian:| Toque → imagem, p50 | ${display(result.touchP50)}:MEASURED: ms (n=${display(result.touchCount)}:COUNT:) | ≤ 250 ms |`,
-      $localize`:@@pc.screenProbe.rowTouchP95:| Toque → imagem, p95 | ${display(result.touchP95)}:MEASURED: ms (n=${display(result.touchCount)}:COUNT:) | — |`,
+      $localize`:@@pc.screenProbe.rowTouchMedian:| Toque até o quadro marcado, p50 | ${display(result.touchP50)}:MEASURED: ms (n=${display(result.touchCount)}:COUNT:) | ≤ 250 ms |`,
+      $localize`:@@pc.screenProbe.rowTouchP95:| Toque até o quadro marcado, p95 | ${display(result.touchP95)}:MEASURED: ms (n=${display(result.touchCount)}:COUNT:) | — |`,
       $localize`:@@pc.screenProbe.rowPointer:| RTT do ponteiro, p95 | ${display(result.pointerP95)}:MEASURED: ms (n=${display(result.pointerCount)}:COUNT:) | ≤ 30 ms |`,
       $localize`:@@pc.screenProbe.rowPointerGap:| Maior intervalo sem resposta do ponteiro | ${display(result.pointerGap)}:GAP: ms | ≤ ${display(STALL_MS)}:LIMIT: ms |`,
       $localize`:@@pc.screenProbe.rowThroughput:| Vazão dos JPEGs via SCTP | ${display(result.mbps)}:MEASURED: Mbit/s | — |`,
