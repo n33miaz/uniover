@@ -488,7 +488,7 @@ describe('PowerSheet, Modo Dormir', () => {
   let closed: ReturnType<typeof vi.fn<() => void>>;
 
   const blackOut = () => root.querySelector<HTMLButtonElement>('button.sleep') ?? undefined;
-  /** O nome de cada botão como o leitor de tela ouve: o do Modo Dormir vem só do título dele. */
+  /** O nome de cada botão como o leitor de tela ouve: no Modo Dormir, só o título (o nome falado traz também a dica). */
   const names = () =>
     [...root.querySelectorAll<HTMLButtonElement>('button')].map((b) =>
       b.classList.contains('sleep')
@@ -523,7 +523,8 @@ describe('PowerSheet, Modo Dormir', () => {
     expect(labels.indexOf('Modo Dormir')).toBeLessThan(labels.indexOf('Desligar'));
     const sleep = blackOut()!;
     expect(sleep.disabled).toBe(false);
-    expect(sleep.getAttribute('aria-labelledby')).toBe('power-sleep-title');
+    // O nome falado vem do próprio texto visível (título e dica), como pede a regra de nome igual ao rótulo.
+    expect(sleep.hasAttribute('aria-labelledby')).toBe(false);
     expect(sleep.compareDocumentPosition(root.querySelector('#power-text')!)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
