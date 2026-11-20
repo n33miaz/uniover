@@ -115,6 +115,12 @@ TYPING_KEY_CODES: Final[Mapping[str, str]] = {
 # agente as usa, para apagar e digitar o que o dono escreve.
 EDIT_KEY_CODES: Final[Mapping[str, str]] = {"DEL": "KEYCODE_DEL", **TYPING_KEY_CODES}
 
+# Dormir de verdade (standby), fora do contrato: só o desligamento com leitura a usa, depois de um
+# `POWER` que a TV não confirmou. Ao contrário de `POWER`, `KEYCODE_SLEEP` não é interruptor: com a
+# TV já dormindo não faz nada, então nunca a liga.
+STANDBY_KEY: Final = "STANDBY"
+AGENT_KEY_CODES: Final[Mapping[str, str]] = {**EDIT_KEY_CODES, STANDBY_KEY: "KEYCODE_SLEEP"}
+
 
 class RemoteClient(Protocol):
     """O pedaço de `AndroidTVRemote` que o adaptador usa (permite um duplo nos testes)."""
@@ -400,7 +406,7 @@ class AndroidTvRemoteV2:
     # --- comandos -----------------------------------------------------------------------------
 
     async def send_key(self, key: str, direction: str = "SHORT") -> None:
-        code = KEY_CODES.get(key) or EDIT_KEY_CODES.get(key)
+        code = KEY_CODES.get(key) or AGENT_KEY_CODES.get(key)
         if code is None:
             # Uma tecla `TYPE_*` desconhecida é um caractere do que o dono digita (pode ser uma
             # senha): a mensagem não a repete.

@@ -38,7 +38,11 @@ from uniover_agent.adapters.tv_livre_signer import ApkSignerVerifier
 from uniover_agent.adapters.tv_locate import build_liveness
 from uniover_agent.adapters.tv_nearby import build_finder
 from uniover_agent.adapters.tv_pairing import TvPairingError, is_paired, pair_tv
-from uniover_agent.adapters.tv_remote_v2 import ANDROID_OPTIONAL_KEYS, AndroidTvRemoteV2
+from uniover_agent.adapters.tv_remote_v2 import (
+    ANDROID_OPTIONAL_KEYS,
+    STANDBY_KEY,
+    AndroidTvRemoteV2,
+)
 from uniover_agent.adapters.tv_samsung import (
     SAMSUNG_CLIENT_NAME,
     SAMSUNG_OPTIONAL_KEYS,
@@ -265,6 +269,7 @@ def build_driver_setup(
         hibernate_seconds=settings.tv_hibernate_seconds,
         liveness=build_liveness("android", host),
         wake_on_lan=wake_on_lan,
+        standby_key=STANDBY_KEY,
         power_off_read_timeout_seconds=settings.tv_power_off_read_timeout_seconds,
         power_off_confirmation_timeout_seconds=settings.tv_power_off_confirmation_timeout_seconds,
         warm_timeout_seconds=settings.tv_session_warm_timeout_seconds,
