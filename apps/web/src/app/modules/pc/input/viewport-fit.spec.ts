@@ -1,4 +1,10 @@
-import { MIN_FIT_HEIGHT, availableHeight, watchAvailableHeight } from './viewport-fit';
+import {
+  MIN_FIT_HEIGHT,
+  MIN_TYPING_FIT_HEIGHT,
+  availableHeight,
+  belowVisibleArea,
+  watchAvailableHeight,
+} from './viewport-fit';
 
 describe('availableHeight', () => {
   const base = { viewportHeight: 664, keyboardInset: 0, top: 80, tabsHeight: 57, bottomGap: 0 };
@@ -19,6 +25,17 @@ describe('availableHeight', () => {
     expect(availableHeight({ ...base, viewportHeight: 300, keyboardInset: 200 })).toBe(
       MIN_FIT_HEIGHT,
     );
+  });
+
+  it('goes down to the typing floor when asked (only the echo and the action bar)', () => {
+    expect(
+      availableHeight({
+        ...base,
+        viewportHeight: 300,
+        keyboardInset: 200,
+        minHeight: MIN_TYPING_FIT_HEIGHT,
+      }),
+    ).toBe(MIN_TYPING_FIT_HEIGHT);
   });
 
   it('leaves the breathing room the page keeps under the screen', () => {
@@ -66,5 +83,25 @@ describe('watchAvailableHeight', () => {
     window.dispatchEvent(new Event('resize'));
     expect(frames).toHaveLength(1);
     host.remove();
+  });
+});
+
+describe('belowVisibleArea', () => {
+  const fakeWindow = (
+    innerHeight: number,
+    viewport: { height: number; offsetTop: number } | null,
+  ) => ({ innerHeight, visualViewport: viewport }) as unknown as Window;
+
+  it('is what the keyboard covers when the window does not shrink (iPhone)', () => {
+    expect(belowVisibleArea(fakeWindow(664, { height: 328, offsetTop: 0 }))).toBe(336);
+  });
+
+  it('counts what is left under the visible area after it scrolls to the field, even when small', () => {
+    expect(belowVisibleArea(fakeWindow(664, { height: 328, offsetTop: 271 }))).toBe(65);
+  });
+
+  it('is zero when the window already shrinks (Android) or there is no visual viewport', () => {
+    expect(belowVisibleArea(fakeWindow(460, { height: 460, offsetTop: 0 }))).toBe(0);
+    expect(belowVisibleArea(fakeWindow(460, null))).toBe(0);
   });
 });

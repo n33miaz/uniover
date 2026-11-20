@@ -181,8 +181,19 @@
   text-align: center;
 }
 
-/* O eco da digitação começa à esquerda, logo acima da barra de ações. */
+/*
+ * Com o teclado do celular aberto a tela termina logo acima dele (ver `watchAvailableHeight`) e o que sobra é pouco: a
+ * superfície encolhe até sumir, e o eco e a barra de ações ficam inteiros. Sem isto o piso da superfície a fazia vazar
+ * para baixo, por cima do eco.
+ */
+:host([data-typing]) .pad {
+  min-height: 0;
+}
+
+/* O eco da digitação começa à esquerda, logo acima da barra de ações. Fica acima da superfície, abaixo do painel e do aviso. */
 .echo {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--space-1);
