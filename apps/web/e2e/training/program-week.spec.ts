@@ -203,6 +203,38 @@ test.describe('programa da semana', () => {
     await expect(heading(page, 'Terça · Costas')).toBeVisible();
   });
 
+  test('atualiza a ficha de sexta antes de abrir o treino de terça', async ({ page, context }) => {
+    await start(page, at(-3));
+    const server = await startTraining(context, page);
+    const [friday, tuesday] = server.rows('routines');
+    const programId = 'divisao-teste';
+    server.seed('routines', [
+      { ...friday, name: 'Sexta · Peito', weekdays: [5], programId },
+      { ...tuesday, name: 'Terça · Costas', weekdays: [2], programId },
+    ]);
+    server.seed('program', [{ id: 'active', programId }]);
+    await openTraining(page, '/treino');
+
+    const startButton = page.getByRole('button', { name: 'Iniciar Treino', exact: true });
+    const refreshed = page.getByText('O dia mudou. Confira o treino de hoje.', { exact: true });
+    const workout = page.locator('app-workout-day .routine-name');
+    await expect(heading(page, 'Sexta · Peito')).toBeVisible();
+    await expect(startButton).toBeEnabled();
+
+    await page.clock.setSystemTime(at(1));
+    await startButton.evaluate((button: HTMLButtonElement) => button.click());
+    await expect(refreshed.or(workout)).toBeVisible();
+    if (await refreshed.isVisible()) {
+      await expect(startButton).toBeEnabled();
+      await startButton.evaluate((button: HTMLButtonElement) => button.click());
+    }
+
+    await expect(workout).toHaveText(/Terça/i);
+    await expect
+      .poll(() => server.rows('sessions').map((row) => row['routineId']))
+      .toEqual([tuesday['id']]);
+  });
+
   test('sábado e domingo mostram descanso e deixam iniciar um treino manual', async ({
     page,
     context,

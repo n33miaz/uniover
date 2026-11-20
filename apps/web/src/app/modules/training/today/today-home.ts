@@ -7,6 +7,7 @@ import {
   output,
   signal,
   untracked,
+  viewChild,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
@@ -14,7 +15,6 @@ import { CatalogRepository } from '../data/catalog/catalog-repository';
 import { RoutineRepository } from '../data/routines/routine-repository';
 import { SessionRepository } from '../data/sessions/session-repository';
 import { TrainingSync } from '../data/sync/training-sync';
-import { ExerciseThumb } from '../exercises/exercise-thumb';
 import {
   IllustrationPrefetcher,
   illustrationFiles,
@@ -22,22 +22,20 @@ import {
 import { programSummary } from '../routines/program-summary';
 import type { RoutineEntry } from '../routines/routine-stats';
 import { type TemplateCreated, TemplatesSheet } from '../routines/templates-sheet';
-import { formatKg } from '../shell/format';
 import { TrainingGlyph } from '../shell/training-glyph';
 import { TrainingSheet } from '../shell/training-sheet';
 import { ProgramSuggestion } from './program-suggestion';
 import { RoutinePickerSheet } from './routine-picker-sheet';
 import { TodayGlyph } from './today-glyph';
-import { type RoutineLine, TodayStore } from './today-store';
-import { ageLabel, dayLabel, repsRangeText, routineSummary } from './today-text';
+import { TodayStore } from './today-store';
+import { ageLabel, dayLabel, routineSummary } from './today-text';
 import { TodaySkeleton } from './today-skeleton';
 import { WeekCalendar } from './week-calendar';
 
 /**
  * A aba Hoje antes (e fora) do treino ao vivo, na versão "começar sem procurar": a data, o cartão da rotina do dia com a
  * ação principal ("Iniciar Treino") e a engrenagem de configuração no canto, a semana com meta para confirmar o
- * contexto e dois atalhos (o programa da semana e o treino de ontem). A lista de exercícios fica recolhida atrás de
- * "Ver Rotina". Também é onde se continua um treino aberto, se configura a rotina (trocar de ficha, meta, ausência e
+ * contexto e dois atalhos (o programa da semana e o treino de ontem). Também é onde se continua um treino aberto, se configura a rotina (trocar de ficha, meta, ausência e
  * nota), se começa um treino livre e onde aparecem os avisos que importam (treino aberto em outro aparelho, treino
  * recusado pelo servidor).
  * Lê tudo do banco local: sem rede não há erro, só o que está guardado no aparelho.
@@ -46,7 +44,6 @@ import { WeekCalendar } from './week-calendar';
   selector: 'app-today-home',
   imports: [
     RouterLink,
-    ExerciseThumb,
     TrainingGlyph,
     TodayGlyph,
     RoutinePickerSheet,
@@ -67,6 +64,7 @@ import { WeekCalendar } from './week-calendar';
 })
 export class TodayHome {
   protected readonly store = inject(TodayStore);
+  private readonly calendar = viewChild(WeekCalendar);
   private readonly sessions = inject(SessionRepository);
   private readonly routines = inject(RoutineRepository);
   private readonly catalog = inject(CatalogRepository);
@@ -84,8 +82,6 @@ export class TodayHome {
   private warmingKey = '';
 
   protected readonly pickerOpen = signal(false);
-  /** A lista de exercícios da rotina do cartão: recolhida até a pessoa pedir. */
-  protected readonly routineOpen = signal(false);
   protected readonly programChoiceOpen = signal(false);
   /** "Comparar Modelos": o programa ativo se compara com os outros e se troca sem sair de Hoje. */
   protected readonly templatesOpen = signal(false);
@@ -101,8 +97,6 @@ export class TodayHome {
   protected readonly programHeading = $localize`:@@training.today.program-heading:Programa Semanal`;
   protected readonly programSkipLabel = $localize`:@@training.today.program-skip:Seguir sem Programa`;
   protected readonly confirmLabel = $localize`:@@training.today.forgotten-label:Confirmar o encerramento do treino do outro aparelho`;
-  protected readonly linesLabel = $localize`:@@training.today.lines-label:Exercícios da rotina`;
-  protected readonly missingName = $localize`:@@training.today.missing-name:Exercício removido`;
 
   protected readonly entry = this.store.selected;
   protected readonly summary = computed(() => {
@@ -203,24 +197,6 @@ export class TodayHome {
     void this.store.loadHome();
   }
 
-  protected lineSub(line: RoutineLine): string {
-    const sets = line.sets;
-    const range = repsRangeText(line.repMin, line.repMax);
-    const plan = $localize`:@@training.today.line-plan:${sets}:sets: × ${range}:range:`;
-    const parts = [plan];
-    if (line.last !== null) {
-      const last = line.last;
-      parts.push($localize`:@@training.today.line-last:última vez ${last}:last:`);
-    }
-    if (line.superset) parts.push($localize`:@@training.today.line-superset:supersérie`);
-    return parts.join(' · ');
-  }
-
-  protected tryText(line: RoutineLine): string {
-    const kg = formatKg(line.tryKg ?? 0);
-    return $localize`:@@training.today.line-try:tente ${kg}:kg:`;
-  }
-
   protected async start(routineId: string | null): Promise<void> {
     if (this.starting()) return;
     this.starting.set(true);
@@ -231,6 +207,12 @@ export class TodayHome {
         // A página só abre o treino ao vivo com o treino já lido: sem isto ela voltaria a Hoje por um instante.
         await this.store.loadCore();
         this.started.emit();
+      } else if (outcome === 'day-changed') {
+        this.calendar()?.refreshDay();
+        this.message.set({
+          tone: 'ok',
+          text: $localize`:@@training.today.day-changed:O dia mudou. Confira o treino de hoje.`,
+        });
       } else if (outcome === 'blocked') {
         await this.store.loadCore();
       } else if (outcome === 'program-choice') {
@@ -340,7 +322,7 @@ export class TodayHome {
     // conjunto por fazer: a próxima gravação, a volta da rede ou a próxima abertura da tela tenta de novo.
     const files = illustrationFiles(slugs);
     const key = [...files].sort().join('|');
-    if (key === this.warmedKey || key === this.warmingKey) return;
+    if (!this.online() || key === this.warmedKey || key === this.warmingKey) return;
     this.warmingKey = key;
     try {
       const stored = await this.prefetcher.warm(slugs);

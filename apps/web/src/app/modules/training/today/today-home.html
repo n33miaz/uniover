@@ -1,6 +1,8 @@
 <h2 class="ui-visually-hidden" i18n="@@training.home.title">Treino</h2>
 
 <div class="home">
+  <app-week-calendar (routineChosen)="store.chooseRoutine($event)" (dayChanged)="refreshDay()" />
+
   @if (message(); as note) {
     <p
       class="ui-notice"
@@ -29,7 +31,7 @@
   }
 
   @if (!store.ready() || !store.homeReady() || store.pullUnknown()) {
-    <!-- A forma do cartão do dia: a tela não pula quando a leitura local termina. A semana embaixo já aparece com as datas. -->
+    <!-- A forma do cartão do dia: a tela não pula quando a leitura local termina. A semana acima já aparece com as datas. -->
     <app-today-skeleton />
   } @else if (store.active(); as running) {
     <!-- Treino aberto neste aparelho: a ação é continuar. -->
@@ -117,9 +119,7 @@
         <h3 id="catalog-title" i18n="@@training.today.catalog-title">
           O Catálogo Ainda Não Chegou
         </h3>
-        <p i18n="@@training.today.catalog-text">
-          Conecte-se uma vez para baixar os exercícios.
-        </p>
+        <p i18n="@@training.today.catalog-text">Conecte-se uma vez para baixar os exercícios.</p>
         <button
           type="button"
           class="primary ui-btn block"
@@ -135,7 +135,11 @@
     <section class="routine ui-card" aria-labelledby="routine-title">
       <!-- O nome da rotina por inteiro (numa linha) e, no canto, os três pontos que abrem a folha com a troca de rotina e também a meta, a ausência e a nota do dia: vale com uma rotina só. A data fica por conta do calendário logo abaixo. -->
       <div class="routine-top">
-        <h3 id="routine-title" class="routine-name one-line" [attr.aria-label]="current.routine.name">
+        <h3
+          id="routine-title"
+          class="routine-name one-line"
+          [attr.aria-label]="current.routine.name"
+        >
           {{ current.routine.name }}
         </h3>
         <button
@@ -188,42 +192,7 @@
         <app-today-glyph name="play" />
         <span i18n="@@training.today.start">Iniciar Treino</span>
       </button>
-      <!-- A lista de exercícios não disputa o primeiro olhar: fica recolhida atrás deste toque. -->
-      <button
-        type="button"
-        class="routine-toggle"
-        [attr.aria-controls]="'routine-lines'"
-        [attr.aria-expanded]="routineOpen()"
-        (click)="routineOpen.set(!routineOpen())"
-      >
-        @if (routineOpen()) {
-          <span i18n="@@training.today.hide-routine">Ocultar Rotina</span>
-        } @else {
-          <span i18n="@@training.today.show-routine">Ver Rotina</span>
-        }
-        <app-training-glyph [name]="routineOpen() ? 'up' : 'down'" />
-      </button>
     </section>
-
-    <ul
-      id="routine-lines"
-      class="lines ui-group ui-plain"
-      [hidden]="!routineOpen()"
-      [attr.aria-label]="linesLabel"
-    >
-      @for (line of store.lines(); track line.key) {
-        <li class="ui-row line">
-          <app-exercise-thumb [slug]="line.slug" />
-          <span class="ui-row-text">
-            <span class="ui-row-title">{{ line.name ?? missingName }}</span>
-            <span class="ui-row-sub">{{ lineSub(line) }}</span>
-          </span>
-          @if (line.tryKg !== null) {
-            <span class="ui-chip accent">{{ tryText(line) }}</span>
-          }
-        </li>
-      }
-    </ul>
   } @else if (store.resting()) {
     <section class="routine ui-card calm" aria-labelledby="rest-title">
       <span class="ui-tile lg"><app-training-glyph name="check" /></span>
@@ -248,9 +217,7 @@
     <section class="routine ui-card calm" aria-labelledby="empty-title">
       <span class="ui-tile lg"><app-training-glyph name="list" /></span>
       <h3 id="empty-title" i18n="@@training.today.empty-title">Sem Rotinas Ainda</h3>
-      <p i18n="@@training.today.empty-text">
-        Monte a sua do zero ou comece por um modelo pronto.
-      </p>
+      <p i18n="@@training.today.empty-text">Monte a sua do zero ou comece por um modelo pronto.</p>
       <div class="actions">
         <a class="primary ui-btn" routerLink="/treino/rotinas">
           <span i18n="@@training.today.routines">Montar Rotinas</span>
@@ -266,8 +233,6 @@
       </div>
     </section>
   }
-
-  <app-week-calendar (routineChosen)="store.chooseRoutine($event)" />
 
   @if (store.suggestProgram()) {
     <app-program-suggestion

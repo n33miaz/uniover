@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
@@ -16,7 +17,14 @@ import type { LocalCalendarEntry } from '../data/calendar/calendar-entry';
 import type { LocalRoutine } from '../data/routines/routine';
 import { RoutineRepository } from '../data/routines/routine-repository';
 import { SessionRepository } from '../data/sessions/session-repository';
-import { civilDateOf, dateKey, deviceTimeZone, monthRange } from '../domain/progress/calendar';
+import {
+  addDays,
+  civilDateOf,
+  dateKey,
+  deviceTimeZone,
+  monthRange,
+  startOfDay,
+} from '../domain/progress/calendar';
 import {
   type TrainingDayState,
   type WeekRhythm,
@@ -75,6 +83,7 @@ const sentenceCase = (value: string) => value.charAt(0).toLocaleUpperCase('pt-BR
   host: {
     '(document:visibilitychange)': 'refreshDay()',
     '(window:focus)': 'refreshDay()',
+    '(window:pageshow)': 'refreshDay()',
   },
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -97,6 +106,8 @@ export class WeekCalendar {
   protected readonly weeklyGoal = signal<number | null>(null);
   /** Tocar num dia planejado escolhe a ficha dele para o treino de hoje. */
   readonly routineChosen = output<string>();
+  readonly dayChanged = output<void>();
+  private dayTimer: unknown;
   private readonly programGoal = signal<number | null>(null);
   protected readonly effectiveGoal = computed(() => this.weeklyGoal() ?? this.programGoal());
   private readonly weekRead = signal<PeriodRead | null>(null);
@@ -210,6 +221,8 @@ export class WeekCalendar {
   });
 
   constructor() {
+    this.scheduleDayChange();
+    inject(DestroyRef).onDestroy(() => this.runtime.clearTimeout(this.dayTimer));
     effect(() => {
       this.sessions.revision();
       const week = this.week();
@@ -403,13 +416,25 @@ export class WeekCalendar {
     });
   }
 
-  /** Ao voltar ao app, confere se o dia virou: a semana, o "hoje" e a seleção seguem o dia novo. */
-  protected refreshDay(): void {
+  private scheduleDayChange(): void {
+    this.runtime.clearTimeout(this.dayTimer);
+    const now = this.runtime.now();
+    const tomorrow = addDays(civilDateOf(now, this.zone), 1);
+    this.dayTimer = this.runtime.setTimeout(
+      () => this.refreshDay(),
+      Math.max(1, startOfDay(tomorrow, this.zone) - now),
+    );
+  }
+
+  /** Atualiza a semana e a seleção na virada do dia, mesmo com a tela aberta. */
+  refreshDay(): void {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    this.scheduleDayChange();
     const current = dateKey(this.runtime.now(), this.zone);
     const previous = this.todayKey();
     if (current === previous) return;
     this.todayKey.set(current);
+    this.dayChanged.emit();
     if (!this.sheetOpen()) {
       if (this.selectedKey() === previous) this.selectedKey.set(current);
       this.month.set(this.currentMonth());

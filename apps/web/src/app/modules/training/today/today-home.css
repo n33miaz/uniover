@@ -116,45 +116,6 @@ app-program-suggestion {
   font-size: 1.0625rem;
 }
 
-/* "Ver Rotina": um toque de texto no pé do cartão; o alvo tem 44 px e o resto é só o texto e a seta. */
-.routine-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  gap: var(--space-2);
-  min-height: var(--tap);
-  /* O alvo de 44 px invade o respiro de cima e o de baixo do cartão: o botão ocupa só a altura do texto. */
-  margin-block: calc(var(--space-2) * -1) calc(var(--space-3) * -1);
-  padding: 0 var(--space-3);
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  color: var(--a-accent-ink);
-  font: inherit;
-  font-size: var(--fs-small);
-  font-weight: 750;
-  cursor: pointer;
-}
-.routine-toggle:focus-visible {
-  outline: 3px solid var(--a-accent);
-  outline-offset: 2px;
-}
-
-.lines {
-  margin: 0;
-}
-.lines[hidden] {
-  display: none;
-}
-/* A linha da rotina segue a da biblioteca de exercícios: a miniatura de 64 px e o texto a um espaço curto dela. */
-.lines .line {
-  gap: var(--space-2);
-}
-.lines:not([hidden]) {
-  animation: unfold var(--dur-fast, 160ms) var(--ease-out, ease-out);
-}
-
 /* Atalhos como linhas simples: o título à esquerda e o valor à direita, numa linha só. */
 .links .ui-row {
   min-height: var(--tap);
@@ -176,22 +137,6 @@ app-program-suggestion {
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-@keyframes unfold {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .lines:not([hidden]) {
-    animation: none;
-  }
 }
 
 .actions {
