@@ -1,5 +1,6 @@
 import { Page } from '@playwright/test';
 import { expect, test, waitForServiceWorkerControl } from '../fixtures';
+import { beginWorkout } from './support/today-pages';
 import { openTraining, startTraining, trainingDbName } from './support/training-pages';
 
 // Os dois quadros do supino reto com barra (o primeiro exercício das rotinas de teste).
@@ -159,8 +160,8 @@ test.describe('figuras do Treino sem rede, com o service worker', () => {
     try {
       await page.reload();
       await expect(page.locator('app-training-page')).toBeVisible();
-      await page.getByRole('button', { name: 'Ver Rotina' }).click();
-      const thumb = page.locator('.lines app-exercise-thumb img').first();
+      await beginWorkout(page, /.*/);
+      const thumb = page.locator('app-live-session app-exercise-illustration img').first();
       await expect(thumb).toBeVisible();
       await expect
         .poll(() => thumb.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth))

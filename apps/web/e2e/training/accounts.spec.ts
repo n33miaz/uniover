@@ -242,6 +242,10 @@ test.describe('o treino ao vivo de duas contas no mesmo navegador', () => {
     page,
   }) => {
     await installClock(page);
+    const installHint = page.getByRole('dialog', { name: 'Atalho na Tela de Início' });
+    await page.addLocatorHandler(installHint, async () => {
+      await installHint.getByRole('button', { name: 'Agora Não' }).click();
+    });
     seedTraining(server); // catálogo e rotinas do dono (a conta padrão do servidor de teste)
     seedBenchHistory(server); // com a última vez do supino, a série já vem preenchida e basta concluir
 
@@ -250,7 +254,7 @@ test.describe('o treino ao vivo de duas contas no mesmo navegador', () => {
     await signIn(page, OWNER.email, OWNER.password);
     await goInApp(page, '/treino');
     await expect(page.getByRole('heading', { name: 'Esta Semana', exact: true })).toBeVisible();
-    await expect(page.locator('.lines .ui-row').first()).toContainText('última vez 40 kg × 10');
+    await expect.poll(() => countRows(page, 'sets', OWNER_ID)).toBeGreaterThan(0);
     await beginWorkout(page);
     server.offline = true;
     await goOffline(page);

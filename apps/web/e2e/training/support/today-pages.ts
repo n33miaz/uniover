@@ -12,11 +12,7 @@ export async function installClock(page: Page): Promise<void> {
   await page.clock.install({ time: new Date() });
 }
 
-/**
- * Abre a aba Hoje e espera a rotina do dia aparecer. Com `history` (o padrão), espera também o histórico do supino chegar
- * do servidor: quem começa o treino antes disso vê o cartão sem a última vez (o que o app corrige sozinho, mas o teste
- * quer medir o caso normal).
- */
+/** Abre Hoje e espera o calendário. Quando há histórico simulado, espera a primeira série chegar ao banco local. */
 export async function openToday(
   page: Page,
   options: { path?: string; history?: boolean } = {},
@@ -24,10 +20,7 @@ export async function openToday(
   await openTraining(page, options.path ?? '/treino');
   await expect(page.getByRole('heading', { name: 'Esta Semana', exact: true })).toBeVisible();
   if (options.history !== false) {
-    // O histórico vem do servidor simulado: com a máquina ocupada o puxar passa dos 5 s padrão, então a espera é maior.
-    await expect(page.locator('.lines .ui-row').first()).toContainText('última vez 40 kg × 10', {
-      timeout: 20_000,
-    });
+    await expect.poll(() => countRows(page, 'sets'), { timeout: 20_000 }).toBeGreaterThan(0);
   }
 }
 
