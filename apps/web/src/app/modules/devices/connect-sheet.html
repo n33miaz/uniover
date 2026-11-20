@@ -1,12 +1,41 @@
 <dialog #dialog class="sheet ui-dialog" aria-labelledby="connect-title" (cancel)="close($event)">
   <span class="grabber" aria-hidden="true"></span>
   <h2 id="connect-title" i18n="@@devices.connect.title">Conectar Este PC</h2>
+  <p class="lead" i18n="@@devices.connect.lead">
+    Um link no PC e um QR no celular. O resto (TV, início automático) termina sozinho.
+  </p>
 
   <ol class="steps">
-    <li i18n="@@devices.connect.step-download">Baixar e abrir o programa</li>
-    <li i18n="@@devices.connect.step-scan">Escanear o QR com o celular</li>
-    <li i18n="@@devices.connect.step-accept">Aceitar na TV</li>
+    @if (windowsPc) {
+      <li i18n="@@devices.connect.step-open">Baixe e abra o programa neste PC</li>
+    } @else {
+      <li i18n="@@devices.connect.step-open-on-pc">No PC, abra o endereço abaixo e baixe o programa</li>
+    }
+    <li i18n="@@devices.connect.step-windows">Aceite o aviso do Windows (só uma vez)</li>
+    <li i18n="@@devices.connect.step-scan">Escaneie com o celular o QR que aparecer</li>
   </ol>
+
+  @if (!windowsPc) {
+    <div class="address">
+      <code class="url">{{ pageUrl }}</code>
+      <button type="button" class="secondary ui-btn copy" (click)="copy()">
+        @if (copied()) {
+          <span i18n="@@devices.connect.copied">Copiado</span>
+        } @else {
+          <span i18n="@@devices.connect.copy">Copiar</span>
+        }
+      </button>
+    </div>
+    <p class="ui-visually-hidden" role="status">
+      @if (copied()) {
+        <span i18n="@@devices.connect.copied-status">Endereço copiado.</span>
+      }
+    </p>
+  }
+
+  <p class="tv-note" i18n="@@devices.connect.tv-note">
+    Na TV Android, o app pede o código que aparecer na tela da TV. É a própria TV que exige, uma vez só.
+  </p>
 
   <a class="help" routerLink="/conectar" i18n="@@devices.connect.help">Se o navegador avisar</a>
 
@@ -14,13 +43,15 @@
     <button type="button" class="secondary ui-btn" (click)="close()" i18n="@@devices.connect.close">
       Fechar
     </button>
-    <a
-      class="download primary ui-btn"
-      [attr.href]="connectorUrl"
-      download="conectar-uniover.cmd"
-      i18n-download="@@devices.connect.download-file"
-      i18n="@@devices.connect.download"
-      >Baixar Programa</a
-    >
+    @if (windowsPc) {
+      <a
+        class="download primary ui-btn"
+        [attr.href]="connectorUrl"
+        download="conectar-uniover.cmd"
+        i18n-download="@@devices.connect.download-file"
+        i18n="@@devices.connect.download"
+        >Baixar Programa</a
+      >
+    }
   </div>
 </dialog>

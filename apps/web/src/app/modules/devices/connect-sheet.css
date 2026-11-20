@@ -90,6 +90,45 @@ h2 {
   text-decoration: none;
 }
 
+.lead {
+  margin: var(--space-2) 0 0;
+  color: var(--a-ink2);
+  font-size: var(--fs-small);
+}
+
+/* O endereço para abrir no PC: legível, quebra em tela estreita, com o botão de copiar ao lado. */
+.address {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border: 1px solid var(--a-line);
+  border-radius: var(--radius-sm);
+  background: var(--a-surface-2);
+}
+
+.url {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.copy {
+  flex: none;
+}
+
+.tv-note {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
+  font-size: var(--fs-small);
+}
+
 /* Atalho discreto para a página com os avisos do navegador; sai da folha ao abrir. */
 .help {
   display: inline-flex;

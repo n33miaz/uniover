@@ -46,6 +46,15 @@ h1 {
   font-weight: 750;
 }
 
+.after {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
+  font-size: var(--fs-small);
+}
+
 .warnings {
   margin-top: var(--space-5);
 }

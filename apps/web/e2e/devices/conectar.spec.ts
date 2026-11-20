@@ -57,9 +57,10 @@ test.describe('página pública /conectar', () => {
 
       await expect(page.getByText('Abra o arquivo baixado')).toBeVisible();
       await expect(
-        page.getByText('Escaneie o QR da tela com o celular de quem administra'),
+        page.getByText('Escaneie o QR com o celular em que você já entrou'),
       ).toBeVisible();
-      await expect(page.getByText('Toque em Permitir na TV')).toBeVisible();
+      // Na TV Android o código é digitado no celular; nada de janela no PC.
+      await expect(page.getByText('o app do celular pede o código que a TV mostrar')).toBeVisible();
       for (const text of [
         'Manter',
         'Manter mesmo assim',
@@ -106,7 +107,7 @@ test.describe('página pública /conectar', () => {
       await expect(page.getByText(`Você entrou como ${identity.owner.displayName}.`)).toBeVisible();
       await expect(page.getByRole('link', { name: 'Entrar' })).toHaveCount(0);
       await expect(
-        page.getByText('Na janela que abrir, toque em Aprovar neste computador'),
+        page.getByText('Escaneie o QR com o celular, ou toque em Aprovar neste computador'),
       ).toBeVisible();
       await expectNoHorizontalScroll(page);
       await settle(page);
