@@ -179,6 +179,24 @@ def read_now(path: Path, *, encoding: str = "ascii") -> str:
         return ""
 
 
+def read_pid(path: Path, seconds: float = 60.0) -> int | None:
+    """O PID que um processo filho grava com `Set-Content` (número e quebra de linha), ou `None`.
+
+    Espera o arquivo existir, abrir (o Windows recusa a leitura enquanto quem escreve o segura) e
+    estar completo: sem a quebra de linha final, a gravação ainda não terminou."""
+    end = time.monotonic() + seconds
+    while True:
+        try:
+            text = path.read_text(encoding="ascii")
+        except OSError:
+            text = ""
+        if text.endswith("\n") and text.strip().isdigit():
+            return int(text.strip())
+        if time.monotonic() >= end:
+            return None
+        time.sleep(0.1)
+
+
 def kill_tree(process: subprocess.Popen[Any]) -> None:
     """Encerra o processo e os filhos: o `python.exe` do venv no Windows é um lançador que cria o
     interpretador de verdade como filho, e matar só o lançador deixaria o filho vivo."""
