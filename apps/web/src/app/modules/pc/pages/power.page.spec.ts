@@ -145,6 +145,20 @@ describe('PowerPage', () => {
       );
     });
 
+    it('a cancel of a countdown that already ended hides the button and says nothing was cancelled', async () => {
+      await shutDown();
+      store.power.mockResolvedValueOnce({
+        kind: 'countdown-gone',
+        message: 'Essa contagem já terminou. Nada foi cancelado.',
+      });
+      root.querySelector<HTMLButtonElement>('.cancel button')!.click();
+      await settle();
+      expect(root.querySelector('.cancel')).toBeNull();
+      expect(root.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+        'Essa contagem já terminou. Nada foi cancelado.',
+      );
+    });
+
     it('the countdown that failed to start offers no cancel', async () => {
       store.startCountdown.mockResolvedValueOnce({ failure: FAILURE, countdownId: null });
       await shutDown();

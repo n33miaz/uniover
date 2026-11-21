@@ -13,7 +13,9 @@ marca do próprio processo não é contagem perdida: fica, e quem a apaga é ess
 A contagem perdida achada na partida passa para a sua própria lista (`power-countdown-lost.json`)
 antes de a marca sair: uma contagem nova regrava a marca, e o aviso da perdida não pode sumir com
 isso. Ela sai da lista só quando a API confirma que gravou o aviso (`confirm_lost`); até lá, cada
-partida (e cada remontagem) a avisa de novo, e a API descarta a repetição.
+partida (e cada remontagem) a avisa de novo, e a API descarta a repetição. A lista guarda quando a
+contagem foi dada por perdida e a esquece depois de `LOST_KEEP_SECONDS` (um dia): a API lembra do
+que gravou por um pouco mais que isso, e um aviso mais velho já não serve ao app.
 
 Gravada de forma atômica (arquivo temporário e `os.replace`); nada aqui levanta erro. Falha de
 disco só perde o aviso do reinício: a contagem segue igual.
@@ -23,6 +25,7 @@ import json
 import logging
 import os
 import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Final
@@ -36,18 +39,31 @@ _MAX_BYTES: Final = 4 * 1024
 _MAX_ID: Final = 64
 # Quantas contagens perdidas esperam a confirmação da API, no máximo (as mais antigas saem).
 LOST_CAPACITY: Final = 4
+# Por quanto tempo a contagem perdida espera a confirmação da API (a API lembra do que gravou por um
+# pouco mais: o reenvio dentro desta janela nunca vira outra linha na auditoria).
+LOST_KEEP_SECONDS: Final = 24 * 60 * 60.0
 # Uma trava por processo: cada remontagem cria o seu objeto, e a confirmação chega de outra thread.
 _LOST_LOCK: Final = threading.Lock()
 
 
 class PowerCountdownFile:
-    def __init__(self, runtime: Path, pid: Callable[[], int] = os.getpid) -> None:
+    def __init__(
+        self,
+        runtime: Path,
+        pid: Callable[[], int] = os.getpid,
+        now: Callable[[], float] = time.time,
+    ) -> None:
         self._path = runtime / POWER_COUNTDOWN_FILE
         self._lost = runtime / POWER_COUNTDOWN_LOST_FILE
         self._pid = pid
+        self._now = now
 
     def save(self, action: str, countdown_id: str) -> None:
-        if not self._write(self._path, {"action": action, "id": countdown_id, "pid": self._pid()}):
+        with _LOST_LOCK:
+            saved = self._write(
+                self._path, {"action": action, "id": countdown_id, "pid": self._pid()}
+            )
+        if not saved:
             _log.warning(
                 "não consegui marcar a contagem de energia; um reinício no meio dela não será "
                 "avisado"
@@ -66,29 +82,34 @@ class PowerCountdownFile:
         with _LOST_LOCK:
             lost = self._read_lost()
             running = self._read_running()
+            known = [entry for entry, _ in lost]
             if running is None:
-                return lost
-            if running not in lost:
-                kept = [*lost, running][-LOST_CAPACITY:]
-                if not self._write(self._lost, [{"action": a, "id": i} for a, i in kept]):
-                    # Sem a lista, a marca fica: a próxima partida tenta de novo.
+                return known
+            if running not in known:
+                kept = [*lost, (running, self._now())][-LOST_CAPACITY:]
+                if not self._write(self._lost, _dump(kept)):
+                    # Sem a lista, a marca fica: a próxima partida tenta de novo, e a confirmação
+                    # também dá baixa nela (`confirm_lost`).
                     _log.warning("não consegui guardar a contagem perdida até a API confirmar")
-                    return [*lost, running]
-                lost = kept
+                    return [*known, running]
+                known = [entry for entry, _ in kept]
             self.clear()
-            return lost
+            return known
 
     def confirm_lost(self, countdown_id: str) -> None:
         """A API confirmou o aviso da contagem perdida `countdown_id`: ela sai da lista."""
         with _LOST_LOCK:
+            # A marca usada no lugar da lista (que não pôde ser gravada) também sai, se ainda é a
+            # do processo anterior e da mesma contagem (nunca a de uma contagem viva).
+            running = self._read_running()
+            if running is not None and running[1] == countdown_id:
+                self.clear()
             lost = self._read_lost()
-            rest = [
-                (action, identifier) for action, identifier in lost if identifier != countdown_id
-            ]
+            rest = [item for item in lost if item[0][1] != countdown_id]
             if len(rest) == len(lost):
                 return
             if rest:
-                self._write(self._lost, [{"action": a, "id": i} for a, i in rest])
+                self._write(self._lost, _dump(rest))
                 return
             try:
                 self._lost.unlink(missing_ok=True)
@@ -112,7 +133,8 @@ class PowerCountdownFile:
             self.clear()
         return entry
 
-    def _read_lost(self) -> list[tuple[str, str]]:
+    def _read_lost(self) -> list[tuple[tuple[str, str], float]]:
+        """As contagens perdidas e quando foram dadas por perdidas; as de mais de um dia saem."""
         try:
             data = self._load(self._lost)
         except FileNotFoundError:
@@ -122,7 +144,17 @@ class PowerCountdownFile:
             return []
         if not isinstance(data, list):
             return []
-        entries = [entry for entry in map(_entry, data) if entry is not None]
+        now = self._now()
+        entries: list[tuple[tuple[str, str], float]] = []
+        for item in data:
+            entry = _entry(item)
+            if entry is None:
+                continue
+            at = item.get("at") if isinstance(item, dict) else None
+            # Sem a hora (lista de uma versão anterior), conta a partir de agora.
+            since = float(at) if isinstance(at, int | float) and not isinstance(at, bool) else now
+            if now - since <= LOST_KEEP_SECONDS:
+                entries.append((entry, since))
         return entries[-LOST_CAPACITY:]
 
     @staticmethod
@@ -146,6 +178,10 @@ class PowerCountdownFile:
                 _log.debug("não consegui apagar o arquivo temporário da contagem")
             return False
         return True
+
+
+def _dump(entries: list[tuple[tuple[str, str], float]]) -> list[dict[str, object]]:
+    return [{"action": action, "id": identifier, "at": at} for (action, identifier), at in entries]
 
 
 def _entry(data: object) -> tuple[str, str] | None:

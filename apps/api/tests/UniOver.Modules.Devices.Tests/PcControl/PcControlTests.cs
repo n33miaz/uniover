@@ -1197,6 +1197,39 @@ public sealed class PcPowerCountdownsTests
     }
 
     [Fact]
+    public void ARecordedOutcome_IsRememberedForLongerThanTheAgentKeepsResending()
+    {
+        var time = new FakeTimeProvider(T0);
+        var countdowns = new PcPowerCountdowns(time);
+        countdowns.Claim(First, "lost").Should().Be(PcPowerOutcomeClaim.Mine);
+        countdowns.Recorded(First, "lost");
+
+        time.Advance(TimeSpan.FromHours(24));
+        countdowns.Claim(First, "lost").Should().Be(PcPowerOutcomeClaim.Recorded, "o agente reenvia por até um dia");
+        time.Advance(PcPowerCountdowns.RecordedLifetime);
+        countdowns.Claim(First, "lost").Should().Be(PcPowerOutcomeClaim.Mine);
+    }
+
+    [Fact]
+    public void OnlyTheLatestRememberedCountdown_IsLive()
+    {
+        var time = new FakeTimeProvider(T0);
+        var countdowns = new PcPowerCountdowns(time);
+        countdowns.IsLive("pc-casa", First).Should().BeFalse("a instância não sabe de nenhuma");
+        countdowns.Scheduled("pc-casa", First, Countdown("SHUTDOWN"));
+        countdowns.IsLive("pc-casa", First).Should().BeTrue();
+        countdowns.IsLive("outro-pc", First).Should().BeFalse();
+
+        countdowns.Take("pc-casa", First);
+        countdowns.IsLive("pc-casa", First).Should().BeFalse("o desfecho dela já chegou");
+        countdowns.Scheduled("pc-casa", Second, Countdown("SHUTDOWN"));
+        countdowns.IsLive("pc-casa", First).Should().BeFalse();
+        countdowns.IsLive("pc-casa", Second).Should().BeTrue();
+        time.Advance(PcPowerCountdowns.Lifetime + TimeSpan.FromSeconds(1));
+        countdowns.IsLive("pc-casa", Second).Should().BeFalse();
+    }
+
+    [Fact]
     public void AnOutcomeWhoseRecordingFailed_CanBeRecordedByTheResend()
     {
         var countdowns = new PcPowerCountdowns(new FakeTimeProvider(T0));

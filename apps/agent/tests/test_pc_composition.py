@@ -89,8 +89,9 @@ class FakePower:
     def shutdown(self, delay_seconds: int, countdown_id: str = "") -> None:
         self.calls.append(("shutdown", delay_seconds))
 
-    def cancel_shutdown(self, countdown_id: str | None = None) -> None:
+    def cancel_shutdown(self, countdown_id: str | None = None) -> bool:
         self.calls.append(("cancel",))
+        return True
 
     def restart(self, delay_seconds: int, countdown_id: str = "") -> None:
         self.calls.append(("restart", delay_seconds))

@@ -21,11 +21,13 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     /// sem forçar o fechamento dos programas, e `CANCEL_SHUTDOWN` cancela essa contagem.
     /// `countdownId` (opcional, só com `CANCEL_SHUTDOWN`) é o identificador da contagem que o
     /// app mostra (o `id` do comando que a agendou): o agente só cancela se a contagem em
-    /// andamento for essa, e com outra (ou nenhuma) não faz nada; sem o campo, cancela a que
-    /// estiver em andamento. A API só o manda ao agente que declarou a capacidade
-    /// `pc.power.cancel.v1` (depois de a API listá-la em `features`); a um anterior o
-    /// cancelamento vai sem ele. Quem confirma com a pessoa é o app e a API; fora essa contagem,
-    /// o agente não repete nem adia nada.
+    /// andamento for essa; com outra (ou nenhuma, ou a mesma já cancelada) não faz nada e
+    /// responde recusado com o código `power_countdown_gone`. Sem o campo, cancela a que estiver
+    /// em andamento. A API só o manda ao agente que declarou a capacidade `pc.power.cancel.v1`
+    /// (depois de a API listá-la em `features`); a um anterior o cancelamento vai sem ele, e só
+    /// quando a contagem pedida é a que a API sabe estar correndo naquele agente (outra é
+    /// recusada sem enviar nada). Quem confirma com a pessoa é o app e a API; fora essa
+    /// contagem, o agente não repete nem adia nada.
     /// </summary>
     public partial class PcPowerV1Message
     {

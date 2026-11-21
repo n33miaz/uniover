@@ -35,6 +35,14 @@ describe('pcFailureOf', () => {
     ).toBe('unavailable');
   });
 
+  it('tells the cancel of a countdown that already ended', () => {
+    const gone = pcFailureOf(
+      http(409, { type: 'https://uniover.dev/problems/pc-power-countdown-gone', title: 'x' }),
+    );
+    expect(gone.kind).toBe('countdown-gone');
+    expect(gone.message).toBe('Essa contagem já terminou. Nada foi cancelado.');
+  });
+
   it('only a 409 can be a key the agent is too old for', () => {
     expect(
       pcFailureOf(http(400, { type: 'https://uniover.dev/problems/pc-key-unsupported' })).kind,

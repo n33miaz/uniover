@@ -85,6 +85,8 @@ UNSUPPORTED: Final = "unsupported"
 UNKNOWN_APP: Final = "unknown_app"
 # A hibernação está desligada neste PC (`powercfg /h off`): o app diz como ligá-la.
 HIBERNATION_UNAVAILABLE: Final = "hibernation_unavailable"
+# O cancelamento pedia uma contagem que não é a que está correndo (já acabou): nada foi cancelado.
+POWER_COUNTDOWN_GONE: Final = "power_countdown_gone"
 # Tempo entre responder à API e suspender: o resultado precisa sair antes de o PC adormecer.
 SLEEP_DELAY_SECONDS: Final = 1.0
 
@@ -455,7 +457,13 @@ def pc_power_handler(
             # Com o id, só a contagem que o app mostra; sem ele (API anterior), a que estiver
             # em andamento.
             countdown_id = command.body.get("countdownId")
-            power.cancel_shutdown(str(countdown_id) if countdown_id else None)
+            if not power.cancel_shutdown(str(countdown_id) if countdown_id else None):
+                return CommandResult(
+                    command.id,
+                    ResultStatus.REJECTED,
+                    "a contagem que o app mostrava já acabou",
+                    POWER_COUNTDOWN_GONE,
+                )
         elif action == "SLEEP":
             _log.warning("suspensão pedida pelo app")
             start(later("suspender o PC", power.sleep))

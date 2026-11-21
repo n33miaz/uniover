@@ -19,6 +19,13 @@ internal sealed class PcPowerCountdowns(TimeProvider time)
     /// <summary>Bem mais que a contagem mais longa do agente (e que os 5 min em que o app oferece cancelar).</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(15);
 
+    /// <summary>
+    /// Por quanto tempo o desfecho gravado é lembrado: um pouco mais que o dia em que o agente segue reenviando o que não teve confirmação
+    /// (na memória e na marca em disco da contagem perdida). Um reenvio dentro dessa janela nunca vira outra linha na auditoria. Limite
+    /// conhecido: a lembrança é desta instância; uma API reiniciada (ou outra instância) aceitaria o reenvio como novo.
+    /// </summary>
+    public static readonly TimeSpan RecordedLifetime = TimeSpan.FromHours(25);
+
     private readonly object _gate = new();
     private readonly Dictionary<Guid, PcPowerCountdown> _countdowns = [];
     private readonly Dictionary<string, Guid> _latest = new(StringComparer.Ordinal);
@@ -49,6 +56,22 @@ internal sealed class PcPowerCountdowns(TimeProvider time)
             {
                 _countdowns.Remove(known);
             }
+        }
+    }
+
+    /// <summary>
+    /// A contagem é a que a instância sabe estar correndo naquele agente: a mais recente dele, ainda lembrada (sem desfecho, sem
+    /// cancelamento e dentro de <see cref="Lifetime"/>). Sem saber (API reiniciada), não é.
+    /// </summary>
+    public bool IsLive(string agentSlug, Guid countdownId)
+    {
+        lock (_gate)
+        {
+            return _latest.TryGetValue(agentSlug, out var latest)
+                && latest == countdownId
+                && _countdowns.TryGetValue(countdownId, out var countdown)
+                && string.Equals(countdown.Slug, agentSlug, StringComparison.Ordinal)
+                && time.GetUtcNow() - countdown.At <= Lifetime;
         }
     }
 
@@ -136,7 +159,7 @@ internal sealed class PcPowerCountdowns(TimeProvider time)
             _countdowns.Remove(id);
         }
 
-        foreach (var key in _recorded.Where(r => now - r.Value > Lifetime).Select(r => r.Key).ToList())
+        foreach (var key in _recorded.Where(r => now - r.Value > RecordedLifetime).Select(r => r.Key).ToList())
         {
             _recorded.Remove(key);
         }

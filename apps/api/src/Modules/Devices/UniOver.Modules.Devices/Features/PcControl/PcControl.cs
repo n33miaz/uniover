@@ -586,7 +586,8 @@ internal sealed partial class PcControlHandler(
         string? epoch = null,
         string? focus = null,
         Func<string, Guid, IResult>? onSuccess = null,
-        Func<IReadOnlyList<string>, OutboundMessage, OutboundMessage>? adapt = null)
+        Func<IReadOnlyList<string>, OutboundMessage, OutboundMessage>? adapt = null,
+        Func<string, IReadOnlyList<string>, IResult?>? refuse = null)
     {
         var target = await ReadyTargetAsync(userId, cancellationToken);
         if (target.Failure is not null)
@@ -604,6 +605,12 @@ internal sealed partial class PcControlHandler(
         if (focus is not null && CapabilityProblem(target, PcMessages.TargetCapability) is { } focusProblem)
         {
             return focusProblem;
+        }
+
+        // O pedido que não pode ir a este agente (pelo que ele declarou e pelo que a API sabe dele): nada é enviado.
+        if (refuse?.Invoke(target.Slug, target.Capabilities) is { } refused)
+        {
+            return refused;
         }
 
         var focused = focus is null ? message : PcMessages.WithTarget(message, focus);
@@ -631,6 +638,12 @@ internal sealed partial class PcControlHandler(
             }
 
             return PcProblems.FromGateway(reply.Error);
+        }
+
+        if (!reply.Value.Ok && reply.Value.Error?.Code == PcProblems.CountdownGoneCode)
+        {
+            // O agente não cancelou nada (a contagem pedida já tinha acabado): nem o cancelamento nem uma falha vão à trilha.
+            return PcProblems.CountdownGone();
         }
 
         if (!reply.Value.Ok)
@@ -676,7 +689,8 @@ internal sealed partial class PcControlHandler(
     /// <summary>
     /// Energia do PC. Desligar e reiniciar devolvem o identificador da contagem aceita (<see cref="PcPowerScheduled"/>); o cancelamento com
     /// <paramref name="countdownId"/> só atinge essa contagem: o agente que declarou <see cref="PcMessages.PowerCancelCapability"/> recebe o
-    /// identificador e confere; a um anterior o cancelamento vai sem ele, como antes.
+    /// identificador e confere; a um anterior ele só vai (sem o campo) se for a contagem que a API sabe estar correndo lá, e outra volta como
+    /// <see cref="PcProblems.CountdownGone"/> sem enviar nada. Sem identificador, o cancelamento de antes.
     /// </summary>
     public Task<IResult> PowerAsync(
         Guid userId,
@@ -710,6 +724,14 @@ internal sealed partial class PcControlHandler(
                 ? (capabilities, outbound) => capabilities.Contains(PcMessages.PowerCancelCapability, StringComparer.Ordinal)
                     ? PcMessages.WithCountdown(outbound, id)
                     : outbound
+                : null,
+            // Um agente anterior cancela às cegas o que estiver contando: só vai a ele o cancelamento da contagem que a API sabe estar
+            // correndo lá. Outra (a tela mostrava uma que já acabou) é recusada sem enviar nada, e a viva segue lembrada.
+            refuse: countdownId is { } wanted
+                ? (slug, capabilities) => capabilities.Contains(PcMessages.PowerCancelCapability, StringComparer.Ordinal)
+                    || countdowns.IsLive(slug, wanted)
+                        ? null
+                        : PcProblems.CountdownGone()
                 : null);
     }
 
