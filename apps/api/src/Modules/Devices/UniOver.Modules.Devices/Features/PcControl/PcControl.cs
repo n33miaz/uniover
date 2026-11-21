@@ -128,7 +128,14 @@ internal sealed record PcVolumeRequest(
     [property: JsonNumberHandling(JsonNumberHandling.Strict)] int? Seq = null,
     string? Epoch = null);
 
-internal sealed record PcPowerRequest(string? Action, bool? Confirm);
+/// <summary>
+/// <c>CountdownId</c> (só com <c>CANCEL_SHUTDOWN</c>): a contagem que a tela mostra, devolvida quando ela foi agendada. Com ele só essa contagem
+/// é cancelada; sem ele, a que estiver em andamento.
+/// </summary>
+internal sealed record PcPowerRequest(string? Action, bool? Confirm, Guid? CountdownId = null);
+
+/// <summary>Desligar ou reiniciar aceito pelo agente: <c>CountdownId</c> identifica a contagem (para cancelá-la e reconhecer o desfecho dela).</summary>
+internal sealed record PcPowerScheduled(Guid CountdownId);
 
 /// <summary>Os limites do contrato <c>pc.*</c>: o que a API deixaria passar e o contrato recusar viraria 500 em vez de 400.</summary>
 internal static class PcValidator
@@ -380,6 +387,11 @@ internal static class PcValidator
             errors["confirm"] = ["Confirme para suspender, hibernar, desligar, reiniciar ou encerrar a sessão do PC."];
         }
 
+        if (request?.CountdownId is { } countdownId && (request.Action != "CANCEL_SHUTDOWN" || countdownId == Guid.Empty))
+        {
+            errors["countdownId"] = ["Só o cancelamento leva a contagem, e ela é a que o desligamento ou o reinício devolveu."];
+        }
+
         return errors;
     }
 
@@ -573,7 +585,8 @@ internal sealed partial class PcControlHandler(
         int? seq = null,
         string? epoch = null,
         string? focus = null,
-        Func<string, Guid, IResult>? onSuccess = null)
+        Func<string, Guid, IResult>? onSuccess = null,
+        Func<IReadOnlyList<string>, OutboundMessage, OutboundMessage>? adapt = null)
     {
         var target = await ReadyTargetAsync(userId, cancellationToken);
         if (target.Failure is not null)
@@ -594,6 +607,8 @@ internal sealed partial class PcControlHandler(
         }
 
         var focused = focus is null ? message : PcMessages.WithTarget(message, focus);
+        // Campo que só um agente que o declarou entende (o corpo de um anterior é fechado): quem chama decide pelas capacidades dele.
+        focused = adapt is null ? focused : adapt(target.Capabilities, focused);
         var origin = origins.Read();
         var outbound = PcMessages.WithOrigin(NumberedFor(target, focused, seq, epoch), target.Capabilities, origin, withOperation: true);
         using var clipboardRead = message.RequestId is { } requestId
@@ -643,7 +658,7 @@ internal sealed partial class PcControlHandler(
     /// <summary>
     /// A contagem de desligar ou reiniciar que o agente acabou de aceitar fica lembrada (quem pediu, de onde): se ela não terminar no
     /// pedido, o agente avisa depois, com o identificador dela (o id do comando que a agendou), e a falha vai à auditoria com essa pessoa.
-    /// O cancelamento aceito a esquece.
+    /// O cancelamento aceito a esquece (ver <see cref="PowerAsync"/>).
     /// </summary>
     private void RememberCountdown(string? auditEvent, ReadyTarget target, Guid userId, ClientInfo client, Guid commandId)
     {
@@ -656,10 +671,46 @@ internal sealed partial class PcControlHandler(
                 commandId,
                 new PcPowerCountdown(target.AgentId, userId, client, auditEvent == PairingEvents.PcShutdown ? "SHUTDOWN" : "RESTART"));
         }
-        else if (auditEvent == PairingEvents.PcShutdownCancelled)
+    }
+
+    /// <summary>
+    /// Energia do PC. Desligar e reiniciar devolvem o identificador da contagem aceita (<see cref="PcPowerScheduled"/>); o cancelamento com
+    /// <paramref name="countdownId"/> só atinge essa contagem: o agente que declarou <see cref="PcMessages.PowerCancelCapability"/> recebe o
+    /// identificador e confere; a um anterior o cancelamento vai sem ele, como antes.
+    /// </summary>
+    public Task<IResult> PowerAsync(
+        Guid userId,
+        OutboundMessage message,
+        string auditEvent,
+        Guid? countdownId,
+        ClientInfo client,
+        CancellationToken cancellationToken,
+        string? requiredCapability = null)
+    {
+        if (auditEvent == PairingEvents.PcShutdown || auditEvent == PairingEvents.PcRestart)
         {
-            countdowns.Cancelled(target.Slug);
+            return RunAsync(
+                userId, message, PowerTimeout, auditEvent, client, cancellationToken, requiredCapability,
+                onSuccess: (_, commandId) => TypedResults.Ok(new PcPowerScheduled(commandId)));
         }
+
+        if (auditEvent != PairingEvents.PcShutdownCancelled)
+        {
+            return RunAsync(userId, message, PowerTimeout, auditEvent, client, cancellationToken, requiredCapability);
+        }
+
+        return RunAsync(
+            userId, message, PowerTimeout, auditEvent, client, cancellationToken, requiredCapability,
+            onSuccess: (slug, _) =>
+            {
+                countdowns.Cancelled(slug, countdownId);
+                return TypedResults.NoContent();
+            },
+            adapt: countdownId is { } id
+                ? (capabilities, outbound) => capabilities.Contains(PcMessages.PowerCancelCapability, StringComparer.Ordinal)
+                    ? PcMessages.WithCountdown(outbound, id)
+                    : outbound
+                : null);
     }
 
     /// <summary>
@@ -883,9 +934,11 @@ internal static class PcControlEndpoints
             .RequireRateLimiting(RateLimitPolicies.PcInput)
             .WithCommonProblems();
 
+        // Desligar e reiniciar devolvem a contagem aceita (200); as outras ações, 204.
         group.MapPost("/power", PowerAsync)
             .RequireAuthorization(ModulePolicy)
             .RequireRateLimiting(RateLimitPolicies.PcPower)
+            .Produces<PcPowerScheduled>()
             .WithCommonProblems();
 
         group.MapPost("/apps/{appId}/launch", LaunchAsync)
@@ -1180,13 +1233,13 @@ internal static class PcControlEndpoints
         // ligada no PC.
         var v2Action = PcMessages.PowerV2Actions[name];
         return PcMessages.PowerActions.TryGetValue(name, out var legacy)
-            ? await handler.RunAsync(
-                userId, PcMessages.Power(legacy), PcControlHandler.PowerTimeout, auditEvent, ClientInfo.From(http), cancellationToken)
-            : await handler.RunAsync(
+            ? await handler.PowerAsync(
+                userId, PcMessages.Power(legacy), auditEvent, request.CountdownId, ClientInfo.From(http), cancellationToken)
+            : await handler.PowerAsync(
                 userId,
                 PcMessages.PowerV2(v2Action),
-                PcControlHandler.PowerTimeout,
                 auditEvent,
+                request.CountdownId,
                 ClientInfo.From(http),
                 cancellationToken,
                 PcMessages.PowerV2CapabilityFor(v2Action));

@@ -39,7 +39,7 @@ function setup(initial: PcStatus | null = status()) {
     text: vi.fn(() => Promise.resolve()),
     edit: vi.fn(() => Promise.resolve()),
     media: vi.fn(() => Promise.resolve()),
-    power: vi.fn(() => Promise.resolve()),
+    power: vi.fn<(...args: unknown[]) => Promise<string | null>>(() => Promise.resolve(null)),
     launch: vi.fn(() => Promise.resolve()),
     zoom: vi.fn<(steps: number) => Promise<void>>(() => Promise.resolve()),
     volume: vi.fn<(change: { level?: number; muted?: boolean }) => Promise<void>>(() =>
@@ -216,6 +216,15 @@ describe('PcStore commands', () => {
     expect(api.media).toHaveBeenCalledWith('VOLUME_UP', 2);
     expect(api.power).toHaveBeenCalledWith('SLEEP', true);
     expect(api.launch).toHaveBeenCalledWith('notas');
+  });
+
+  it('starts a countdown handing back its id, and cancels only the countdown given', async () => {
+    const { store, api } = setup();
+    api.power.mockResolvedValueOnce('contagem-1');
+    expect(await store.startCountdown('RESTART')).toEqual({ failure: null, countdownId: 'contagem-1' });
+    expect(api.power).toHaveBeenLastCalledWith('RESTART', true);
+    expect(await store.power('CANCEL_SHUTDOWN', false, 'contagem-1')).toBeNull();
+    expect(api.power).toHaveBeenLastCalledWith('CANCEL_SHUTDOWN', false, 'contagem-1');
   });
 
   it('hands the repeat and the action of a key to the API', async () => {

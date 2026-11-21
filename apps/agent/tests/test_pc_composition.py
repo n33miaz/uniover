@@ -89,7 +89,7 @@ class FakePower:
     def shutdown(self, delay_seconds: int, countdown_id: str = "") -> None:
         self.calls.append(("shutdown", delay_seconds))
 
-    def cancel_shutdown(self) -> None:
+    def cancel_shutdown(self, countdown_id: str | None = None) -> None:
         self.calls.append(("cancel",))
 
     def restart(self, delay_seconds: int, countdown_id: str = "") -> None:
@@ -237,6 +237,7 @@ def test_turned_on_declares_the_capability_and_every_command() -> None:
         "pc.click.v2",
         "pc.pointer.zoom.v1",
         "pc.power.v2",
+        "pc.power.cancel.v1",
         "pc.power.hibernate.v1",
         "pc.media.state.v1",
         "pc.clipboard.v1",

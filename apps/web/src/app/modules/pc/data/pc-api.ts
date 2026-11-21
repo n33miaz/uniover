@@ -35,6 +35,8 @@ const BASE = `${APP_CONFIG.apiBase}/v1/pc`;
 type NowPlayingResponse = components['schemas']['PcNowPlaying'];
 type ClipboardResponse = components['schemas']['PcClipboardText'];
 type ClipboardWriteRequest = components['schemas']['PcClipboardWriteRequest'];
+type PowerRequest = components['schemas']['PcPowerRequest'];
+type PowerScheduled = components['schemas']['PcPowerScheduled'];
 
 /**
  * Cliente da API do controle do PC. Usa o `HttpClient` do app (os interceptadores levam o Bearer e renovam a sessão); é
@@ -211,9 +213,19 @@ export class PcApi {
     await this.cloud(this.commandPost(`${BASE}/volume`, { ...body, ...this.numbered() }));
   }
 
-  /** Suspender e desligar só valem com `confirm: true`: a API recusa sem ele. */
-  async power(action: PcPowerAction, confirm = false): Promise<void> {
-    await this.cloud(this.commandPost(`${BASE}/power`, confirm ? { action, confirm } : { action }));
+  /**
+   * Suspender e desligar só valem com `confirm: true`: a API recusa sem ele. Desligar e reiniciar devolvem o identificador da
+   * contagem aceita (`null` numa API anterior, que não o devolve); o cancelamento com `countdownId` só atinge essa contagem.
+   */
+  async power(action: PcPowerAction, confirm = false, countdownId?: string): Promise<string | null> {
+    const body: Partial<PowerRequest> = {
+      action,
+      ...(confirm ? { confirm: true } : {}),
+      ...(countdownId !== undefined ? { countdownId } : {}),
+    };
+    const reply = (await this.cloud(this.commandPost(`${BASE}/power`, body))) as PowerScheduled | null;
+    const id: unknown = reply?.countdownId;
+    return typeof id === 'string' && id.length > 0 ? id : null;
   }
 
   async launch(appId: string): Promise<void> {

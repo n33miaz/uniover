@@ -62,6 +62,21 @@ internal static class PcMessages
     /// </summary>
     public const string HibernateCapability = "pc.power.hibernate.v1";
 
+    /// <summary>
+    /// Capacidade de quem aceita o <c>countdownId</c> no cancelamento (<c>pc.power.v1</c>) e só cancela a contagem que o app mostra. Sem ela o
+    /// campo nem sai (o corpo de um agente anterior é fechado) e o cancelamento atinge a contagem que estiver em andamento.
+    /// </summary>
+    public const string PowerCancelCapability = "pc.power.cancel.v1";
+
+    /// <summary>O cancelamento com o identificador da contagem que o app mostra. Só para um agente que declarou <see cref="PowerCancelCapability"/>.</summary>
+    public static OutboundMessage WithCountdown(OutboundMessage message, Guid countdownId)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        var body = JsonNode.Parse(message.Body.GetRawText())!.AsObject();
+        body["countdownId"] = countdownId.ToString();
+        return message with { Body = JsonSerializer.SerializeToElement(body) };
+    }
+
     /// <summary>A capacidade que uma ação da <c>pc.power.v2</c> exige: hibernar pede a sua; as outras, a da v2.</summary>
     public static string PowerV2CapabilityFor(PcPowerV2BodyAction action) =>
         action == PcPowerV2BodyAction.Hibernate ? HibernateCapability : PowerV2Capability;

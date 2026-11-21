@@ -34,6 +34,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
     private const string Volume = "pc.volume.v1";
     private const string PowerV2 = "pc.power.v2";
     private const string Hibernate = "pc.power.hibernate.v1";
+    private const string PowerCancel = "pc.power.cancel.v1";
     private const string MediaState = "pc.media.state.v1";
     private const string Clipboard = "pc.clipboard.v1";
 
@@ -1711,7 +1712,17 @@ public sealed class PcControlTests(PostgresFixture postgres)
         var command = await AnswerAsync(agent);
         using var response = await Within(http);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        // Desligar devolve a contagem aceita (o id do comando que o agente recebeu); as outras ações, nada.
+        if (action == "SHUTDOWN")
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await DevicesApp.JsonAsync(response)).GetProperty("countdownId").GetGuid().Should().Be(command.GetProperty("id").GetGuid());
+        }
+        else
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
         command.GetProperty("type").GetString().Should().Be("pc.power.v1");
         command.GetProperty("body").GetProperty("action").GetString().Should().Be(action);
         await using var db = app.App.Db();
@@ -1738,7 +1749,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
         var command = await AnswerAsync(agent);
         using var response = await Within(http);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        response.StatusCode.Should().Be(action == "RESTART" ? HttpStatusCode.OK : HttpStatusCode.NoContent);
         command.GetProperty("type").GetString().Should().Be("pc.power.v2");
         command.GetProperty("body").GetProperty("action").GetString().Should().Be(action);
         await using var db = app.App.Db();
@@ -1895,8 +1906,62 @@ public sealed class PcControlTests(PostgresFixture postgres)
             HttpMethod.Post, "/api/v1/pc/power", new { action, confirm = true }, app.Login.AccessToken, userAgent: userAgent);
         var command = await AnswerAsync(agent);
         using var response = await Within(http);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var countdown = command.GetProperty("id").GetGuid();
+        (await DevicesApp.JsonAsync(response)).GetProperty("countdownId").GetGuid().Should().Be(countdown);
+        return countdown;
+    }
+
+    [Fact]
+    public async Task Power_TheCancelCarriesTheCountdownOnScreen_ToAnAgentThatChecksIt()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerCancel);
+        var countdown = await ScheduleAsync(app, agent, "SHUTDOWN");
+
+        var http = PostAsync(app, "power", new { action = "CANCEL_SHUTDOWN", countdownId = countdown });
+        var command = await AnswerAsync(agent);
+        using var response = await Within(http);
+
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        return command.GetProperty("id").GetGuid();
+        command.GetProperty("type").GetString().Should().Be("pc.power.v1");
+        command.GetProperty("body").GetProperty("countdownId").GetGuid().Should().Be(countdown);
+    }
+
+    [Fact]
+    public async Task Power_TheCancelGoesWithoutTheCountdown_ToAnOlderAgent_WhoseBodyIsClosed()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+        var countdown = await ScheduleAsync(app, agent, "SHUTDOWN");
+
+        var http = PostAsync(app, "power", new { action = "CANCEL_SHUTDOWN", countdownId = countdown });
+        var command = await AnswerAsync(agent);
+        using var response = await Within(http);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("body").TryGetProperty("countdownId", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Power_ACancelOfAnotherCountdown_KeepsWhoAskedForTheCurrentOne()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerCancel);
+        var older = await ScheduleAsync(app, agent, "SHUTDOWN");
+        await SendPowerOutcomeAsync(agent, older, "SHUTDOWN", "cancelled");
+        var current = await ScheduleAsync(app, agent, "SHUTDOWN", "painel/1.0");
+
+        // O botão ainda aberto de outro celular cancela a contagem que ele mostrava, não a de agora.
+        var cancel = PostAsync(app, "power", new { action = "CANCEL_SHUTDOWN", countdownId = older });
+        await AnswerAsync(agent);
+        (await Within(cancel)).Dispose();
+        await SendPowerOutcomeAsync(agent, current, "SHUTDOWN", "refused");
+
+        await using var db = app.App.Db();
+        await TransportApp.WaitUntilAsync(
+            async () => await db.PairingAudit.AnyAsync(a => a.Event == "pc_shutdown_failed", Ct), "falha gravada");
+        (await db.PairingAudit.SingleAsync(a => a.Event == "pc_shutdown_failed", Ct)).UserAgent.Should().Be("painel/1.0");
     }
 
     [Theory]
@@ -2215,7 +2280,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
         var command = await AnswerAsync(agent);
         using var response = await Within(http);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
         command.GetProperty("body").GetProperty("action").GetString().Should().Be("SHUTDOWN");
     }
 

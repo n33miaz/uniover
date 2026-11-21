@@ -91,8 +91,8 @@ class FakePower:
         self.calls.append(("shutdown", delay_seconds))
         self.countdowns.append(countdown_id)
 
-    def cancel_shutdown(self) -> None:
-        self.calls.append(("cancel",))
+    def cancel_shutdown(self, countdown_id: str | None = None) -> None:
+        self.calls.append(("cancel", countdown_id))
 
     def restart(self, delay_seconds: int, countdown_id: str = "") -> None:
         self.calls.append(("restart", delay_seconds))
@@ -215,7 +215,7 @@ async def test_lock_shutdown_and_cancel() -> None:
     await run(handlers["pc.power.v1"], {"action": "LOCK"})
     await run(handlers["pc.power.v1"], {"action": "SHUTDOWN"})
     await run(handlers["pc.power.v1"], {"action": "CANCEL_SHUTDOWN"})
-    assert power.calls == [("lock",), ("shutdown", 45), ("cancel",)]
+    assert power.calls == [("lock",), ("shutdown", 45), ("cancel", None)]
 
 
 async def test_the_countdown_is_identified_by_the_command_that_asked_for_it() -> None:
@@ -224,6 +224,14 @@ async def test_the_countdown_is_identified_by_the_command_that_asked_for_it() ->
     await handler(Command("cmd-1", "pc.power.v1", {"action": "SHUTDOWN"}))
     await handler(Command("cmd-2", "pc.power.v2", {"action": "RESTART"}))
     assert power.countdowns == ["cmd-1", "cmd-2"]
+
+
+async def test_the_cancel_carries_the_countdown_the_app_shows() -> None:
+    power = FakePower()
+    handler = pc_power_handler(power, shutdown_delay_seconds=30)
+    body = {"action": "CANCEL_SHUTDOWN", "countdownId": "cmd-1"}
+    await handler(Command("cmd-2", "pc.power.v1", body))
+    assert power.calls == [("cancel", "cmd-1")]
 
 
 async def test_sleep_answers_first_and_suspends_afterwards() -> None:
@@ -244,7 +252,7 @@ async def test_restart_uses_the_same_countdown_as_shutdown_and_can_be_cancelled(
     status = await run(handlers["pc.power.v2"], {"action": "RESTART"})
     await run(handlers["pc.power.v2"], {"action": "CANCEL_SHUTDOWN"})
     assert status is ResultStatus.OK
-    assert power.calls == [("restart", 45), ("cancel",)]
+    assert power.calls == [("restart", 45), ("cancel", None)]
 
 
 async def test_monitor_off_is_immediate_and_leaves_the_pc_on() -> None:

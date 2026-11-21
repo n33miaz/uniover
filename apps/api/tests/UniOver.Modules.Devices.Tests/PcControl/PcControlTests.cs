@@ -652,6 +652,17 @@ public sealed class PcValidatorTests
         PcValidator.Power(new PcPowerRequest(action, confirm)).Count.Should().Be(valid ? 0 : 1);
 
     [Theory]
+    [InlineData("CANCEL_SHUTDOWN", null, true)]
+    [InlineData("SHUTDOWN", true, false)]
+    [InlineData("LOCK", null, false)]
+    public void Power_OnlyTheCancelCarriesTheCountdownOnScreen(string action, bool? confirm, bool valid)
+    {
+        PcValidator.Power(new PcPowerRequest(action, confirm, Guid.CreateVersion7())).Count.Should().Be(valid ? 0 : 1);
+        PcValidator.Power(new PcPowerRequest("CANCEL_SHUTDOWN", null, Guid.Empty)).Should().ContainKey("countdownId");
+        GetModuleInfoHandler.AgentFeatures.Should().Contain("pc.power.cancel.v1");
+    }
+
+    [Theory]
     [InlineData("olá, mundo", true)]
     [InlineData("linha 1\r\nlinha 2\tfim", true)]
     [InlineData("", false)]
@@ -1178,6 +1189,20 @@ public sealed class PcPowerCountdownsTests
         countdowns.TryRecord(First).Should().BeTrue();
         countdowns.TryRecord(First).Should().BeFalse();
         countdowns.TryRecord(Second).Should().BeTrue();
+    }
+
+    [Fact]
+    public void TheCancelOfAGivenCountdown_ForgetsOnlyThatOne_AndOnlyForItsAgent()
+    {
+        var countdowns = new PcPowerCountdowns(new FakeTimeProvider(T0));
+        countdowns.Scheduled("pc-casa", First, Countdown("SHUTDOWN"));
+        countdowns.Scheduled("pc-casa", Second, Countdown("RESTART"));
+
+        countdowns.Cancelled("outro-pc", Second);
+        countdowns.Cancelled("pc-casa", First);
+
+        countdowns.Take("pc-casa", First).Should().BeNull();
+        countdowns.Take("pc-casa", Second).Should().NotBeNull("a contagem de agora não foi a cancelada");
     }
 
     [Fact]
