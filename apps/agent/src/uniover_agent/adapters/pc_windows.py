@@ -679,6 +679,16 @@ class WindowsPcInput:
             self._sync_timer()
 
 
+# `ERROR_NO_SHUTDOWN_IN_PROGRESS`: o `shutdown /a` não tinha contagem do Windows para cancelar.
+_NO_SHUTDOWN_IN_PROGRESS = 1116
+
+
+def _start_power_timer(delay: float, callback: Callable[[], None]) -> _Cancelable:
+    """A contagem de desligar ou reiniciar. Separada de `_start_timer` para os testes a trocarem sem
+    mexer nos temporizadores da entrada."""
+    return _start_timer(delay, callback)
+
+
 def _run_shutdown(arguments: list[str]) -> int:
     """Roda o `shutdown.exe` e devolve o código de saída: quem chama decide o que é falha."""
     if sys.platform != "win32":
@@ -703,7 +713,9 @@ class WindowsPcPower:
         self._run = run or _run_shutdown
         self._can_schedule = run is not None or sys.platform == "win32"
         self._power_lock = threading.Lock()
-        self._pending: threading.Timer | None = None
+        self._pending: _Cancelable | None = None
+        # O fim da contagem já pediu ao Windows: daí em diante cancelar não desfaz nada.
+        self._requested = False
         windows = sys.platform == "win32"
         self._lock = lock or (_lock_workstation if windows else _refuse_unsupported)
         self._suspend = suspend or (_suspend if windows else _refuse_unsupported)
@@ -735,20 +747,24 @@ class WindowsPcPower:
                 if self._pending is not timer:
                     return
                 self._pending = None
+                self._requested = True
             try:
                 code = self._run([action, "/t", "0"])
-                if code != 0:
-                    _log.error("O Windows recusou a ação de energia %s (código %d).", action, code)
             except OSError, subprocess.TimeoutExpired:
+                code = None
                 _log.exception("Falha ao pedir a ação de energia %s ao Windows.", action)
+            if code != 0:
+                if code is not None:
+                    _log.error("O Windows recusou a ação de energia %s (código %d).", action, code)
+                with self._power_lock:
+                    self._requested = False
 
         with self._power_lock:
             if self._pending is not None:
                 raise OSError("já há uma ação de energia agendada")
-            timer = threading.Timer(max(10, delay_seconds), request_power)
-            timer.daemon = True
+            self._requested = False
+            timer = _start_power_timer(max(10, delay_seconds), request_power)
             self._pending = timer
-            timer.start()
 
     def hibernation_available(self) -> bool:
         return self._hibernation()
@@ -775,6 +791,17 @@ class WindowsPcPower:
             if self._pending is not None:
                 self._pending.cancel()
                 self._pending = None
+            elif self._requested:
+                # A contagem acabou e o pedido foi ao Windows: "cancelado" seria mentira.
+                raise OSError("a contagem já terminou e o Windows já recebeu o pedido")
+        # Garantia: cai também a contagem do Windows aberta por uma versão anterior.
+        try:
+            code = self._run(["/a"])
+        except OSError, subprocess.TimeoutExpired:
+            _log.exception("Falha ao pedir ao Windows que cancele a contagem.")
+            return
+        if code not in (0, _NO_SHUTDOWN_IN_PROGRESS):
+            _log.warning("O Windows recusou cancelar a contagem dele (código %d).", code)
 
 
 def _start_file(target: str) -> None:

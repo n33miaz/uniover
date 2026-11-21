@@ -2,7 +2,6 @@
 
 import subprocess
 import sys
-import threading
 from collections.abc import Callable, Sequence
 from typing import NoReturn
 
@@ -63,7 +62,6 @@ class FakeTimer:
     def __init__(self, interval: float, callback: Callable[[], None]) -> None:
         self.interval = interval
         self.callback = callback
-        self.daemon = False
         self.started = False
         self.cancelled = False
 
@@ -80,10 +78,11 @@ def power_timers(monkeypatch: pytest.MonkeyPatch) -> list[FakeTimer]:
 
     def timer(interval: float, callback: Callable[[], None]) -> FakeTimer:
         pending = FakeTimer(interval, callback)
+        pending.start()
         timers.append(pending)
         return pending
 
-    monkeypatch.setattr(threading, "Timer", timer)
+    monkeypatch.setattr(pc_windows, "_start_power_timer", timer)
     return timers
 
 
@@ -102,7 +101,7 @@ def test_power_waits_before_asking_windows_without_force(
     schedule = power.shutdown if method == "shutdown" else power.restart
     schedule(delay)
     (timer,) = power_timers
-    assert timer.started and timer.daemon and timer.interval == interval
+    assert timer.started and timer.interval == interval
     assert calls == []
     timer.callback()
     assert calls == [[flag, "/t", "0"]]
@@ -119,9 +118,37 @@ def test_cancel_prevents_even_a_stale_timer_from_asking_windows(
     power.shutdown(30)
     assert power_timers[0].cancelled
     power_timers[0].callback()
-    assert calls == []
+    # Cada cancelamento também derruba, por garantia, uma contagem do próprio Windows.
+    assert calls == [["/a"], ["/a"]]
     power_timers[1].callback()
-    assert calls == [["/s", "/t", "0"]]
+    assert calls == [["/a"], ["/a"], ["/s", "/t", "0"]]
+
+
+def test_cancelling_after_the_countdown_ended_says_it_is_too_late(
+    power_timers: list[FakeTimer],
+) -> None:
+    calls: list[list[str]] = []
+    power = WindowsPcPower(run=exits_with(0, calls))
+    power.restart(30)
+    power_timers[0].callback()
+    with pytest.raises(OSError, match="já recebeu o pedido"):
+        power.cancel_shutdown()
+    assert calls == [["/r", "/t", "0"]]
+
+
+def test_after_windows_refused_cancelling_is_fine_again(power_timers: list[FakeTimer]) -> None:
+    power = WindowsPcPower(run=exits_with(5))
+    power.shutdown(30)
+    power_timers[0].callback()
+    power.cancel_shutdown()
+
+
+def test_the_extra_windows_abort_never_fails_the_cancel(
+    power_timers: list[FakeTimer], caplog: pytest.LogCaptureFixture
+) -> None:
+    WindowsPcPower(run=exits_with(1116)).cancel_shutdown()
+    WindowsPcPower(run=exits_with(5)).cancel_shutdown()
+    assert "recusou cancelar a contagem dele (código 5)" in caplog.text
 
 
 def test_a_refusal_after_the_countdown_is_logged(
@@ -234,6 +261,10 @@ def test_the_test_suite_can_never_reach_a_real_power_action(
         WindowsPcPower().hibernation_available()
     with pytest.raises(AssertionError, match="energia"):
         WindowsPcPower().monitor_off()
+    with pytest.raises(AssertionError, match="contagem de energia"):
+        WindowsPcPower().shutdown(30)
+    with pytest.raises(AssertionError, match="contagem de energia"):
+        WindowsPcPower().restart(30)
 
 
 def test_the_real_runner_reports_the_exit_code_of_the_process(
