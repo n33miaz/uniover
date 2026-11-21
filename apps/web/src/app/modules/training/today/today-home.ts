@@ -64,6 +64,7 @@ import { WeekCalendar } from './week-calendar';
   host: {
     '(document:visibilitychange)': 'refreshDay()',
     '(window:focus)': 'refreshDay()',
+    '(window:pageshow)': 'refreshDay()',
   },
 })
 export class TodayHome {
@@ -77,7 +78,6 @@ export class TodayHome {
   private readonly router = inject(Router);
   protected readonly online = inject(ConnectivityService).online;
   private readonly runtime = inject(QUEUE_RUNTIME);
-  private readonly zone = deviceTimeZone();
   /** O temporizador da próxima meia-noite local; um só por vez, e some com a tela. */
   private dayTimer: unknown;
 
@@ -184,8 +184,14 @@ export class TodayHome {
   });
 
   constructor() {
-    this.scheduleDayTurn();
-    inject(DestroyRef).onDestroy(() => this.runtime.clearTimeout(this.dayTimer));
+    const homeReads = this.store.homeReadRequested.subscribe(() => {
+      this.scheduleDayTurn();
+      this.calendar()?.refreshDay();
+    });
+    inject(DestroyRef).onDestroy(() => {
+      homeReads.unsubscribe();
+      this.runtime.clearTimeout(this.dayTimer);
+    });
     // Relê ao abrir e a cada gravação (o fim de um treino muda a rotina do dia e o resumo da semana).
     effect(() => {
       this.sessions.revision();
@@ -206,8 +212,10 @@ export class TodayHome {
    * app, a troca do dia e o próprio disparo contam a partir de agora (o relógio pode ter mudado com o app no fundo).
    */
   protected refreshDay(): void {
-    this.scheduleDayTurn();
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      this.scheduleDayTurn();
+      return;
+    }
     void this.store.loadHome();
   }
 
@@ -218,10 +226,11 @@ export class TodayHome {
   private scheduleDayTurn(): void {
     this.runtime.clearTimeout(this.dayTimer);
     const now = this.runtime.now();
-    const tomorrow = addDays(civilDateOf(now, this.zone), 1);
+    const zone = deviceTimeZone();
+    const tomorrow = addDays(civilDateOf(now, zone), 1);
     this.dayTimer = this.runtime.setTimeout(
       () => this.refreshDay(),
-      Math.max(1, startOfDay(tomorrow, this.zone) - now),
+      Math.max(1, startOfDay(tomorrow, zone) - now),
     );
   }
 

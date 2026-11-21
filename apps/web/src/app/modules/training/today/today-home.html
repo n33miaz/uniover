@@ -1,7 +1,7 @@
 <h2 class="ui-visually-hidden" i18n="@@training.home.title">Treino</h2>
 
 <div class="home">
-  <app-week-calendar (routineChosen)="store.chooseRoutine($event)" (dayChanged)="refreshDay()" />
+  <app-week-calendar (routineChosen)="store.chooseRoutine($event)" />
 
   @if (message(); as note) {
     <p

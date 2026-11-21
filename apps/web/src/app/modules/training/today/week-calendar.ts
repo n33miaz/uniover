@@ -94,19 +94,18 @@ export class WeekCalendar {
   private readonly calendarEntries = inject(CalendarEntryRepository);
   private readonly runtime = inject(QUEUE_RUNTIME);
   private readonly router = inject(Router);
-  private readonly zone = deviceTimeZone();
+  private readonly zone = signal(deviceTimeZone());
 
   protected readonly weekdays = weekdays;
   protected readonly sheetOpen = signal(false);
   protected readonly weekOffset = signal(0);
   protected readonly month = signal<CalendarMonth>(this.currentMonth());
   /** O dia de hoje no fuso do aparelho; muda quando a pessoa volta ao app depois da meia-noite. */
-  private readonly todayKey = signal(dateKey(this.runtime.now(), this.zone));
+  private readonly todayKey = signal(dateKey(this.runtime.now(), this.zone()));
   protected readonly selectedKey = signal(this.todayKey());
   protected readonly weeklyGoal = signal<number | null>(null);
   /** Tocar num dia planejado escolhe a ficha dele para o treino de hoje. */
   readonly routineChosen = output<string>();
-  readonly dayChanged = output<void>();
   private dayTimer: unknown;
   private readonly programGoal = signal<number | null>(null);
   protected readonly effectiveGoal = computed(() => this.weeklyGoal() ?? this.programGoal());
@@ -123,7 +122,7 @@ export class WeekCalendar {
 
   protected readonly week = computed(() => {
     this.todayKey();
-    return sundayWeek(this.runtime.now(), this.weekOffset(), this.zone);
+    return sundayWeek(this.runtime.now(), this.weekOffset(), this.zone());
   });
   protected readonly monthDays = computed(() => sundayMonth(this.month()));
   protected readonly weekWorkouts = computed(() => {
@@ -233,7 +232,8 @@ export class WeekCalendar {
       this.calendarEntries.revision();
       const month = this.month();
       if (!this.sheetOpen()) return;
-      untracked(() => void this.loadMonth(month));
+      const zone = this.zone();
+      untracked(() => void this.loadMonth(month, zone));
     });
     effect(() => {
       this.sessions.revision();
@@ -241,7 +241,8 @@ export class WeekCalendar {
       // A meta entra na leitura para a sequência acompanhar o ajuste feito na configuração.
       const goal = this.effectiveGoal();
       if (!this.sheetOpen()) return;
-      untracked(() => void this.loadStreak(goal));
+      const zone = this.zone();
+      untracked(() => void this.loadStreak(goal, zone));
     });
     effect(() => {
       this.goals.revision();
@@ -291,9 +292,9 @@ export class WeekCalendar {
       this.month.set({ year: day.year, month: day.month });
       this.selectedKey.set(day.key);
     } else {
-      const now = civilDateOf(this.runtime.now(), this.zone);
+      const now = civilDateOf(this.runtime.now(), this.zone());
       this.month.set({ year: now.year, month: now.month });
-      this.selectedKey.set(dateKey(this.runtime.now(), this.zone));
+      this.selectedKey.set(dateKey(this.runtime.now(), this.zone()));
     }
     this.sheetOpen.set(true);
   }
@@ -419,22 +420,22 @@ export class WeekCalendar {
   private scheduleDayChange(): void {
     this.runtime.clearTimeout(this.dayTimer);
     const now = this.runtime.now();
-    const tomorrow = addDays(civilDateOf(now, this.zone), 1);
+    const tomorrow = addDays(civilDateOf(now, this.zone()), 1);
     this.dayTimer = this.runtime.setTimeout(
       () => this.refreshDay(),
-      Math.max(1, startOfDay(tomorrow, this.zone) - now),
+      Math.max(1, startOfDay(tomorrow, this.zone()) - now),
     );
   }
 
   /** Atualiza a semana e a seleção na virada do dia, mesmo com a tela aberta. */
   refreshDay(): void {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    this.zone.set(deviceTimeZone());
     this.scheduleDayChange();
-    const current = dateKey(this.runtime.now(), this.zone);
+    const current = dateKey(this.runtime.now(), this.zone());
     const previous = this.todayKey();
     if (current === previous) return;
     this.todayKey.set(current);
-    this.dayChanged.emit();
     if (!this.sheetOpen()) {
       if (this.selectedKey() === previous) this.selectedKey.set(current);
       this.month.set(this.currentMonth());
@@ -442,7 +443,7 @@ export class WeekCalendar {
   }
 
   private currentMonth(): CalendarMonth {
-    const now = civilDateOf(this.runtime.now(), this.zone);
+    const now = civilDateOf(this.runtime.now(), this.zone());
     return { year: now.year, month: now.month };
   }
 
@@ -493,16 +494,14 @@ export class WeekCalendar {
   }
 
   /** Semanas seguidas com a meta cumprida; ausência planejada não quebra, e a semana em curso só soma quando bate a meta. */
-  private async loadStreak(goal: number | null): Promise<void> {
+  private async loadStreak(goal: number | null, zone: string): Promise<void> {
     if (goal === null) {
       this.streak.set(0);
       return;
     }
     try {
       const now = this.runtime.now();
-      const weeks = Array.from({ length: STREAK_WEEKS }, (_, back) =>
-        sundayWeek(now, -back, this.zone),
-      );
+      const weeks = Array.from({ length: STREAK_WEEKS }, (_, back) => sundayWeek(now, -back, zone));
       const oldest = weeks[weeks.length - 1];
       const [workouts, entries] = await Promise.all([
         this.readWorkouts(oldest.start, weeks[0].end),
@@ -517,22 +516,22 @@ export class WeekCalendar {
           open: back === 0,
         };
       });
-      this.streak.set(weeklyStreak(rhythm));
+      if (zone === this.zone()) this.streak.set(weeklyStreak(rhythm));
     } catch {
-      this.streak.set(0);
+      if (zone === this.zone()) this.streak.set(0);
     }
   }
 
-  private async loadMonth(month: CalendarMonth): Promise<void> {
+  private async loadMonth(month: CalendarMonth, zone: string): Promise<void> {
     const ticket = ++this.monthTicket;
-    const range = monthRange(month.year, month.month, this.zone);
+    const range = monthRange(month.year, month.month, zone);
     try {
       const workouts = await this.readWorkouts(range.start, range.end);
       if (ticket === this.monthTicket)
         this.monthRead.set({ key: `${month.year}-${month.month}`, workouts });
       const entries = await this.calendarEntries.between(
-        dateKey(range.start, this.zone),
-        dateKey(range.end - 1, this.zone),
+        dateKey(range.start, zone),
+        dateKey(range.end - 1, zone),
       );
       if (ticket === this.monthTicket) this.monthEntries.set(entries);
     } catch {
@@ -542,6 +541,7 @@ export class WeekCalendar {
   }
 
   private async readWorkouts(from: number, to: number): Promise<Workout[]> {
+    const zone = this.zone();
     const sessions = await this.sessions.sessionsBetween(from, to - 1);
     const rows = await Promise.all(
       sessions.map(async (session) => {
@@ -555,7 +555,7 @@ export class WeekCalendar {
         if (working.length === 0) return null;
         return {
           sessionId: session.id,
-          dayKey: dateKey(session.startedAt, this.zone),
+          dayKey: dateKey(session.startedAt, zone),
           name: routine?.name ?? $localize`:@@training.today.calendar.free:Treino Livre`,
           sets: working.length,
           volumeKg: working.reduce((sum, set) => sum + (set.weightKg ?? 0) * (set.reps ?? 0), 0),
