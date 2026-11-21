@@ -61,6 +61,7 @@ describe('WeekCalendar agenda', () => {
   afterEach(() => localStorage.clear());
 
   const DAY = 86_400_000;
+  const HOUR = 3_600_000;
 
   /** Um treino encerrado com uma série de trabalho, começando em `startedAt`. */
   async function workout(
@@ -241,6 +242,94 @@ describe('WeekCalendar agenda', () => {
     expect(firstDay()).not.toBe(before.first);
     expect(todayLabel()).not.toBe(before.today);
     expect(element.querySelectorAll('.week-days .day.today')).toHaveLength(1);
+  });
+
+  it('moves today and the week on focus and turns at midnight in the new time zone', async () => {
+    const kit = await open();
+    kit.runtime.time = Date.parse('2025-10-12T00:30:00Z');
+    let zone = 'UTC';
+    const resolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+    const options = vi
+      .spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+      .mockImplementation(function (this: Intl.DateTimeFormat) {
+        return { ...resolvedOptions.call(this), timeZone: zone };
+      });
+    try {
+      const { fixture, element } = await render(kit);
+      const firstDay = () =>
+        element.querySelector('.week-days .day:first-child .number')?.textContent;
+      const today = () =>
+        element.querySelector('.week-days [aria-current="date"] .number')?.textContent;
+      const timers = kit.runtime.activeTimers;
+      expect(firstDay()).toBe('12');
+      expect(today()).toBe('12');
+
+      // Às 00h30 UTC de domingo, em São Paulo ainda é sábado às 21h30.
+      zone = 'America/Sao_Paulo';
+      window.dispatchEvent(new Event('focus'));
+      fixture.detectChanges();
+      expect(firstDay()).toBe('5');
+      expect(today()).toBe('11');
+      expect(kit.runtime.activeTimers).toBe(timers);
+
+      kit.runtime.advance(2.5 * HOUR - 1);
+      fixture.detectChanges();
+      expect(firstDay()).toBe('5');
+      expect(today()).toBe('11');
+
+      kit.runtime.advance(1);
+      fixture.detectChanges();
+      expect(firstDay()).toBe('12');
+      expect(today()).toBe('12');
+      expect(kit.runtime.activeTimers).toBe(timers);
+    } finally {
+      options.mockRestore();
+    }
+  });
+
+  it('reschedules midnight in the current time zone while hidden', async () => {
+    const kit = await open();
+    kit.runtime.time = Date.parse('2025-10-11T23:30:00Z');
+    let zone = 'UTC';
+    const resolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+    const options = vi
+      .spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+      .mockImplementation(function (this: Intl.DateTimeFormat) {
+        return { ...resolvedOptions.call(this), timeZone: zone };
+      });
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    try {
+      const { fixture, element } = await render(kit);
+      const today = () =>
+        element.querySelector('.week-days [aria-current="date"] .number')?.textContent;
+      const schedule = vi.spyOn(kit.runtime, 'setTimeout');
+      const timers = kit.runtime.activeTimers;
+      expect(today()).toBe('11');
+
+      // Em Tóquio já é domingo, mas o calendário só muda quando a página volta a ficar visível.
+      zone = 'Asia/Tokyo';
+      visibility.mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      fixture.detectChanges();
+      expect(today()).toBe('11');
+      expect(schedule).toHaveBeenLastCalledWith(expect.any(Function), 15.5 * HOUR);
+      expect(kit.runtime.activeTimers).toBe(timers);
+
+      schedule.mockClear();
+      kit.runtime.advance(15.5 * HOUR - 1);
+      expect(schedule).not.toHaveBeenCalled();
+      kit.runtime.advance(1);
+      expect(schedule).toHaveBeenCalledExactlyOnceWith(expect.any(Function), DAY);
+      expect(kit.runtime.activeTimers).toBe(timers);
+
+      visibility.mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+      fixture.detectChanges();
+      expect(today()).toBe('13');
+    } finally {
+      options.mockRestore();
+      visibility.mockRestore();
+    }
   });
 
   it('selects the routine of a planned day when it is touched', async () => {

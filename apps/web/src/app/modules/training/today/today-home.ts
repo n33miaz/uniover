@@ -184,6 +184,7 @@ export class TodayHome {
   });
 
   constructor() {
+    this.scheduleDayTurn();
     const homeReads = this.store.homeReadRequested.subscribe(() => {
       this.scheduleDayTurn();
       this.calendar()?.refreshDay();
@@ -208,8 +209,7 @@ export class TodayHome {
   }
 
   /**
-   * Relê as rotinas e a ficha do dia; barato, e só age quando a tela está visível. Antes, rearma a meia-noite: a volta ao
-   * app, a troca do dia e o próprio disparo contam a partir de agora (o relógio pode ter mudado com o app no fundo).
+   * Rearma o temporizador da meia-noite no fuso atual. Só relê as rotinas e a ficha do dia quando a tela está visível.
    */
   protected refreshDay(): void {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {

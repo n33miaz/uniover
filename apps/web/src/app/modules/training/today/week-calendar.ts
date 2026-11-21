@@ -220,7 +220,7 @@ export class WeekCalendar {
   });
 
   constructor() {
-    this.scheduleDayChange();
+    this.scheduleDayChange(this.zone());
     inject(DestroyRef).onDestroy(() => this.runtime.clearTimeout(this.dayTimer));
     effect(() => {
       this.sessions.revision();
@@ -417,22 +417,23 @@ export class WeekCalendar {
     });
   }
 
-  private scheduleDayChange(): void {
+  private scheduleDayChange(zone: string): void {
     this.runtime.clearTimeout(this.dayTimer);
     const now = this.runtime.now();
-    const tomorrow = addDays(civilDateOf(now, this.zone()), 1);
+    const tomorrow = addDays(civilDateOf(now, zone), 1);
     this.dayTimer = this.runtime.setTimeout(
       () => this.refreshDay(),
-      Math.max(1, startOfDay(tomorrow, this.zone()) - now),
+      Math.max(1, startOfDay(tomorrow, zone) - now),
     );
   }
 
-  /** Atualiza a semana e a seleção na virada do dia, mesmo com a tela aberta. */
+  /** Rearma a virada no fuso atual. Atualiza a semana e a seleção quando a tela está visível. */
   refreshDay(): void {
+    const zone = deviceTimeZone();
+    this.scheduleDayChange(zone);
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-    this.zone.set(deviceTimeZone());
-    this.scheduleDayChange();
-    const current = dateKey(this.runtime.now(), this.zone());
+    this.zone.set(zone);
+    const current = dateKey(this.runtime.now(), zone);
     const previous = this.todayKey();
     if (current === previous) return;
     this.todayKey.set(current);
