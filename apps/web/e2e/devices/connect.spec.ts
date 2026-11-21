@@ -116,9 +116,9 @@ test.describe('conectar este PC', () => {
       const sheet = page.getByRole('dialog', { name: 'Conectar Este PC' });
       await expect(sheet).toBeVisible();
       await expect(sheet.getByRole('listitem')).toHaveText([
-        'Baixar e abrir o programa',
-        'Escanear o QR com o celular',
-        'Aceitar na TV',
+        'Baixe e abra o programa neste PC',
+        'Aceite o aviso do Windows (só uma vez)',
+        'Escaneie com o celular o QR que aparecer',
       ]);
       const link = sheet.getByRole('link', { name: 'Baixar Programa' });
       await expect(link).toHaveAttribute('href', '/conectar/conectar-uniover.cmd');
