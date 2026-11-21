@@ -57,9 +57,8 @@ def stop(child: subprocess.Popen[str]) -> None:
 
 
 def free_soon(base: Path, seconds: float = 30.0) -> bool:
-    """A trava fica livre depois que o dono morre? `kill_tree` espera só o lançador do venv: o
-    interpretador de verdade (o dono do mutex) ainda pode estar terminando, e o Windows só destrói
-    o mutex quando o último handle fecha. Tenta de novo até o prazo, sem dar por livre antes."""
+    """Mesmo depois de `taskkill /T` encerrar a árvore, o Windows ainda pode estar fechando o
+    último handle do mutex. Tenta de novo até conseguir a trava ou esgotar o prazo."""
     deadline = time.monotonic() + seconds
     while not acquire(base):
         if time.monotonic() >= deadline:
@@ -80,9 +79,16 @@ def test_a_second_process_cannot_take_the_lock_until_the_first_one_is_gone(tmp_p
         stop(holder)
 
     assert holder.poll() is not None
-    assert free_soon(base) is True
-    # Quem já a tem não é barrado por ela mesma (o `run` recomeça quando a TV muda de endereço).
-    assert acquire(base) is True
+    name = mutex_name(base)
+    try:
+        assert free_soon(base) is True
+        if sys.platform == "win32":
+            assert name in single_instance._held
+        # Quem já a tem não é barrado por ela mesma (o `run` recomeça quando a TV muda de endereço).
+        assert acquire(base) is True
+    finally:
+        if sys.platform == "win32" and (handle := single_instance._held.pop(name, None)):
+            ctypes.WinDLL("kernel32").CloseHandle(ctypes.c_void_p(handle))
 
 
 def test_different_installations_do_not_share_the_lock(tmp_path: Path) -> None:
