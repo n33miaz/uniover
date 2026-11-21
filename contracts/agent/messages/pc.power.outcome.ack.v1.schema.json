@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/pc.power.outcome.ack.v1.schema.json",
+  "title": "pc.power.outcome.ack.v1",
+  "description": "API para agente: o desfecho de contagem (`pc.power.outcome.v1`) com este `countdownId` e este `outcome` está resolvido na API: gravado na auditoria agora, já gravado antes (o agente reenviou), ou sem como gravar. Só depois disso o agente esquece o desfecho (e, num `lost`, a marca em disco da contagem perdida); sem a confirmação ele o reenvia a cada conexão e, com a conexão de pé, de tempos em tempos, e a API descarta a repetição e confirma de novo. Se a gravação falha, a API não confirma. Só vai ao agente que declarou a capacidade `pc.power.outcome.ack.v1` (depois de a API listá-la em `features`). Sem resposta.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "pc.power.outcome.ack.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "countdownId",
+        "outcome"
+      ],
+      "properties": {
+        "countdownId": {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        "outcome": {
+          "enum": [
+            "refused",
+            "lost",
+            "cancelled"
+          ]
+        }
+      }
+    }
+  }
+}

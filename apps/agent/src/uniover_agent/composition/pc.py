@@ -84,7 +84,13 @@ from uniover_agent.core.pc.focus import PC_TARGET_CAPABILITY
 from uniover_agent.core.pc.freshness import MAX_POINTER_AGE_SECONDS
 from uniover_agent.core.pc.handlers import PC_DEVICE_CAPABILITY, PC_OP_CAPABILITY, PC_SILENT_TYPES
 from uniover_agent.core.pc.lane import PcLane, PointerSpread
-from uniover_agent.core.pc.power_outcomes import OUTCOME_LOST, PowerOutcomes, outcomes_after_hello
+from uniover_agent.core.pc.power_outcomes import (
+    OUTCOME_LOST,
+    PC_POWER_OUTCOME_ACK_FEATURE,
+    PendingOutcomes,
+    PowerOutcomes,
+    outcomes_after_hello,
+)
 from uniover_agent.core.pc.tv_bridge import Deliver
 from uniover_agent.ports import (
     Clock,
@@ -318,6 +324,7 @@ def _capabilities() -> list[str]:
         PC_ZOOM_CAPABILITY,
         PC_POWER_V2_CAPABILITY,
         PC_POWER_CANCEL_CAPABILITY,
+        PC_POWER_OUTCOME_ACK_FEATURE,
         PC_HIBERNATE_CAPABILITY,
         PC_MEDIA_STATE_CAPABILITY,
         PC_CLIPBOARD_CAPABILITY,
@@ -450,7 +457,7 @@ def build_pc(  # noqa: PLR0913, PLR0915 - portas trocáveis para os testes, toda
     volume_changed: Callable[[], None] = (
         (lambda: main_call(volume.soon)) if main_call is not None else volume.soon
     )
-    outcomes = _power_outcomes(transport, envelopes, clock_now)
+    outcomes = _power_outcomes(transport, envelopes, clock_now, power_marker)
     handlers = pc_handlers(
         pc_input,
         # O mesmo adaptador responde, mais abaixo, se a hibernação está ligada.
@@ -558,12 +565,10 @@ def build_pc(  # noqa: PLR0913, PLR0915 - portas trocáveis para os testes, toda
 
 def _windows_power(outcomes: PowerOutcomes, marker: PowerCountdownMarker | None) -> PcPower:
     """A energia do Windows: o aviso na tela do PC mostra a contagem e deixa cancelar ali; a recusa
-    do Windows e a contagem perdida num reinício do agente vão à API. A marca da contagem anterior é
-    lida aqui, uma vez, na partida."""
+    do Windows e a contagem perdida num reinício do agente vão à API. As contagens perdidas são
+    lidas aqui, na partida (e a cada remontagem, enquanto a API não confirmar o aviso delas)."""
     power = WindowsPcPower(notice=WindowsPowerNotice(), on_outcome=outcomes.report, marker=marker)
-    lost = power.take_lost_countdown()
-    if lost is not None:
-        action, countdown_id = lost
+    for action, countdown_id in power.take_lost_countdowns():
         verb = "reiniciar" if action == "RESTART" else "desligar"
         _log.warning(
             "o agente reiniciou no meio da contagem para %s: o PC não vai %s; avisando o app",
@@ -574,20 +579,42 @@ def _windows_power(outcomes: PowerOutcomes, marker: PowerCountdownMarker | None)
     return power
 
 
+# O que ainda espera a confirmação da API: um por processo, como a contagem (`PowerCountdown`). O
+# agente remonta a conexão no mesmo processo, e o desfecho guardado não pode sumir com isso.
+_PROCESS_OUTCOMES = PendingOutcomes()
+
+
 def _power_outcomes(
-    transport: Transport, envelopes: EnvelopeFactory, clock: Clock
+    transport: Transport,
+    envelopes: EnvelopeFactory,
+    clock: Clock,
+    marker: PowerCountdownMarker | None = None,
 ) -> PowerOutcomes:
     """O desfecho da contagem nasce na thread do temporizador e é enviado no laço do agente (sem
-    laço rodando, como em parte dos testes, ele espera o próximo `hello`)."""
+    laço rodando, como em parte dos testes, ele espera o próximo `hello`). A contagem perdida só sai
+    da marca em disco depois de a API confirmar o aviso dela."""
+
+    def settled(countdown_id: str, outcome: str) -> None:
+        if marker is not None and outcome == OUTCOME_LOST:
+            marker.confirm_lost(countdown_id)
+
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        return PowerOutcomes(transport, envelopes, clock)
+        loop = None
 
     def post(callback: Callable[[], None]) -> None:
-        loop.call_soon_threadsafe(callback)
+        if loop is not None:
+            loop.call_soon_threadsafe(callback)
 
-    return PowerOutcomes(transport, envelopes, clock, post=post)
+    return PowerOutcomes(
+        transport,
+        envelopes,
+        clock,
+        post=post if loop is not None else None,
+        pending=_PROCESS_OUTCOMES,
+        on_settled=settled,
+    )
 
 
 def _older_than(clock: ClockOffset, command: Command, seconds: float) -> bool:

@@ -1151,6 +1151,8 @@ public sealed class PcPowerCountdownsTests
         GetModuleInfoHandler.AgentFeatures.Should().Contain("pc.power.outcome.v1");
         AgentMessageDirections.FromAgent.Should().Contain(AgentMessageTypes.PcPowerOutcomeV1);
         new PcAgentMessageHandler(null!, null!, null!, null!, null!).HandledTypes.Should().Contain(AgentMessageTypes.PcPowerOutcomeV1);
+        GetModuleInfoHandler.AgentFeatures.Should().Contain("pc.power.outcome.ack.v1");
+        AgentMessageDirections.ToAgent.Should().Contain(AgentMessageTypes.PcPowerOutcomeAckV1);
     }
 
     [Fact]
@@ -1183,12 +1185,29 @@ public sealed class PcPowerCountdownsTests
     }
 
     [Fact]
-    public void AnOutcome_IsRecordedOnce()
+    public void AnOutcome_IsRecordedOnce_ByItsCountdownAndOutcome()
     {
         var countdowns = new PcPowerCountdowns(new FakeTimeProvider(T0));
-        countdowns.TryRecord(First).Should().BeTrue();
-        countdowns.TryRecord(First).Should().BeFalse();
-        countdowns.TryRecord(Second).Should().BeTrue();
+        countdowns.Claim(First, "refused").Should().Be(PcPowerOutcomeClaim.Mine);
+        countdowns.Claim(First, "refused").Should().Be(PcPowerOutcomeClaim.Busy, "outro envio está gravando");
+        countdowns.Recorded(First, "refused");
+        countdowns.Claim(First, "refused").Should().Be(PcPowerOutcomeClaim.Recorded, "o agente reenviou");
+        countdowns.Claim(Second, "refused").Should().Be(PcPowerOutcomeClaim.Mine);
+        countdowns.Claim(First, "cancelled").Should().Be(PcPowerOutcomeClaim.Mine);
+    }
+
+    [Fact]
+    public void AnOutcomeWhoseRecordingFailed_CanBeRecordedByTheResend()
+    {
+        var countdowns = new PcPowerCountdowns(new FakeTimeProvider(T0));
+        countdowns.Scheduled("pc-casa", First, Countdown("SHUTDOWN"));
+        countdowns.Claim(First, "refused").Should().Be(PcPowerOutcomeClaim.Mine);
+        countdowns.Peek("pc-casa", First).Should().NotBeNull();
+        countdowns.Release(First, "refused");
+
+        countdowns.Claim(First, "refused").Should().Be(PcPowerOutcomeClaim.Mine);
+        countdowns.Peek("pc-casa", First)!.UserId.Should().Be(Owner, "a pessoa não foi consumida pela gravação que falhou");
+        countdowns.Peek("outro-pc", First).Should().BeNull();
     }
 
     [Fact]

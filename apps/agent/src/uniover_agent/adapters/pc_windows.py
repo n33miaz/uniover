@@ -834,10 +834,10 @@ class WindowsPcPower:
         if self._marker is not None:
             self._marker.clear()
 
-    def take_lost_countdown(self) -> tuple[str, str] | None:
-        """A ação e o id da contagem que corria quando o agente anterior parou (ela se perdeu com
-        ele), ou `None`. Lida uma vez, na partida."""
-        return self._marker.take() if self._marker is not None else None
+    def take_lost_countdowns(self) -> list[tuple[str, str]]:
+        """A ação e o id de cada contagem que se perdeu com um agente anterior e cujo aviso a API
+        ainda não confirmou. Lida na partida (e a cada remontagem)."""
+        return self._marker.take_lost() if self._marker is not None else []
 
     def _report(self, countdown_id: str, action: str, outcome: str, code: int | None) -> None:
         if self._on_outcome is None:

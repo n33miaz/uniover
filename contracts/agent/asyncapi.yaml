@@ -215,6 +215,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.power.v2.schema.json'
+      pcPowerOutcomeAck:
+        name: pc.power.outcome.ack.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.power.outcome.ack.v1.schema.json'
       pcAppLaunch:
         name: pc.app.launch.v1
         contentType: application/json
@@ -672,6 +677,13 @@ operations:
     messages:
       - $ref: '#/channels/agentCommands/messages/pcPower'
       - $ref: '#/channels/agentCommands/messages/pcPowerV2'
+  sendPcPowerOutcomeAck:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A API confirma ao agente que gravou (ou já tinha gravado) o desfecho de uma contagem de energia; só então o agente o esquece.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcPowerOutcomeAck'
   sendPcMediaQuery:
     action: send
     channel:

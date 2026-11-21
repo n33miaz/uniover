@@ -703,10 +703,27 @@ internal sealed class PcAgentMessageHandler(
     PcRtcReconciler? reconciler = null,
     PcMediaStates? media = null,
     PcClipboardInbox? clipboard = null,
-    PcPowerOutcomeRecorder? powerOutcomes = null) : IAgentMessageHandler
+    PcPowerOutcomeRecorder? powerOutcomes = null,
+    IAgentGateway? gateway = null,
+    IAgentPresenceReader? presence = null) : IAgentMessageHandler
 {
     public IReadOnlyCollection<string> HandledTypes { get; } =
         [AgentMessageTypes.PcAppsV1, AgentMessageTypes.PcRtcAnswerV1, AgentMessageTypes.PcRtcClosedV1, AgentMessageTypes.PcRtcReconcileV1, AgentMessageTypes.PcVolumeStateV1, AgentMessageTypes.PcDeviceStateV1, AgentMessageTypes.PcMediaStateV1, AgentMessageTypes.PcClipboardV1, AgentMessageTypes.PcPowerOutcomeV1];
+
+    /// <summary>
+    /// Confirma ao agente o desfecho resolvido, só ao que declarou <see cref="PcMessages.PowerOutcomeAckCapability"/>. Sem entrega (o agente
+    /// caiu), ele reenvia na conexão seguinte e a confirmação sai de novo, sem outra linha na auditoria.
+    /// </summary>
+    private async Task AckPowerOutcomeAsync(string agentSlug, PcPowerNotice outcome, CancellationToken cancellationToken)
+    {
+        if (gateway is null
+            || presence?.Get(agentSlug)?.Capabilities.Contains(PcMessages.PowerOutcomeAckCapability, StringComparer.Ordinal) != true)
+        {
+            return;
+        }
+
+        await gateway.SendAsync(agentSlug, PcMessages.PowerOutcomeAck(outcome.CountdownId, outcome.Outcome), cancellationToken);
+    }
 
     public async Task HandleAsync(InboundMessage message, CancellationToken cancellationToken)
     {
@@ -750,14 +767,16 @@ internal sealed class PcAgentMessageHandler(
         {
             if (powerOutcomes is not null)
             {
-                await powerOutcomes.RecordAsync(
-                    message.AgentId,
-                    new PcPowerNotice(
-                        message.Body.GetProperty("countdownId").GetGuid(),
-                        message.Body.GetProperty("action").GetString()!,
-                        message.Body.GetProperty("outcome").GetString()!,
-                        message.Body.GetProperty("at").GetDateTimeOffset()),
-                    cancellationToken);
+                var outcome = new PcPowerNotice(
+                    message.Body.GetProperty("countdownId").GetGuid(),
+                    message.Body.GetProperty("action").GetString()!,
+                    message.Body.GetProperty("outcome").GetString()!,
+                    message.Body.GetProperty("at").GetDateTimeOffset());
+                // Falha ao gravar sobe sem confirmação: o agente guarda o desfecho e o reenvia.
+                if (await powerOutcomes.RecordAsync(message.AgentId, outcome, cancellationToken))
+                {
+                    await AckPowerOutcomeAsync(message.AgentId, outcome, cancellationToken);
+                }
             }
 
             return;

@@ -113,6 +113,7 @@ from uniover_agent.core import (
     RTC_TYPES,
     SETTINGS_OPEN_CAPABILITY,
     TV_RTC_CAPABILITY,
+    Command,
     ConnectionSupervisor,
     EnvelopeFactory,
     EnvelopeGate,
@@ -154,7 +155,11 @@ from uniover_agent.core.pc.devices import DeviceApprovals
 from uniover_agent.core.pc.direct import PC_SCREEN_CAPABILITY
 from uniover_agent.core.pc.focus import PC_TARGET_CAPABILITY
 from uniover_agent.core.pc.handlers import PC_DEVICE_CAPABILITY, PC_OP_CAPABILITY
-from uniover_agent.core.pc.power_outcomes import PC_POWER_OUTCOME_FEATURE
+from uniover_agent.core.pc.power_outcomes import (
+    PC_POWER_OUTCOME_ACK_FEATURE,
+    PC_POWER_OUTCOME_ACK_TYPE,
+    PC_POWER_OUTCOME_FEATURE,
+)
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
 from uniover_agent.core.tv.livre import EXTENDED_CAPABILITY as LIVRE_EXTENDED_CAPABILITY
@@ -228,6 +233,7 @@ API_LISTED_CAPABILITIES = frozenset(
         PC_ZOOM_CAPABILITY,
         PC_POWER_V2_CAPABILITY,
         PC_POWER_CANCEL_CAPABILITY,
+        PC_POWER_OUTCOME_ACK_FEATURE,
         PC_HIBERNATE_CAPABILITY,
         PC_MEDIA_STATE_CAPABILITY,
         PC_CLIPBOARD_CAPABILITY,
@@ -241,6 +247,19 @@ API_LISTED_CAPABILITIES = frozenset(
         PC_TARGET_CAPABILITY,
     }
 )
+
+
+def _power_outcome_notices(pc: PcSetup | None) -> dict[str, Callable[[Command], None]]:
+    """A confirmação da API de que gravou o desfecho de uma contagem: ele sai da fila (e, num
+    `lost`, a marca em disco). Fora da faixa do PC: não é comando de entrada nem vem de aparelho."""
+    if pc is None or pc.power_outcomes is None:
+        return {}
+    outcomes = pc.power_outcomes
+
+    def acked(command: Command) -> None:
+        outcomes.acked(str(command.body["countdownId"]), str(command.body["outcome"]))
+
+    return {PC_POWER_OUTCOME_ACK_TYPE: acked}
 
 
 def declarable_capabilities(
@@ -835,6 +854,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         pc_lane=pc.lane if pc is not None else None,
         pc_host=pc.host if pc is not None else None,
         lane_detached_types=RTC_TYPES if pc is not None and pc.direct is not None else (),
+        notices=_power_outcome_notices(pc),
         on_command=(
             lambda command: (
                 tv.cleanup_scheduler.note_message(command.type)
@@ -943,6 +963,8 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         # A contagem recusada (ou perdida) só sobe a uma API que lista o tipo, e sobe assim que
         # ela passa a listá-lo.
         outcomes.bind_enabled(lambda: features.supports(PC_POWER_OUTCOME_FEATURE))
+        # Com a API confirmando cada desfecho, ele só é esquecido depois da confirmação.
+        outcomes.bind_acks(lambda: features.supports(PC_POWER_OUTCOME_ACK_FEATURE))
         features.on_change(outcomes.soon)
     if pc is not None and pc.volume is not None:
         volume = pc.volume

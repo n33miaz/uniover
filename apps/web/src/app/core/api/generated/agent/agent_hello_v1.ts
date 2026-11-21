@@ -60,6 +60,7 @@ export type AgentHelloV1BodyCapabilitiesItem =
   | 'pc.power.v2'
   | 'pc.power.hibernate.v1'
   | 'pc.power.cancel.v1'
+  | 'pc.power.outcome.ack.v1'
   | 'pc.media.state.v1'
   | 'pc.clipboard.v1'
   | 'pc.op.v1'

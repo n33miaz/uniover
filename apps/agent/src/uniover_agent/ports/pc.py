@@ -190,9 +190,14 @@ class PowerCountdownMarker(Protocol):
         """A contagem acabou (cancelada ou entregue ao Windows)."""
         ...
 
-    def take(self) -> tuple[str, str] | None:
-        """A ação e o id da contagem que corria quando o agente anterior parou, ou `None`; a marca
-        sai."""
+    def take_lost(self) -> list[tuple[str, str]]:
+        """A ação e o id de cada contagem perdida (a que corria quando o agente anterior parou, e
+        as de antes) cujo aviso a API ainda não confirmou. A marca da contagem sai; a perdida fica
+        guardada até `confirm_lost`."""
+        ...
+
+    def confirm_lost(self, countdown_id: str) -> None:
+        """A API confirmou o aviso da contagem perdida `countdown_id`: ela é esquecida."""
         ...
 
 
