@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.78.2](https://github.com/n33miaz/uniover/compare/v0.78.1...v0.78.2) (2026-11-21)
+
+
+### Identity 0.46.6
+
+#### Bug Fixes
+
+* **identity:** bound capacity seen lock wait
+
+
+### TV 0.54.3
+
+#### Bug Fixes
+
+* **tv:** guard guest sleep on older agents
+
+
+### Training 0.46.4
+
+#### Bug Fixes
+
+* **training:** rearm hidden day timer
+
+
+### Web 0.73.4
+
+#### Bug Fixes
+
+* **contracts:** declare capacity timeout
+
+
+### Agent 0.63.4
+
+#### Bug Fixes
+
+* **agent:** bound resumed tv text erase
+
 ## [0.78.1](https://github.com/n33miaz/uniover/compare/v0.78.0...v0.78.1) (2026-11-21)
 
 
