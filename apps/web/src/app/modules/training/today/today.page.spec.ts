@@ -221,6 +221,55 @@ describe('TodayPage', () => {
       expect(text(el)).not.toContain('Treino de Ontem');
     });
 
+    it.each(['foco', 'visibilidade', 'gravação'])('rearma a meia-noite no novo fuso após %s', async (trigger) => {
+      const kit = await open();
+      kit.runtime.time = Date.parse('2025-10-09T22:00:00Z');
+      let zone = 'UTC';
+      const resolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+      const options = vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(
+        function (this: Intl.DateTimeFormat) {
+          return { ...resolvedOptions.call(this), timeZone: zone };
+        },
+      );
+      try {
+        await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);
+        const yesterday = (kit.runtime.now() - dayMs - HISTORY_START) / dayMs;
+        await seedHistory(kit.trainingDb, 'supino-reto', [[yesterday, 40, 10]]);
+        const { el, fixture } = await show(kit);
+        await eventually(fixture, () => expect(text(el)).toContain('Treino de Ontem'));
+        const store = fixture.debugElement.query(By.directive(TodayHome)).injector.get(TodayStore);
+        const reads = vi.spyOn(store, 'loadHome');
+        const timers = kit.runtime.activeTimers;
+
+        zone = 'America/Sao_Paulo';
+        if (trigger === 'foco') window.dispatchEvent(new Event('focus'));
+        if (trigger === 'visibilidade') document.dispatchEvent(new Event('visibilitychange'));
+        if (trigger === 'gravação') {
+          await saveRoutine('Treino B', [item('b1', 'supino-reto', 0)]);
+          fixture.detectChanges();
+        }
+        expect(deviceTimeZone()).toBe('America/Sao_Paulo');
+        expect(untilNextMidnight(kit.runtime.now())).toBe(5 * HOUR);
+        expect(reads).toHaveBeenCalled();
+        expect(kit.runtime.activeTimers).toBe(timers);
+
+        reads.mockClear();
+        // A meia-noite em UTC passa. Em São Paulo ainda faltam três horas.
+        kit.runtime.advance(5 * HOUR - 1);
+        expect(reads).not.toHaveBeenCalled();
+        kit.runtime.advance(1);
+        expect(reads).toHaveBeenCalledTimes(1);
+        await eventually(fixture, () => expect(text(el)).toContain('Último Treino'));
+
+        reads.mockClear();
+        fixture.destroy();
+        kit.runtime.advance(dayMs);
+        expect(reads).not.toHaveBeenCalled();
+      } finally {
+        options.mockRestore();
+      }
+    });
+
     it('keeps turning the day on the following midnights, and leaves no timer behind once the screen is gone', async () => {
       const kit = await open();
       await saveRoutine('Treino A', [item('a1', 'supino-reto', 0)]);

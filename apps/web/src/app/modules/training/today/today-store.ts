@@ -1,5 +1,6 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Subject } from 'rxjs';
 import { ConnectivityService } from '../../../core/connectivity/connectivity.service';
 import { AccountScope } from '../../../core/session/account-scope';
 import { OfflineQueue } from '../../../core/offline-queue/offline-queue';
@@ -79,6 +80,8 @@ export class TodayStore {
   private readonly swaps = inject(SwapStore);
   private readonly account = inject(AccountScope);
   private readonly storage = inject(DOCUMENT).defaultView?.localStorage ?? null;
+  private readonly homeReadRequests = new Subject<void>();
+  readonly homeReadRequested = this.homeReadRequests.asObservable();
 
   // O que decide qual visão aparece.
   readonly ready = signal(false);
@@ -238,7 +241,12 @@ export class TodayStore {
   );
 
   /** Lê as rotinas, a do dia e o resumo da semana (uma leitura por vez). */
-  readonly loadHome = coalesced(
+  loadHome(): Promise<void> {
+    this.homeReadRequests.next();
+    return this.loadHomeOnce();
+  }
+
+  private readonly loadHomeOnce = coalesced(
     quiet(
       () => this.readHome(),
       () => {
