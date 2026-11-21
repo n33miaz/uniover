@@ -34,6 +34,9 @@ STOPPING_MESSAGE = (
 # Como o resultado de um comando volta a quem o pediu: pela nuvem (o transporte) ou, no canal
 # direto, pela resposta do próprio canal.
 Reply = Callable[[Command, CommandResult], Awaitable[None]]
+# Quem leva a resposta sem que a execução espere por ela (a faixa da TV em laço próprio: o envio
+# depende do laço principal, e a próxima tecla não pode esperar por ele).
+Respond = Callable[[Command, CommandResult, Reply | None], None]
 
 
 def is_power(command: Command) -> bool:
@@ -88,16 +91,33 @@ class CommandRunner:
             )
         )
 
-    async def execute(self, command: Command, reply: Reply | None = None) -> None:
+    async def execute(
+        self, command: Command, reply: Reply | None = None, *, respond: Respond | None = None
+    ) -> None:
+        """Executa e responde; com `respond`, a resposta é entregue a ele e não esperada aqui."""
         if is_power(command):
             # O id já está na memória (o leitor reconhece o repetido); vai a disco aqui, fora do
             # leitor, antes de a tecla ir à TV.
             await self._power.persist()
         result = await self._handle_command(command)
         self._remember(command, result)
-        await self.reply_result(command, result, reply)
+        await self._answer(command, result, reply, respond)
 
-    async def execute_detached(self, command: Command, reply: Reply | None = None) -> None:
+    async def _answer(
+        self,
+        command: Command,
+        result: CommandResult,
+        reply: Reply | None,
+        respond: Respond | None,
+    ) -> None:
+        if respond is None:
+            await self.reply_result(command, result, reply)
+        else:
+            respond(command, result, reply)
+
+    async def execute_detached(
+        self, command: Command, reply: Reply | None = None, *, respond: Respond | None = None
+    ) -> None:
         # Ninguém espera esta tarefa: o que der errado no envio só pode ir para o registro.
         try:
             if (
@@ -105,21 +125,25 @@ class CommandRunner:
                 or command.type in self._uncapped_types
                 or command.type.startswith(_PC_PREFIX)
             ):
-                await self.execute(command, reply)
+                await self.execute(command, reply, respond=respond)
             else:
-                await self._execute_capped(command, self._command_timeout, reply)
+                await self._execute_capped(command, self._command_timeout, reply, respond)
         except TransportError as exc:
             _log.debug("resultado de %s não enviado (%s)", command.type, exc)
         except Exception:
             _log.exception("falha ao responder %s (id=%s)", command.type, command.id)
 
     async def _execute_capped(
-        self, command: Command, limit: float, reply: Reply | None = None
+        self,
+        command: Command,
+        limit: float,
+        reply: Reply | None = None,
+        respond: Respond | None = None,
     ) -> None:
         # O corte só vale se foi o prazo que o causou: um `TimeoutError` do próprio comando passa.
         try:
             async with asyncio.timeout(limit) as deadline:
-                await self.execute(command, reply)
+                await self.execute(command, reply, respond=respond)
         except TimeoutError:
             if not deadline.expired():
                 raise
@@ -130,7 +154,7 @@ class CommandRunner:
             command.id, ResultStatus.FAILED, "a TV demorou demais para responder", TV_UNREACHABLE
         )
         self._remember(command, result)
-        await self.reply_result(command, result, reply)
+        await self._answer(command, result, reply, respond)
 
     async def answer_stopping(self, unanswered: Iterable[tuple[Command, Reply | None]]) -> None:
         """`agent_stopping` a cada comando aceito que foi cancelado sem resposta."""

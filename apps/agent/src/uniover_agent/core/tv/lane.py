@@ -16,10 +16,10 @@ import logging
 from collections.abc import Callable
 from typing import Final
 
-from uniover_agent.core.command_runner import CommandRunner, Reply
+from uniover_agent.core.command_runner import CommandRunner, Reply, Respond
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.handle_command import HandleCommand
-from uniover_agent.core.tv.handlers import TimedKeyCommand, ValidatedCommand
+from uniover_agent.core.tv.handlers import PATH_DIRECT, TimedKeyCommand, ValidatedCommand
 from uniover_agent.ports import TransportError
 
 _log = logging.getLogger(__name__)
@@ -27,18 +27,23 @@ _log = logging.getLogger(__name__)
 # Os caminhos por onde uma tecla da TV chega; a mudança de um para o outro vai ao registro (uma
 # linha por mudança, nunca por tecla).
 PATH_CLOUD: Final = "nuvem"
-PATH_DIRECT: Final = "canal direto"
 # O código com que o caminho direto recusa o que a nuvem trataria de outro jeito.
 NOT_ALLOWED: Final = "not_allowed"
 CHANNEL_CLOSED: Final = "channel_closed"
 _TEXT_TYPE: Final = "tv.text.v1"
 _TV_KEY_PREFIX: Final = "tv.key."
+# Respostas da nuvem aguardando o laço principal sem segurar a fila (`detach_replies`): passado o
+# teto, a resposta é descartada com um aviso (o laço principal está parado há muito; a API já
+# desistiu de esperar).
+MAX_PENDING_REPLIES: Final = 64
+# Ao fechar, quanto as respostas já decididas têm para sair antes de serem canceladas.
+REPLY_GRACE_SECONDS: Final = 1.0
 
 
 class TvLane:
     """A cadeia das teclas da TV e quem ainda não respondeu (ver `aclose`)."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - dependências injetadas, todas necessárias
         self,
         runner: CommandRunner,
         handle_command: HandleCommand,
@@ -46,18 +51,31 @@ class TvLane:
         monotonic: Callable[[], float],
         clock_ns: Callable[[], int],
         on_command: Callable[[Command], None] | None = None,
+        detach_replies: bool = False,
+        tasks: set[asyncio.Task[None]] | None = None,
+        unanswered: dict[asyncio.Task[None], tuple[Command, Reply | None]] | None = None,
     ) -> None:
+        """`detach_replies`: a tarefa da fila termina quando a TV recebeu o comando; a resposta sai
+        numa cadeia própria (a faixa em laço próprio, onde responder depende do laço principal).
+
+        `tasks` e `unanswered`: os registros de quem recebe (no mesmo laço), para que o
+        encerramento cancele a fila junto das outras tarefas, antes de qualquer espera."""
         self._runner = runner
         self._handle_command = handle_command
         self._monotonic = monotonic
         self._clock_ns = clock_ns
         self._on_command = on_command
-        self._tasks: set[asyncio.Task[None]] = set()
+        self._tasks: set[asyncio.Task[None]] = tasks if tasks is not None else set()
         self._key_tasks: set[asyncio.Task[None]] = set()
         self._last_key_task: asyncio.Task[None] | None = None
         # Os comandos aceitos que ainda não terminaram (e quem os responde): ao fechar, os que foram
         # cancelados sem resposta recebem `agent_stopping`.
-        self._unanswered: dict[asyncio.Task[None], tuple[Command, Reply | None]] = {}
+        self._unanswered: dict[asyncio.Task[None], tuple[Command, Reply | None]] = (
+            unanswered if unanswered is not None else {}
+        )
+        self._respond: Respond | None = self._detached_reply if detach_replies else None
+        self._replies: set[asyncio.Task[None]] = set()
+        self._last_reply: asyncio.Task[None] | None = None
         self._latest_key: dict[str, int] = {}
         # Por qual caminho a última tecla da TV chegou, e quantas vieram por ele desde a mudança.
         self._path: str | None = None
@@ -221,7 +239,7 @@ class TvLane:
         """Espera a vez na cadeia e executa com o teto; um anterior que falhou não a trava."""
         if previous is not None:
             await asyncio.wait([previous])
-        await self._runner.execute_detached(command)
+        await self._runner.execute_detached(command, respond=self._respond)
 
     async def _execute_key(
         self,
@@ -233,7 +251,7 @@ class TvLane:
         # ou reabrem o mesmo canal ao mesmo tempo. A recepção segue livre enquanto elas esperam.
         if previous is not None:
             await previous
-        await self._runner.execute_detached(command, reply)
+        await self._runner.execute_detached(command, reply, respond=self._respond)
 
     async def _execute_text(
         self,
@@ -264,7 +282,35 @@ class TvLane:
                     is_valid=is_valid,
                 )
             )
-            await self._runner.execute(checked, reply)
+            await self._runner.execute(checked, reply, respond=self._respond)
+        except TransportError as exc:
+            _log.debug("resultado de %s não enviado (%s)", command.type, exc)
+        except Exception:
+            _log.exception("falha ao responder %s (id=%s)", command.type, command.id)
+
+    def _detached_reply(self, command: Command, result: CommandResult, reply: Reply | None) -> None:
+        """A resposta de quem já foi à TV, numa cadeia própria (a ordem das respostas vale)."""
+        if len(self._replies) >= MAX_PENDING_REPLIES:
+            _log.warning(
+                "resposta de %s descartada: envio atrasado (id=%s)", command.type, command.id
+            )
+            return
+        task = asyncio.create_task(self._send_reply(command, result, reply, self._last_reply))
+        self._last_reply = task
+        self._replies.add(task)
+        task.add_done_callback(self._replies.discard)
+
+    async def _send_reply(
+        self,
+        command: Command,
+        result: CommandResult,
+        reply: Reply | None,
+        previous: asyncio.Task[None] | None,
+    ) -> None:
+        try:
+            if previous is not None:
+                await asyncio.wait([previous])
+            await self._runner.reply_result(command, result, reply)
         except TransportError as exc:
             _log.debug("resultado de %s não enviado (%s)", command.type, exc)
         except Exception:
@@ -274,17 +320,23 @@ class TvLane:
 
     async def drain(self, grace: float) -> None:
         """Dá até `grace` segundos para o que está na fila terminar sozinho, sem cancelar."""
-        pending = [task for task in self._tasks if not task.done()]
+        pending = [task for task in (*self._tasks, *self._replies) if not task.done()]
         if pending:
             await asyncio.wait(pending, timeout=grace)
 
     async def aclose(self) -> None:
         """Cancela o que ainda está na fila (e espera); quem ficou sem resposta recebe
-        `agent_stopping`."""
+        `agent_stopping`. A resposta já decidida tem `REPLY_GRACE_SECONDS` para sair."""
         pending = list(self._tasks)
         for task in pending:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
+        if self._replies:
+            await asyncio.wait(list(self._replies), timeout=REPLY_GRACE_SECONDS)
+            late = list(self._replies)
+            for task in late:
+                task.cancel()
+            await asyncio.gather(*late, return_exceptions=True)
         unanswered = list(self._unanswered.values())
         self._unanswered.clear()
         await self._runner.answer_stopping(unanswered)

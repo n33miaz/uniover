@@ -212,6 +212,11 @@ class ProcessMessage:
             monotonic=monotonic,
             clock_ns=clock_ns,
             on_command=on_command,
+            # No laço próprio, a resposta (que depende deste laço) não segura a fila; no mesmo
+            # laço, a fila divide os registros daqui e o encerramento a cancela junto do resto.
+            detach_replies=tv_host is not None,
+            tasks=self._tasks if tv_host is None else None,
+            unanswered=self._unanswered if tv_host is None else None,
         )
         # As respostas repetidas saem numa cadeia própria, fora do leitor, na ordem de chegada.
         self._last_repeat_reply: asyncio.Task[None] | None = None
