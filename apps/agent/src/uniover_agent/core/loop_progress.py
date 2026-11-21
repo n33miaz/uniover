@@ -98,3 +98,19 @@ class LoopProgress:
         while True:
             self.observe()
             await self._sleep(self._interval)
+
+
+class LeastElapsed:
+    """O menor andar entre vários laços: uma parada de qualquer um deles não envelhece a tecla.
+
+    Com a faixa da TV num laço próprio, a tecla da nuvem atravessa dois laços: o principal até a
+    leitura (a parada dele antes da chegada já está na idade desde o envio) e o da faixa depois.
+    Cada relógio desconta as paradas do seu laço; o menor dos dois desconta as duas. Erra só para o
+    lado de manter a tecla, e o teto da idade inteira (`KEY_STALLED_MAX_AGE_SECONDS`) continua.
+    """
+
+    def __init__(self, *progresses: LoopProgress) -> None:
+        self._progresses = progresses
+
+    def __call__(self, moment: float, *, strict: bool = False) -> float:
+        return min(progress.elapsed_since(moment, strict=strict) for progress in self._progresses)

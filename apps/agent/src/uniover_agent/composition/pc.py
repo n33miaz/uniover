@@ -226,13 +226,15 @@ class PcSetup:
             _DETACHED.add(task)
             task.add_done_callback(_DETACHED.discard)
 
-    def bind_tv_direct(self, deliver: Deliver) -> bool:
+    def bind_tv_direct(self, deliver: Deliver, *, to_tv: Callable[..., None] | None = None) -> bool:
         """Liga as teclas e o texto da TV ao canal direto: `deliver` é o ponto de entrada do laço
-        principal (`ProcessMessage.submit_direct_tv`). Falso sem canal direto neste agente."""
+        onde a sessão da TV vive (`ProcessMessage.submit_direct_tv` no laço principal, ou
+        `TvLane.submit_direct` na faixa da TV). `to_tv` leva até esse laço; sem ele, vale o laço
+        principal. Falso sem canal direto neste agente."""
         direct = self.direct
         if direct is None:
             return False
-        host, hop = self.host, self._main_call
+        host, hop = self.host, to_tv or self._main_call
 
         def to_main(callback: Callable[..., None], *args: Any) -> None:
             if hop is None:

@@ -115,8 +115,9 @@ from uniover_agent.core import (
     unsupported_handler,
     user_initiated,
 )
-from uniover_agent.core.loop_progress import LoopProgress
+from uniover_agent.core.loop_progress import LeastElapsed, LoopProgress
 from uniover_agent.core.tv.adb_permission import AdbPermissionTracker
+from uniover_agent.core.tv.handlers import LoopElapsed
 from uniover_agent.core.tv.key_timing import KeyTimings
 from uniover_agent.core.tv.livre import CAPABILITY as LIVRE_CAPABILITY
 from uniover_agent.core.tv.livre import EXTENDED_CAPABILITY as LIVRE_EXTENDED_CAPABILITY
@@ -195,15 +196,22 @@ class TvSetup:
     api_supports: Callable[[str], bool] = lambda _feature: False
 
 
-def build_tv(
+def build_tv(  # noqa: PLR0913 - o relógio da chegada só com a faixa da TV à parte
     settings: Settings,
     clock: Clock,
     transport: Transport,
     envelopes: EnvelopeFactory,
     secrets: SecretStore | None = None,
+    *,
+    arrival_progress: LoopProgress | None = None,
 ) -> TvSetup | None:
-    """A sessão da TV (veja `build_driver_setup`) e, nela, a procura de TVs na rede do agente."""
-    setup = build_driver_setup(settings, clock, transport, envelopes, secrets)
+    """A sessão da TV (veja `build_driver_setup`) e, nela, a procura de TVs na rede do agente.
+
+    `arrival_progress` é o relógio do laço que recebe as teclas, quando ele não é o da TV (a faixa
+    da TV num laço próprio): a parada de qualquer um dos dois não envelhece a tecla."""
+    setup = build_driver_setup(
+        settings, clock, transport, envelopes, secrets, arrival_progress=arrival_progress
+    )
     if setup is not None:
         attach_discovery(setup, settings)
     return setup
@@ -217,12 +225,14 @@ def attach_discovery(setup: TvSetup, settings: Settings) -> None:
     setup.capabilities.append(DISCOVERY_CAPABILITY)
 
 
-def build_driver_setup(
+def build_driver_setup(  # noqa: PLR0913 - idem `build_tv`
     settings: Settings,
     clock: Clock,
     transport: Transport,
     envelopes: EnvelopeFactory,
     secrets: SecretStore | None = None,
+    *,
+    arrival_progress: LoopProgress | None = None,
 ) -> TvSetup | None:
     """Sessão pelo driver configurado, ou `None` se a TV ainda não foi pareada.
 
@@ -234,7 +244,9 @@ def build_driver_setup(
         return None
     host = require_tv_host(settings.tv_host)
     if settings.tv_kind == "samsung":
-        return build_samsung_tv(settings, clock, transport, envelopes, secrets)
+        return build_samsung_tv(
+            settings, clock, transport, envelopes, secrets, arrival_progress=arrival_progress
+        )
     cert_dir = tv_cert_dir(settings.tv_name)
     if not is_paired(cert_dir):
         _log.warning("TV configurada, mas ainda não pareada. Rode `uniover-agent tv-pair`.")
@@ -285,7 +297,9 @@ def build_driver_setup(
     timings = KeyTimings(version=agent_version(), driver="android-remote")
     # A parada do laço do próprio agente não envelhece a tecla (até o teto da idade inteira).
     loop_progress = LoopProgress()
-    keys = tv_key_handler(manager, timings=timings, loop_elapsed=loop_progress.elapsed_since)
+    keys = tv_key_handler(
+        manager, timings=timings, loop_elapsed=key_elapsed(loop_progress, arrival_progress)
+    )
     text = TextReconciler(
         manager,
         monotonic=clock.monotonic,
@@ -337,6 +351,13 @@ def build_driver_setup(
         manager.set_volume_reader(volume_reader_when_push_is_silent(manager, adb))
     compose_watchdog(setup, settings, host, clock, adb)  # [composição: vigia]
     return setup
+
+
+def key_elapsed(loop_progress: LoopProgress, arrival_progress: LoopProgress | None) -> LoopElapsed:
+    """O relógio da idade das teclas: o do laço da TV e, se for outro, o do laço que as recebe."""
+    if arrival_progress is None:
+        return loop_progress.elapsed_since
+    return LeastElapsed(loop_progress, arrival_progress)
 
 
 def attach_pairing(
@@ -426,12 +447,14 @@ def resolve_samsung_client_name(secrets: SecretStore, tv_name: str, legacy_name:
     return name
 
 
-def build_samsung_tv(
+def build_samsung_tv(  # noqa: PLR0913 - idem `build_tv`
     settings: Settings,
     clock: Clock,
     transport: Transport,
     envelopes: EnvelopeFactory,
     secrets: SecretStore | None,
+    *,
+    arrival_progress: LoopProgress | None = None,
 ) -> TvSetup | None:
     """Compõe o que a Samsung Tizen oferece: remoto, apps e a manutenção por REST (sem ADB)."""
     if secrets is None:
@@ -495,7 +518,9 @@ def build_samsung_tv(
     timings = KeyTimings(version=agent_version(), driver="samsung")
     # A parada do laço do próprio agente não envelhece a tecla (até o teto da idade inteira).
     loop_progress = LoopProgress()
-    keys = tv_key_handler(manager, timings=timings, loop_elapsed=loop_progress.elapsed_since)
+    keys = tv_key_handler(
+        manager, timings=timings, loop_elapsed=key_elapsed(loop_progress, arrival_progress)
+    )
     apps = SamsungTvApps(manager, remote, transport, envelopes)
     announcer = AppsAnnouncer(
         apps, lambda: manager.snapshot().connection == "hot", monotonic=clock.monotonic
