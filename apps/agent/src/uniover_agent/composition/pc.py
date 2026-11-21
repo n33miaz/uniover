@@ -83,6 +83,7 @@ from uniover_agent.core.pc.focus import PC_TARGET_CAPABILITY
 from uniover_agent.core.pc.freshness import MAX_POINTER_AGE_SECONDS
 from uniover_agent.core.pc.handlers import PC_DEVICE_CAPABILITY, PC_OP_CAPABILITY, PC_SILENT_TYPES
 from uniover_agent.core.pc.lane import PcLane, PointerSpread
+from uniover_agent.core.pc.power_outcomes import PowerOutcomes, outcomes_after_hello
 from uniover_agent.core.pc.tv_bridge import Deliver
 from uniover_agent.ports import (
     Clock,
@@ -155,6 +156,9 @@ class PcSetup:
     conditions: dict[str, Callable[[], bool]] = field(default_factory=dict)
     # Os ajustes do mouse do Windows (só lidos), para o `hello` (`pcMouse`); `None` sem leitor.
     mouse_settings: Callable[[], dict[str, Any] | None] | None = None
+    # A contagem de energia que não terminou no pedido (`pc.power.outcome.v1`): quem monta o agente
+    # liga o envio ao que a API listou em `features`.
+    power_outcomes: PowerOutcomes | None = None
 
     def present(self, capability: str) -> bool:
         """Este PC tem o que a capacidade pede? Quem monta o `hello` só pergunta depois de a API
@@ -345,7 +349,7 @@ def _reply_handlers(  # noqa: PLR0913 - portas e opção de leitura
     return handlers
 
 
-def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com padrão
+def build_pc(  # noqa: PLR0913, PLR0915 - portas trocáveis para os testes, todas com padrão
     settings: Settings,
     transport: Transport,
     envelopes: EnvelopeFactory,
@@ -443,11 +447,15 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     volume_changed: Callable[[], None] = (
         (lambda: main_call(volume.soon)) if main_call is not None else volume.soon
     )
+    outcomes = _power_outcomes(transport, envelopes, clock_now)
     handlers = pc_handlers(
         pc_input,
         # O mesmo adaptador responde, mais abaixo, se a hibernação está ligada.
         # O aviso na tela do PC mostra a contagem de desligar ou reiniciar e deixa cancelar ali.
-        (power_port := power or WindowsPcPower(notice=WindowsPowerNotice())),
+        (
+            power_port := power
+            or WindowsPcPower(notice=WindowsPowerNotice(), on_refused=outcomes.refused)
+        ),
         launcher or WindowsPcLauncher(),
         apps,
         shutdown_delay_seconds=settings.pc_shutdown_delay_seconds,
@@ -516,7 +524,11 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     return PcSetup(
         handlers,
         capabilities,
-        [pc_apps_announcer(apps, transport, envelopes), volume_after_hello(volume)],
+        [
+            pc_apps_announcer(apps, transport, envelopes),
+            volume_after_hello(volume),
+            outcomes_after_hello(outcomes),
+        ],
         apps,
         pc_input.release_all,
         clock,
@@ -540,7 +552,24 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
             )
         },
         mouse_settings=mouse_settings or read_mouse_settings,
+        power_outcomes=outcomes,
     )
+
+
+def _power_outcomes(
+    transport: Transport, envelopes: EnvelopeFactory, clock: Clock
+) -> PowerOutcomes:
+    """O desfecho da contagem nasce na thread do temporizador e é enviado no laço do agente (sem
+    laço rodando, como em parte dos testes, ele espera o próximo `hello`)."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return PowerOutcomes(transport, envelopes, clock)
+
+    def post(callback: Callable[[], None]) -> None:
+        loop.call_soon_threadsafe(callback)
+
+    return PowerOutcomes(transport, envelopes, clock, post=post)
 
 
 def _older_than(clock: ClockOffset, command: Command, seconds: float) -> bool:

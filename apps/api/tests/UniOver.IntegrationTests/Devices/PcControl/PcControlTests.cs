@@ -1876,6 +1876,82 @@ public sealed class PcControlTests(PostgresFixture postgres)
         (await db.PairingAudit.CountAsync(a => a.Event == "pc_shutdown_failed", Ct)).Should().Be(1);
     }
 
+    private static Task SendPowerOutcomeAsync(FakeAgent agent, string action, string outcome) =>
+        agent.SendTextAsync(agent.Envelope("pc.power.outcome.v1", new JsonObject
+        {
+            ["action"] = action,
+            ["outcome"] = outcome,
+            ["code"] = 5,
+            ["at"] = "2026-11-21T14:00:00Z",
+        }));
+
+    [Theory]
+    [InlineData("SHUTDOWN", "pc.power.v1", "pc_shutdown", "pc_shutdown_failed")]
+    [InlineData("RESTART", "pc.power.v2", "pc_restart", "pc_restart_failed")]
+    public async Task Power_ThatWindowsRefusesAtTheEndOfTheCountdown_IsAuditedAsAFailure_ForWhoAskedForIt(
+        string action, string type, string doneEvent, string failedEvent)
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, PowerV2);
+
+        await ConfirmPcPowerAsync(app, action);
+        var http = app.App.SendAsync(
+            HttpMethod.Post, "/api/v1/pc/power", new { action, confirm = true }, app.Login.AccessToken, userAgent: "painel/1.0");
+        var command = await AnswerAsync(agent);
+        using var response = await Within(http);
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        command.GetProperty("type").GetString().Should().Be(type);
+
+        await SendPowerOutcomeAsync(agent, action, "refused");
+
+        await using var db = app.App.Db();
+        await TransportApp.WaitUntilAsync(
+            async () => await db.PairingAudit.AnyAsync(a => a.Event == failedEvent, Ct), "falha gravada");
+        var done = await db.PairingAudit.SingleAsync(a => a.Event == doneEvent, Ct);
+        var failed = await db.PairingAudit.SingleAsync(a => a.Event == failedEvent, Ct);
+        failed.AgentId.Should().Be(app.Agent.Id);
+        failed.UserId.Should().Be(done.UserId, "quem pediu");
+        failed.UserAgent.Should().Be("painel/1.0");
+    }
+
+    [Fact]
+    public async Task Power_OutcomeWithoutACountdownTheApiRemembers_IsStillAuditedForTheAgent_WithoutAPerson()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+
+        await SendPowerOutcomeAsync(agent, "SHUTDOWN", "lost");
+
+        await using var db = app.App.Db();
+        await TransportApp.WaitUntilAsync(
+            async () => await db.PairingAudit.AnyAsync(a => a.Event == "pc_shutdown_failed", Ct), "falha gravada");
+        var failed = await db.PairingAudit.SingleAsync(a => a.Event == "pc_shutdown_failed", Ct);
+        failed.AgentId.Should().Be(app.Agent.Id);
+        failed.UserId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Power_OutcomeAfterTheCountdownWasCancelled_HasNoPerson()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+
+        await ConfirmPcPowerAsync(app, "SHUTDOWN");
+        var http = PostAsync(app, "power", new { action = "SHUTDOWN", confirm = true });
+        await AnswerAsync(agent);
+        (await Within(http)).Dispose();
+        var cancel = PostAsync(app, "power", new { action = "CANCEL_SHUTDOWN" });
+        await AnswerAsync(agent);
+        (await Within(cancel)).Dispose();
+
+        await SendPowerOutcomeAsync(agent, "SHUTDOWN", "refused");
+
+        await using var db = app.App.Db();
+        await TransportApp.WaitUntilAsync(
+            async () => await db.PairingAudit.AnyAsync(a => a.Event == "pc_shutdown_failed", Ct), "falha gravada");
+        (await db.PairingAudit.SingleAsync(a => a.Event == "pc_shutdown_failed", Ct)).UserId.Should().BeNull();
+    }
+
     [Fact]
     public async Task Launch_RefusedByTheAgent_IsAuditedAsAFailedAttempt()
     {

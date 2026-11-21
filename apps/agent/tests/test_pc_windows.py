@@ -235,6 +235,48 @@ def test_a_broken_notice_never_stops_the_countdown(power_timers: list[FakeTimer]
     assert calls == [["/s", "/t", "0"]]
 
 
+def test_a_refusal_after_the_countdown_is_reported_to_the_api(
+    power_timers: list[FakeTimer],
+) -> None:
+    refused: list[tuple[str, int | None]] = []
+    power = WindowsPcPower(run=exits_with(5), on_refused=lambda *args: refused.append(args))
+    power.restart(30)
+    power_timers[0].callback()
+    assert refused == [("RESTART", 5)]
+
+
+def test_a_runner_that_fails_is_reported_without_a_code(power_timers: list[FakeTimer]) -> None:
+    def broken(arguments: list[str]) -> int:
+        raise subprocess.TimeoutExpired("shutdown", 10)
+
+    refused: list[tuple[str, int | None]] = []
+    power = WindowsPcPower(run=broken, on_refused=lambda *args: refused.append(args))
+    power.shutdown(30)
+    power_timers[0].callback()
+    assert refused == [("SHUTDOWN", None)]
+
+
+def test_an_accepted_request_or_a_cancel_reports_nothing(power_timers: list[FakeTimer]) -> None:
+    refused: list[tuple[str, int | None]] = []
+    power = WindowsPcPower(run=exits_with(0), on_refused=lambda *args: refused.append(args))
+    power.shutdown(30)
+    power_timers[0].callback()
+    power = WindowsPcPower(run=exits_with(0), on_refused=lambda *args: refused.append(args))
+    power.restart(30)
+    power.cancel_shutdown()
+    assert refused == []
+
+
+def test_a_broken_report_never_breaks_the_countdown(power_timers: list[FakeTimer]) -> None:
+    def broken(action: str, code: int | None) -> None:
+        raise RuntimeError("sem laço")
+
+    power = WindowsPcPower(run=exits_with(5), on_refused=broken)
+    power.shutdown(30)
+    power_timers[0].callback()
+    power.cancel_shutdown()  # a recusa liberou: cancelar volta a valer
+
+
 def test_hibernate_and_log_off_use_the_system_tool_and_report_a_refusal() -> None:
     calls: list[list[str]] = []
     power = WindowsPcPower(run=exits_with(0, calls))
