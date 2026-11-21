@@ -40,19 +40,29 @@ describe('PowerPage', () => {
     expect(sheet()).toBeNull();
   });
 
-  it.each([
-    ['Suspender', 'SLEEP', 'Suspender o PC?'],
-    ['Desligar', 'SHUTDOWN', 'Desligar o PC?'],
-  ])('%s asks first and only sends after the confirmation', async (label, code, title) => {
-    action(label).click();
+  it('Suspender asks first and only sends after the confirmation', async () => {
+    action('Suspender').click();
     await settle();
     expect(store.power).not.toHaveBeenCalled();
     expect(sheet()?.hasAttribute('open')).toBe(true);
-    expect(root.querySelector('h2')?.textContent).toBe(title);
+    expect(root.querySelector('h2')?.textContent).toBe('Suspender o PC?');
 
-    sheetButton(label).click();
+    sheetButton('Suspender').click();
     await settle();
-    expect(store.power).toHaveBeenCalledExactlyOnceWith(code, true);
+    expect(store.power).toHaveBeenCalledExactlyOnceWith('SLEEP', true);
+    expect(sheet()).toBeNull();
+  });
+
+  it('Desligar asks first and only starts the countdown after the confirmation', async () => {
+    action('Desligar').click();
+    await settle();
+    expect(store.startCountdown).not.toHaveBeenCalled();
+    expect(root.querySelector('h2')?.textContent).toBe('Desligar o PC?');
+
+    sheetButton('Desligar').click();
+    await settle();
+    expect(store.startCountdown).toHaveBeenCalledExactlyOnceWith('SHUTDOWN');
+    expect(store.power).not.toHaveBeenCalled();
     expect(sheet()).toBeNull();
   });
 
@@ -96,6 +106,52 @@ describe('PowerPage', () => {
     sheetButton('Desligar').click();
     await settle();
   };
+
+  describe('with the countdown the API returned', () => {
+    beforeEach(() => {
+      store.startCountdown.mockResolvedValue({ failure: null, countdownId: 'desta-tela' });
+    });
+
+    it('cancels only that countdown', async () => {
+      await shutDown();
+      root.querySelector<HTMLButtonElement>('.cancel button')!.click();
+      await settle();
+      expect(store.power).toHaveBeenLastCalledWith('CANCEL_SHUTDOWN', false, 'desta-tela');
+      expect(root.querySelector('.cancel')).toBeNull();
+    });
+
+    it('the outcome of another countdown never hides the button of this one', async () => {
+      await shutDown();
+      store.powerOutcome.set({
+        countdownId: 'de-outro-celular',
+        action: 'SHUTDOWN',
+        outcome: 'cancelled',
+        at: '2026-11-21T14:00:30Z',
+      });
+      await settle();
+      expect(root.querySelector('.cancel')).not.toBeNull();
+      expect(root.querySelector('[role="alert"]')).toBeNull();
+
+      store.powerOutcome.set({
+        countdownId: 'desta-tela',
+        action: 'SHUTDOWN',
+        outcome: 'refused',
+        at: '2026-11-21T14:00:40Z',
+      });
+      await settle();
+      expect(root.querySelector('.cancel')).toBeNull();
+      expect(root.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+        'O Windows recusou desligar. O PC segue ligado.',
+      );
+    });
+
+    it('the countdown that failed to start offers no cancel', async () => {
+      store.startCountdown.mockResolvedValueOnce({ failure: FAILURE, countdownId: null });
+      await shutDown();
+      expect(root.querySelector('.cancel')).toBeNull();
+      expect(root.querySelector('dialog .error')?.textContent).toContain('O PC está desconectado.');
+    });
+  });
 
   it.each([
     ['refused', 'O Windows recusou desligar. O PC segue ligado.'],
@@ -220,7 +276,6 @@ describe('PowerPage', () => {
 
     it.each([
       ['Hibernar', 'HIBERNATE', 'Hibernar o PC?'],
-      ['Reiniciar', 'RESTART', 'Reiniciar o PC?'],
       ['Encerrar Sessão', 'LOGOFF', 'Encerrar a sessão do Windows?'],
     ])('%s asks first and only sends after the confirmation', async (label, code, title) => {
       action(label).click();
@@ -231,6 +286,18 @@ describe('PowerPage', () => {
       sheetButton(label).click();
       await settle();
       expect(store.power).toHaveBeenCalledExactlyOnceWith(code, true);
+      expect(sheet()).toBeNull();
+    });
+
+    it('Reiniciar asks first and only starts the countdown after the confirmation', async () => {
+      action('Reiniciar').click();
+      await settle();
+      expect(store.startCountdown).not.toHaveBeenCalled();
+      expect(root.querySelector('h2')?.textContent).toBe('Reiniciar o PC?');
+
+      sheetButton('Reiniciar').click();
+      await settle();
+      expect(store.startCountdown).toHaveBeenCalledExactlyOnceWith('RESTART');
       expect(sheet()).toBeNull();
     });
 

@@ -4923,11 +4923,30 @@
               "null",
               "boolean"
             ]
+          },
+          "countdownId": {
+            "format": "uuid",
+            "type": [
+              "null",
+              "string"
+            ]
           }
         },
         "required": [
           "action",
           "confirm"
+        ],
+        "type": "object"
+      },
+      "PcPowerScheduled": {
+        "properties": {
+          "countdownId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "countdownId"
         ],
         "type": "object"
       },
@@ -15129,6 +15148,16 @@
           }
         },
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PcPowerScheduled"
+                }
+              }
+            },
+            "description": "OK"
+          },
           "204": {
             "description": "No Content"
           },

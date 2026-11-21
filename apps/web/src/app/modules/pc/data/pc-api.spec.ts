@@ -326,6 +326,23 @@ describe('PcApi cloud sequence', () => {
     request.flush(null, { status: 204, statusText: 'No Content' });
     await sending;
   });
+
+  it('a shutdown hands back the countdown the agent accepted, and the cancel carries it', async () => {
+    const scheduling = api.power('SHUTDOWN', true);
+    const scheduled = http.expectOne((req) => req.url.endsWith('/v1/pc/power'));
+    expect(scheduled.request.body).toEqual({ action: 'SHUTDOWN', confirm: true });
+    scheduled.flush({ countdownId: '0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e00' });
+    expect(await scheduling).toBe('0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e00');
+
+    const cancelling = api.power('CANCEL_SHUTDOWN', false, '0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e00');
+    const cancel = http.expectOne((req) => req.url.endsWith('/v1/pc/power'));
+    expect(cancel.request.body).toEqual({
+      action: 'CANCEL_SHUTDOWN',
+      countdownId: '0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e00',
+    });
+    cancel.flush(null, { status: 204, statusText: 'No Content' });
+    expect(await cancelling).toBeNull();
+  });
 });
 
 describe('PcApi pointer', () => {
@@ -381,7 +398,7 @@ describe('PcApi operation id', () => {
   const done = { status: 204, statusText: 'No Content' };
 
   it('every command through the cloud carries its own X-Operation-Id', async () => {
-    const calls: [string, () => Promise<void>][] = [
+    const calls: [string, () => Promise<unknown>][] = [
       ['click', () => api.click('LEFT')],
       ['key', () => api.key('ENTER')],
       ['text', () => api.text('olá')],

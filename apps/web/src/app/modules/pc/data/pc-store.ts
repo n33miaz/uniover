@@ -41,6 +41,7 @@ import {
   type PcMediaAction,
   type PcModifier,
   type PcNowPlaying,
+  type PcCountdownStart,
   type PcPowerAction,
   type PcTextEdit,
   type PcVolumeChange,
@@ -907,8 +908,21 @@ export class PcStore {
   }
 
   /** Suspender e desligar levam `confirm`: quem chama só o passa depois de a pessoa confirmar na folha. */
-  power(action: PcPowerAction, confirm = false): Promise<PcFailure | null> {
-    return this.command(() => this.api.power(action, confirm));
+  power(action: PcPowerAction, confirm = false, countdownId?: string): Promise<PcFailure | null> {
+    return this.command(async () => {
+      await (countdownId === undefined
+        ? this.api.power(action, confirm)
+        : this.api.power(action, confirm, countdownId));
+    });
+  }
+
+  /** Desligar ou reiniciar (já confirmado na folha): devolve também a contagem aceita, para a tela cancelar só ela. */
+  async startCountdown(action: 'SHUTDOWN' | 'RESTART'): Promise<PcCountdownStart> {
+    let countdownId: string | null = null;
+    const failure = await this.command(async () => {
+      countdownId = await this.api.power(action, true);
+    });
+    return { failure, countdownId };
   }
 
   launch(appId: string): Promise<PcFailure | null> {

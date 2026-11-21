@@ -32,14 +32,19 @@ internal sealed class PcPowerCountdowns(TimeProvider time)
         }
     }
 
-    /// <summary>O app cancelou a contagem mais recente do agente: a lembrança dela sai.</summary>
-    public void Cancelled(string agentSlug)
+    /// <summary>
+    /// O app cancelou a contagem <paramref name="countdownId"/> (sem ele, a mais recente do agente): a lembrança dela sai. A contagem de outro
+    /// agente nunca sai por aqui.
+    /// </summary>
+    public void Cancelled(string agentSlug, Guid? countdownId = null)
     {
         lock (_gate)
         {
-            if (_latest.TryGetValue(agentSlug, out var latest))
+            Guid? id = countdownId ?? (_latest.TryGetValue(agentSlug, out var latest) ? latest : null);
+            if (id is { } known && _countdowns.TryGetValue(known, out var countdown)
+                && string.Equals(countdown.Slug, agentSlug, StringComparison.Ordinal))
             {
-                _countdowns.Remove(latest);
+                _countdowns.Remove(known);
             }
         }
     }

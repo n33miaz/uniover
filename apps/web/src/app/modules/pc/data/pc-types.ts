@@ -1,3 +1,5 @@
+import type { PcFailure } from './pc-failure';
+
 /** As letras do contrato (digitadas pelo campo de texto quando há modificador armado, e nos atalhos). */
 export type PcLetter =
   | 'A'
@@ -185,6 +187,12 @@ export type PcPowerAction =
   | 'LOGOFF'
   | 'HIBERNATE'
   | 'MONITOR_OFF';
+
+/** Desligar ou reiniciar pedido: a falha (ou `null`) e a contagem que o agente aceitou (`null` se a API não a devolveu). */
+export interface PcCountdownStart {
+  readonly failure: PcFailure | null;
+  readonly countdownId: string | null;
+}
 
 /**
  * A capacidade que o PC declara quando o agente entende `pc.power.v2` (reiniciar, encerrar a sessão e apagar o monitor; hibernar

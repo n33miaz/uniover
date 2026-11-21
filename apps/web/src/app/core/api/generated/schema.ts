@@ -5907,6 +5907,15 @@ export interface paths {
         };
       };
       responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['PcPowerScheduled'];
+          };
+        };
         /** @description No Content */
         204: {
           headers: {
@@ -15790,6 +15799,12 @@ export interface components {
     PcPowerRequest: {
       action: null | string;
       confirm: null | boolean;
+      /** Format: uuid */
+      countdownId?: null | string;
+    };
+    PcPowerScheduled: {
+      /** Format: uuid */
+      countdownId: string;
     };
     PcRtcCandidateRequest: {
       candidate: null | string;

@@ -24,6 +24,7 @@ class PcPowerV1Body(BaseModel):
         extra='forbid',
     )
     action: Annotated[PcPowerV1BodyAction, Field(title='PcPowerV1BodyAction')]
+    countdownId: UUID | None = None
 
 
 class PcPowerV1Message(BaseModel):

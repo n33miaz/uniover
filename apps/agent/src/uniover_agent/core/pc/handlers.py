@@ -64,6 +64,8 @@ PC_POWER_V2_CAPABILITY: Final = "pc.power.v2"
 # ainda confere na hora (`hibernation_unavailable`): a hibernação pode ser desligada depois do
 # `hello`.
 PC_HIBERNATE_CAPABILITY: Final = "pc.power.hibernate.v1"
+# Idem: o cancelamento leva o `countdownId` da contagem que o app mostra, e só ela é cancelada.
+PC_POWER_CANCEL_CAPABILITY: Final = "pc.power.cancel.v1"
 # Idem: o `operationId` do pedido HTTP no envelope dos comandos (liga os registros).
 PC_OP_CAPABILITY: Final = "pc.op.v1"
 # Idem: o aparelho do app (`deviceId`, `deviceName`) no envelope, para o dono aprová-lo no PC.
@@ -450,7 +452,10 @@ def pc_power_handler(
             power.restart(shutdown_delay_seconds, countdown_id=command.id)
             _log.warning("reinício agendado em %ds a pedido do app", shutdown_delay_seconds)
         elif action == "CANCEL_SHUTDOWN":
-            power.cancel_shutdown()
+            # Com o id, só a contagem que o app mostra; sem ele (API anterior), a que estiver
+            # em andamento.
+            countdown_id = command.body.get("countdownId")
+            power.cancel_shutdown(str(countdown_id) if countdown_id else None)
         elif action == "SLEEP":
             _log.warning("suspensão pedida pelo app")
             start(later("suspender o PC", power.sleep))

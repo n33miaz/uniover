@@ -12,6 +12,7 @@ import {
 import type { PcPowerOutcome } from '../../../core/modules/pc-availability';
 import { PcConfirmSheet } from '../ui/confirm-sheet';
 import { PcStore } from '../data/pc-store';
+import type { PcFailure } from '../data/pc-failure';
 import type { PcPowerAction } from '../data/pc-types';
 import { tick } from '../input/haptics';
 
@@ -203,6 +204,11 @@ export class PowerPage {
   private hideTimer: number | null = null;
   /** O desfecho (pela contagem) que o estado já trazia quando a contagem desta tela começou: só outro diz respeito a ela. */
   private seenOutcome: string | null = null;
+  /**
+   * A contagem que esta tela mostra, como a API a devolveu: o cancelamento só atinge ela, e só o desfecho dela fecha o botão. Uma
+   * API anterior não a devolve, e aí vale o desfecho que não estava lá quando a contagem começou.
+   */
+  private countdownId: string | null = null;
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
@@ -213,7 +219,9 @@ export class PowerPage {
     effect(() => {
       const outcome = this.store.powerOutcome();
       if (outcome === null || this.countdown() === null) return;
-      if (outcome.countdownId === this.seenOutcome) return;
+      if (this.countdownId !== null ? outcome.countdownId !== this.countdownId : outcome.countdownId === this.seenOutcome) {
+        return;
+      }
       untracked(() => this.countdownEnded(outcome));
     });
   }
@@ -257,22 +265,42 @@ export class PowerPage {
 
   protected async confirm(action: Confirmed): Promise<void> {
     if (this.busy()) return;
-    const ok = await this.run(action, true);
-    if (!ok) return;
+    if (action === 'SHUTDOWN' || action === 'RESTART') {
+      let countdownId: string | null = null;
+      const started = await this.send(async () => {
+        const result = await this.store.startCountdown(action);
+        countdownId = result.countdownId;
+        return result.failure;
+      });
+      if (!started) return;
+      this.sheet()?.close();
+      this.showCancel(action, countdownId);
+      return;
+    }
+    if (!(await this.run(action, true))) return;
     this.sheet()?.close();
-    if (action === 'SHUTDOWN' || action === 'RESTART') this.showCancel(action);
   }
 
   protected async cancelCountdown(): Promise<void> {
     tick();
-    if (await this.run('CANCEL_SHUTDOWN')) this.countdown.set(null);
+    const shown = this.countdownId;
+    const cancelled = await this.send(() =>
+      shown === null
+        ? this.store.power('CANCEL_SHUTDOWN', false)
+        : this.store.power('CANCEL_SHUTDOWN', false, shown),
+    );
+    if (cancelled) this.countdown.set(null);
   }
 
-  private async run(action: PcPowerAction, confirmed = false): Promise<boolean> {
+  private run(action: PcPowerAction, confirmed = false): Promise<boolean> {
+    return this.send(() => this.store.power(action, confirmed));
+  }
+
+  private async send(call: () => Promise<PcFailure | null>): Promise<boolean> {
     this.busy.set(true);
     this.message.set(null);
     this.sheetError.set(null);
-    const failure = await this.store.power(action, confirmed);
+    const failure = await call();
     this.busy.set(false);
     if (failure) {
       // A falha aparece onde a pessoa está olhando: dentro da folha, se ela estiver aberta.
@@ -283,8 +311,9 @@ export class PowerPage {
     return true;
   }
 
-  private showCancel(kind: Countdown): void {
+  private showCancel(kind: Countdown, countdownId: string | null): void {
     this.seenOutcome = untracked(() => this.store.powerOutcome())?.countdownId ?? null;
+    this.countdownId = countdownId;
     this.countdown.set(kind);
     if (this.hideTimer !== null) window.clearTimeout(this.hideTimer);
     this.hideTimer = window.setTimeout(() => this.countdown.set(null), CANCEL_WINDOW_MS);

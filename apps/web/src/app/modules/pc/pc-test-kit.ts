@@ -32,6 +32,7 @@ import type {
   PcMediaAction,
   PcModifier,
   PcNowPlaying,
+  PcCountdownStart,
   PcPowerAction,
   PcTextEdit,
   PcVolumeChange,
@@ -114,8 +115,11 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
     sendMedia: vi.fn<(action: PcMediaAction, steps?: number) => Outcome>(() =>
       Promise.resolve(null),
     ),
-    power: vi.fn<(action: PcPowerAction, confirm?: boolean) => Outcome>(() =>
-      Promise.resolve(null),
+    power: vi.fn<(action: PcPowerAction, confirm?: boolean, countdownId?: string) => Outcome>(
+      () => Promise.resolve(null),
+    ),
+    startCountdown: vi.fn<(action: 'SHUTDOWN' | 'RESTART') => Promise<PcCountdownStart>>(() =>
+      Promise.resolve({ failure: null, countdownId: null }),
     ),
     launch: vi.fn<(appId: string) => Outcome>(() => Promise.resolve(null)),
   };
