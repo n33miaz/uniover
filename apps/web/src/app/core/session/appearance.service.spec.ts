@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { TestBed } from '@angular/core/testing';
@@ -93,12 +94,14 @@ describe('AppearanceService', () => {
       }
     });
 
-    it('every installed app manifest carries the light background as bar and splash color', () => {
+    // Confere só os campos dos manifests (sem `theme_color`, `background_color` claro). A cor que a barra nativa mostra
+    // no aparelho não se testa aqui: depende do Chrome e se confere no app instalado.
+    it('every installed app manifest omits theme_color and keeps the light background_color', () => {
       for (const folder of ['', 'tv/', 'pc/', 'treino/']) {
         const manifest = JSON.parse(
           readFileSync(resolve(process.cwd(), `public/${folder}manifest.webmanifest`), 'utf8'),
-        ) as { theme_color: string; background_color: string };
-        expect(manifest.theme_color.toLowerCase(), folder).toBe(THEME_BAR_COLORS.light);
+        ) as { theme_color?: string; background_color: string };
+        expect(manifest.theme_color, folder).toBeUndefined();
         expect(manifest.background_color.toLowerCase(), folder).toBe(THEME_BAR_COLORS.light);
       }
     });

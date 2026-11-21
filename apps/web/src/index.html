@@ -10,8 +10,9 @@
     />
     <meta name="color-scheme" content="light dark" />
     <!--
-      Cor da barra do sistema: o fundo de cada tema (`--a-bg`). O manifesto só aceita uma cor; estas valem por cima dele no
-      app instalado e no navegador. Com o tema fixado no app, o AppearanceService põe a cor do tema escolhido nas duas.
+      Cor da barra do sistema: o fundo de cada tema (`--a-bg`), no navegador e na barra de cima do app instalado. Com o
+      tema fixado no app, o AppearanceService põe a cor do tema escolhido nas duas. Os manifestos ficam sem `theme_color`:
+      o Chrome do Android pintaria com ele, fixo nos dois temas, a barra de navegação de baixo do app instalado.
     -->
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f2f5f1" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#101512" />

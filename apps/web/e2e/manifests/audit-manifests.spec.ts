@@ -55,7 +55,6 @@ function manifestFor(id: string, prefix = ''): Record<string, unknown> {
     lang: 'pt-BR',
     dir: 'ltr',
     background_color: '#F2F5F1',
-    theme_color: '#F2F5F1',
     icons: [
       icon('icon-192.png', 192, 'any'),
       icon('icon-512.png', 512, 'any'),
@@ -135,6 +134,15 @@ test.describe('auditoria dos manifests', () => {
     editManifest(fixture, 'tv', (m) => delete m['description']);
     expect(auditManifests(fixture)).toEqual([
       '/tv/manifest.webmanifest: campo obrigatório ausente: description',
+    ]);
+  });
+
+  test('theme_color no manifest falha', () => {
+    editManifest(fixture, 'tv', (m) => {
+      m['theme_color'] = '#F2F5F1';
+    });
+    expect(auditManifests(fixture)).toEqual([
+      '/tv/manifest.webmanifest: campo proibido presente: theme_color',
     ]);
   });
 
