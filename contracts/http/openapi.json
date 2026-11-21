@@ -4885,6 +4885,26 @@
         ],
         "type": "object"
       },
+      "PcPowerNotice": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "outcome",
+          "at"
+        ],
+        "type": "object"
+      },
       "PcPowerRequest": {
         "properties": {
           "action": {
@@ -5056,6 +5076,16 @@
           },
           "online": {
             "type": "boolean"
+          },
+          "power": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PcPowerNotice"
+              }
+            ]
           },
           "system": {
             "type": [

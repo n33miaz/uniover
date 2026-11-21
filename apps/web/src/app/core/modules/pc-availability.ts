@@ -35,6 +35,28 @@ export interface PcStatus {
    * velocidade (1 a 20). Sem eles (agente anterior, PC fora do ar) o campo não vem.
    */
   readonly mouse?: PcMouseSettings;
+  /**
+   * A última contagem de desligar ou reiniciar que não terminou no pedido (o Windows recusou, ou o agente reiniciou no meio
+   * dela). Só vem por alguns minutos depois do aviso do agente, e uma contagem nova a apaga.
+   */
+  readonly power?: PcPowerOutcome;
+}
+
+/** O desfecho de uma contagem que não terminou no pedido; `at` só serve para saber se é um desfecho novo. */
+export interface PcPowerOutcome {
+  readonly action: 'SHUTDOWN' | 'RESTART';
+  readonly outcome: 'refused' | 'lost';
+  readonly at: string;
+}
+
+function parsePower(dto: unknown): PcPowerOutcome | null {
+  if (!dto || typeof dto !== 'object') return null;
+  const body = dto as Record<string, unknown>;
+  const { action, outcome, at } = body;
+  if (action !== 'SHUTDOWN' && action !== 'RESTART') return null;
+  if (outcome !== 'refused' && outcome !== 'lost') return null;
+  if (typeof at !== 'string' || at.length === 0) return null;
+  return { action, outcome, at };
 }
 
 /** Os ajustes do mouse do Windows do PC. */
@@ -68,6 +90,7 @@ export function parsePcStatus(dto: unknown): PcStatus | null {
   const apps = Array.isArray(body['apps']) ? body['apps'] : [];
   const system = body['system'];
   const mouse = parseMouse(body['mouse']);
+  const power = parsePower(body['power']);
   return {
     available: body['available'],
     online: body['online'],
@@ -84,6 +107,7 @@ export function parsePcStatus(dto: unknown): PcStatus | null {
     volume: parseVolume(body['volume']),
     ...(system === 'windows' || system === 'macos' || system === 'linux' ? { system } : {}),
     ...(mouse ? { mouse } : {}),
+    ...(power ? { power } : {}),
   };
 }
 
@@ -120,6 +144,8 @@ export class PcAvailability {
   readonly capabilities = computed(() => this.current()?.capabilities ?? []);
   /** O volume de agora do PC, ou `null` sem leitura. */
   readonly volume = computed(() => this.current()?.volume ?? null);
+  /** A última contagem que não terminou no pedido, ou `null`. */
+  readonly power = computed(() => this.current()?.power ?? null);
   /** `null` até a primeira leitura bem-sucedida. */
   readonly status = this.current.asReadonly();
 

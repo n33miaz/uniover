@@ -182,6 +182,37 @@ async def test_a_power_outcome_goes_out_after_the_hello_once_the_api_lists_it() 
     assert sent["body"]["outcome"] == "refused"
 
 
+async def test_a_countdown_lost_in_a_restart_is_logged_and_told_to_the_app(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class LostMarker:
+        def save(self, action: str) -> None: ...
+
+        def clear(self) -> None: ...
+
+        def take(self) -> str | None:
+            return "RESTART"
+
+    settings, transport, envelopes = parts(Settings(pc_control=True))
+    pc = build_pc(
+        settings,
+        transport,
+        envelopes,
+        platform="win32",
+        pc_input=FakeInput(),
+        launcher=FakeLauncher(),
+        audio=FakeAudio(),
+        power_marker=LostMarker(),
+    )
+    assert pc is not None and pc.power_outcomes is not None
+    assert "reiniciou no meio da contagem para reiniciar" in caplog.text
+    pc.power_outcomes.bind_enabled(lambda: True)
+    for step in pc.after_hello:
+        await step()
+    (sent,) = [m for m in transport.sent if m["type"] == "pc.power.outcome.v1"]
+    assert (sent["body"]["action"], sent["body"]["outcome"]) == ("RESTART", "lost")
+
+
 def test_turned_on_declares_the_capability_and_every_command() -> None:
     settings, transport, envelopes = parts(Settings(pc_control=True, pc_apps=["Notas=notepad"]))
     pc = build_pc(

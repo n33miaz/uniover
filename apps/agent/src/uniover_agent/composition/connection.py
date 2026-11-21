@@ -29,6 +29,7 @@ from uniover_agent.adapters.pairing_http import fetch_api_features
 from uniover_agent.adapters.pc_approval_prompt import WindowsApprovalPrompt
 from uniover_agent.adapters.pc_device_store import JsonDeviceStore
 from uniover_agent.adapters.pc_direct_aiortc import warm_up_aiortc
+from uniover_agent.adapters.power_countdown_file import PowerCountdownFile
 from uniover_agent.adapters.power_id_file import PowerIdFile
 from uniover_agent.adapters.run_state import PreviousRun, RunState
 from uniover_agent.adapters.self_care_checks import ConnectionWatch
@@ -736,6 +737,8 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         transport,
         envelopes,
         gate=gate,
+        # A contagem de energia marcada aqui sobrevive a um reinício (o próximo agente avisa o app).
+        power_marker=PowerCountdownFile(installation_base() / "runtime"),
         agent_id=agent_id,
         clock_source=clock,
         record=lambda kind, severity, detail: kit.recorder.record(

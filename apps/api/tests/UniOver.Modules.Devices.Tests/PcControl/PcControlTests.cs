@@ -1168,3 +1168,27 @@ public sealed class PcPowerCountdownsTests
         countdowns.Take("pc-casa").Should().BeNull();
     }
 }
+
+public sealed class PcPowerNoticesTests
+{
+    private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-11-21T14:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
+
+    [Fact]
+    public void TheLastOutcome_IsShown_UntilItIsForgottenOrOld()
+    {
+        var time = new FakeTimeProvider(T0);
+        var notices = new PcPowerNotices(time);
+        notices.Get("pc-casa").Should().BeNull();
+
+        notices.Set("pc-casa", "RESTART", "lost");
+        notices.Get("pc-casa").Should().Be(new PcPowerNotice("RESTART", "lost", T0));
+        notices.Get("outro-pc").Should().BeNull();
+
+        notices.Forget("pc-casa");
+        notices.Get("pc-casa").Should().BeNull("uma contagem nova apaga o desfecho da anterior");
+
+        notices.Set("pc-casa", "SHUTDOWN", "refused");
+        time.Advance(PcPowerNotices.Lifetime + TimeSpan.FromSeconds(1));
+        notices.Get("pc-casa").Should().BeNull();
+    }
+}

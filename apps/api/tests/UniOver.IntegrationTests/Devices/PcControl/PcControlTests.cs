@@ -1930,6 +1930,34 @@ public sealed class PcControlTests(PostgresFixture postgres)
         failed.UserId.Should().BeNull();
     }
 
+    private static async Task<JsonElement> PowerOfStatusAsync(TransportApp app)
+    {
+        using var response = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: app.Login.AccessToken);
+        return (await DevicesApp.JsonAsync(response)).GetProperty("power").Clone();
+    }
+
+    [Fact]
+    public async Task Status_ShowsTheCountdownThatWasLost_UntilANewCountdownStarts()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+        (await PowerOfStatusAsync(app)).ValueKind.Should().Be(JsonValueKind.Null);
+
+        await SendPowerOutcomeAsync(agent, "RESTART", "lost");
+        await TransportApp.WaitUntilAsync(
+            async () => (await PowerOfStatusAsync(app)).ValueKind == JsonValueKind.Object, "desfecho no estado");
+        var power = await PowerOfStatusAsync(app);
+        power.GetProperty("action").GetString().Should().Be("RESTART");
+        power.GetProperty("outcome").GetString().Should().Be("lost");
+        power.GetProperty("at").GetDateTimeOffset().Should().NotBe(default);
+
+        await ConfirmPcPowerAsync(app, "SHUTDOWN");
+        var http = PostAsync(app, "power", new { action = "SHUTDOWN", confirm = true });
+        await AnswerAsync(agent);
+        (await Within(http)).Dispose();
+        (await PowerOfStatusAsync(app)).ValueKind.Should().Be(JsonValueKind.Null, "o desfecho era da contagem anterior");
+    }
+
     [Fact]
     public async Task Power_OutcomeAfterTheCountdownWasCancelled_HasNoPerson()
     {

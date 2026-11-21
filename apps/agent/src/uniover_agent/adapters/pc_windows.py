@@ -25,6 +25,7 @@ from uniover_agent.ports.pc import (
     CAUSE_UNKNOWN,
     PcInputRefused,
     PcUnsupported,
+    PowerCountdownMarker,
     PowerNotice,
 )
 
@@ -715,6 +716,7 @@ class WindowsPcPower:
         *,
         notice: PowerNotice | None = None,
         on_refused: Callable[[str, int | None], None] | None = None,
+        marker: PowerCountdownMarker | None = None,
     ) -> None:
         self._run = run or _run_shutdown
         # O aviso na tela do PC durante a contagem; sem ele (testes, outro sistema), só o app avisa.
@@ -722,6 +724,8 @@ class WindowsPcPower:
         # Quem avisa a API quando o Windows recusa a ação no fim da contagem (ação do contrato e
         # código de saída, quando houve).
         self._on_refused = on_refused
+        # A marca em disco que diz ao próximo agente que esta contagem se perdeu num reinício.
+        self._marker = marker
         self._can_schedule = run is not None or sys.platform == "win32"
         self._power_lock = threading.Lock()
         self._pending: _Cancelable | None = None
@@ -759,6 +763,8 @@ class WindowsPcPower:
                     return
                 self._pending = None
                 self._requested = True
+            # Antes de pedir: um desligamento que deu certo nunca parece perdido no próximo logon.
+            self._clear_marker()
             self._close_notice()
             try:
                 code = self._run([action, "/t", "0"])
@@ -781,6 +787,17 @@ class WindowsPcPower:
             self._pending = timer
             # Dentro da trava: um cancelamento que chegue junto nunca deixa um aviso órfão aberto.
             self._show_notice(_POWER_ACTIONS[action], seconds)
+            if self._marker is not None:
+                self._marker.save(_POWER_ACTIONS[action])
+
+    def _clear_marker(self) -> None:
+        if self._marker is not None:
+            self._marker.clear()
+
+    def take_lost_countdown(self) -> str | None:
+        """A ação que contava quando o agente anterior parou (a contagem se perdeu com ele), ou
+        `None`. Lida uma vez, na partida."""
+        return self._marker.take() if self._marker is not None else None
 
     def _report_refusal(self, action: str, code: int | None) -> None:
         if self._on_refused is None:
@@ -842,6 +859,7 @@ class WindowsPcPower:
             elif self._requested:
                 # A contagem acabou e o pedido foi ao Windows: "cancelado" seria mentira.
                 raise OSError("a contagem já terminou e o Windows já recebeu o pedido")
+            self._clear_marker()
         self._close_notice()
         # Garantia: cai também a contagem do Windows aberta por uma versão anterior.
         try:

@@ -750,7 +750,11 @@ internal sealed class PcAgentMessageHandler(
         {
             if (powerOutcomes is not null)
             {
-                await powerOutcomes.RecordAsync(message.AgentId, message.Body.GetProperty("action").GetString()!, cancellationToken);
+                await powerOutcomes.RecordAsync(
+                    message.AgentId,
+                    message.Body.GetProperty("action").GetString()!,
+                    message.Body.GetProperty("outcome").GetString()!,
+                    cancellationToken);
             }
 
             return;
