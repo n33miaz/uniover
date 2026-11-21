@@ -65,6 +65,8 @@ const tabs = (page: Page) => page.getByRole('tablist', { name: 'Telas do TV Livr
 const tab = (page: Page, name: string) => tabs(page).getByRole('tab', { name, exact: true });
 const button = (root: Page | Locator, name: string) =>
   root.getByRole('button', { name, exact: true });
+/** O Modo Dormir da folha de energia: o nome falado é o texto visível inteiro (título e dica), por isso o começo dele. */
+const sleepButton = (sheet: Locator) => sheet.getByRole('button', { name: /^Modo Dormir/ });
 const preview = (page: Page) => page.locator('app-livre-preview');
 const previewNames = (page: Page) => preview(page).locator('.name');
 const applyBar = (page: Page) => page.locator('.ui-action-bar');
@@ -148,7 +150,7 @@ test.describe('a entrada no menu da TV', () => {
     await expect(sheet.getByRole('heading', { name: 'Apagar a Tela?' })).toBeVisible();
     await expect(button(sheet, 'Desligar')).toHaveCount(0);
     await expect(sheet.getByText('Agendar')).toHaveCount(0);
-    await button(sheet, 'Modo Dormir').click();
+    await sleepButton(sheet).click();
     await expect.poll(() => livre.to('POST', '/sleep').length).toBe(1);
   });
 
@@ -160,8 +162,8 @@ test.describe('a entrada no menu da TV', () => {
     await page.goto('/tv');
     await button(page, 'Desligar a TV').click();
     const sheet = page.getByRole('dialog', { name: 'Desligar a TV?' });
-    await expect(button(sheet, 'Modo Dormir')).toBeEnabled();
-    await button(sheet, 'Modo Dormir').click();
+    await expect(sleepButton(sheet)).toBeEnabled();
+    await sleepButton(sheet).click();
     await expect(sheet).toHaveCount(0);
     await expect.poll(() => livre.to('POST', '/sleep').length).toBe(1);
     expect(livre.requests.filter((request) => request.method === 'GET' && request.path === '/sleep')).toEqual([]);
@@ -173,7 +175,7 @@ test.describe('a entrada no menu da TV', () => {
     await button(page, 'Desligar a TV').click();
     const sheet = page.getByRole('dialog', { name: 'Desligar a TV?' });
     await expect(button(sheet, 'Desligar')).toBeVisible();
-    await expect(button(sheet, 'Modo Dormir')).toHaveCount(0);
+    await expect(sleepButton(sheet)).toHaveCount(0);
   });
 });
 
