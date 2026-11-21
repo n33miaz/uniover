@@ -20,6 +20,8 @@ from uniover_agent.core import (
     tv_key_handler,
     tv_text_handler,
 )
+from uniover_agent.core.loop_progress import SLACK_SECONDS, LoopProgress
+from uniover_agent.core.tv.handlers import KEY_COALESCE_AFTER_SECONDS, KEY_STALLED_MAX_AGE_SECONDS
 
 from .support import AGENT_ID, dump, envelope
 
@@ -58,14 +60,21 @@ def build(
     command_timeout: float | None = None,
     *,
     api_clock: bool = False,
+    loop_progress: bool = False,
 ) -> tuple[ProcessMessage, FakeTransport, SlowRemote, AdvancingClock]:
     """`api_clock`: liga a idade desde o envio (o `ClockOffset` dos batimentos da API), como em
-    produção; sem ele, a API anterior (a idade conta só desde a chegada)."""
+    produção; sem ele, a API anterior (a idade conta só desde a chegada). `loop_progress`: a parada
+    do laço do agente não conta (o `LoopProgress` de produção, carimbado à mão pelo teste)."""
     clock = AdvancingClock()
     offset = ClockOffset(now=clock.now, monotonic=clock.monotonic)
     remote = SlowRemote()
     session = TvSessionManager(clock, remote)
-    keys = tv_key_handler(session, monotonic=clock.monotonic)
+    progress = LoopProgress(monotonic=clock.monotonic) if loop_progress else None
+    keys = tv_key_handler(
+        session,
+        monotonic=clock.monotonic,
+        loop_elapsed=progress.elapsed_since if progress is not None else None,
+    )
     gate = EnvelopeGate(AGENT_ID)
     transport = FakeTransport()
     process = ProcessMessage(
@@ -87,7 +96,14 @@ def build(
         observe_timestamp=offset.observe if api_clock else None,
         timestamp_age=offset.age if api_clock else None,
     )
+    if progress is not None:
+        PROGRESS[process] = progress
+        progress.observe()
     return process, transport, remote, clock
+
+
+# O relógio do laço de cada montagem com `loop_progress` (o teste o carimba à mão).
+PROGRESS: dict[ProcessMessage, LoopProgress] = {}
 
 
 def message(message_type: str, body: dict[str, Any], clock: AdvancingClock) -> dict[str, Any]:
@@ -215,8 +231,12 @@ async def test_the_age_since_sending_adds_the_wait_inside_the_agent() -> None:
     assert results(transport) == ["expired"]
 
 
-async def test_an_agent_back_from_a_pause_presses_none_of_the_keys_held_in_the_socket() -> None:
-    process, transport, remote, clock = build(api_clock=True)
+@pytest.mark.parametrize("loop_progress", [False, True])
+async def test_an_agent_back_from_a_pause_presses_none_of_the_keys_held_in_the_socket(
+    loop_progress: bool,
+) -> None:
+    # Com o relógio do laço, a pausa sai da idade; o teto da idade inteira é que as descarta.
+    process, transport, remote, clock = build(api_clock=True, loop_progress=loop_progress)
     remote.release.set()
     await api_beats(process, clock)
 
@@ -363,3 +383,203 @@ async def test_a_key_stuck_opening_the_session_is_cut_and_does_not_block_the_nex
     await finish_keys(process)
     assert remote.sent == []
     assert remote.texts == ["oi"]
+
+
+# ---- parada do laço do próprio agente: não descarta a tecla (até o teto da idade inteira) ------
+
+
+def running(process: ProcessMessage, clock: AdvancingClock, seconds: float) -> None:
+    """O laço andando por `seconds`: o relógio avança com um carimbo a cada 0,1 s."""
+    progress = PROGRESS[process]
+    for _ in range(round(seconds / 0.1)):
+        clock.advance(0.1)
+        progress.observe()
+
+
+async def ready_session(
+    process: ProcessMessage, transport: FakeTransport, clock: AdvancingClock, remote: SlowRemote
+) -> None:
+    remote.release.set()
+    await process(dump(message("tv.key.v3", {"key": "HOME"}, clock)))
+    await finish_keys(process)
+    remote.sent.clear()
+    transport.sent.clear()
+
+
+async def test_keys_typed_while_the_loop_is_stalled_all_reach_the_tv_in_order(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    process, transport, remote, clock = build(loop_progress=True)
+    await ready_session(process, transport, clock, remote)
+
+    commands = [message("tv.key.v3", {"key": key}, clock) for key in ("RIGHT", "RIGHT", "OK")]
+    with caplog.at_level(logging.INFO):
+        for command in commands:
+            await process(dump(command))
+        # O laço fica preso 3 s (chamada síncrona) antes de as tarefas das teclas rodarem.
+        clock.advance(3.0)
+        await finish_keys(process)
+
+    assert remote.sent == [("RIGHT", "SHORT"), ("RIGHT", "SHORT"), ("OK", "SHORT")]
+    assert results(transport) == ["ok"] * 3
+    assert "teclas mantidas apesar da parada do agente: total=1" in caplog.text
+
+
+async def test_without_the_loop_clock_a_stall_still_drops_the_keys_as_before() -> None:
+    process, transport, remote, clock = build()
+    await ready_session(process, transport, clock, remote)
+
+    await process(dump(message("tv.key.v3", {"key": "RIGHT"}, clock)))
+    clock.advance(3.0)
+    await finish_keys(process)
+
+    assert remote.sent == []
+    assert results(transport) == ["agent_timeout"]
+
+
+async def test_waiting_for_the_session_with_the_loop_running_still_expires() -> None:
+    process, transport, remote, clock = build(loop_progress=True)
+    await process(dump(message("tv.key.v3", {"key": "RIGHT"}, clock)))
+    await asyncio.wait_for(remote.opening.wait(), timeout=1)
+    running(process, clock, 1.6)
+    remote.release.set()
+    await finish_keys(process)
+
+    assert remote.sent == []
+    assert results(transport) == ["agent_timeout"]
+
+
+async def test_a_stall_on_top_of_the_session_wait_counts_only_the_slack() -> None:
+    # 1,0 s de sessão abrindo (laço andando) e 2 s de parada: contam 1,0 s e a folga.
+    process, transport, remote, clock = build(loop_progress=True)
+    await process(dump(message("tv.key.v3", {"key": "RIGHT"}, clock)))
+    await asyncio.wait_for(remote.opening.wait(), timeout=1)
+    running(process, clock, 1.0)
+    clock.advance(2.0)
+    remote.release.set()
+    await finish_keys(process)
+
+    assert remote.sent == [("RIGHT", "SHORT")]
+    assert results(transport) == ["ok"]
+
+
+async def test_a_stall_does_not_hide_a_session_wait_past_the_limit() -> None:
+    process, transport, remote, clock = build(loop_progress=True)
+    await process(dump(message("tv.key.v3", {"key": "RIGHT"}, clock)))
+    await asyncio.wait_for(remote.opening.wait(), timeout=1)
+    running(process, clock, 1.5)
+    clock.advance(1.0)
+    remote.release.set()
+    await finish_keys(process)
+
+    assert remote.sent == []
+    assert results(transport) == ["agent_timeout"]
+
+
+@pytest.mark.parametrize("stall", [KEY_STALLED_MAX_AGE_SECONDS + 0.1, 250.0])
+async def test_a_stall_past_the_ceiling_never_presses_an_old_key(stall: float) -> None:
+    process, transport, remote, clock = build(loop_progress=True)
+    await ready_session(process, transport, clock, remote)
+
+    await process(dump(message("tv.key.v3", {"key": "RIGHT"}, clock)))
+    clock.advance(stall)
+    await finish_keys(process)
+
+    assert remote.sent == []
+    assert results(transport) == ["agent_timeout"]
+
+
+async def test_a_cloud_key_held_in_the_socket_by_a_stall_still_reaches_the_tv() -> None:
+    process, transport, remote, clock = build(api_clock=True, loop_progress=True)
+    await ready_session(process, transport, clock, remote)
+    await api_beats(process, clock)
+    PROGRESS[process].observe()
+
+    # O laço para; a API manda a tecla 0,5 s depois e ela espera no socket até o laço voltar.
+    clock.advance(3.0)
+    command = message("tv.key.v3", {"key": "RIGHT"}, clock)
+    command["ts"] = stamp(clock, 2.5)
+    await process(dump(command))
+    await finish_keys(process)
+
+    assert remote.sent == [("RIGHT", "SHORT")]
+    assert results(transport) == ["ok"]
+
+
+async def test_a_cloud_key_late_on_the_way_still_expires_with_the_loop_running() -> None:
+    process, transport, remote, clock = build(api_clock=True, loop_progress=True)
+    await ready_session(process, transport, clock, remote)
+    await api_beats(process, clock)
+    running(process, clock, 3.0)
+
+    command = message("tv.key.v3", {"key": "RIGHT"}, clock)
+    command["ts"] = stamp(clock, 2.0)  # atrasada na rede, com o agente andando o tempo todo
+    await process(dump(command))
+    await finish_keys(process)
+
+    assert remote.sent == []
+    assert results(transport) == ["expired"]
+
+
+async def test_direct_and_cloud_keys_keep_arrival_order_across_a_stall() -> None:
+    process, transport, remote, clock = build(loop_progress=True)
+    await ready_session(process, transport, clock, remote)
+    direct: list[str] = []
+
+    await process(dump(message("tv.key.v3", {"key": "RIGHT"}, clock)))
+    process.submit_direct_tv(
+        Command("d1", "tv.key.v3", {"key": "DOWN"}),
+        clock.monotonic(),
+        lambda result: direct.append(result.status.value),
+    )
+    await process(dump(message("tv.key.v3", {"key": "OK"}, clock)))
+    clock.advance(3.0)
+    await finish_keys(process)
+
+    assert remote.sent == [("RIGHT", "SHORT"), ("DOWN", "SHORT"), ("OK", "SHORT")]
+    assert direct == ["ok"]
+    assert results(transport) == ["ok", "ok"]
+
+
+async def test_a_direct_key_received_during_the_stall_still_reaches_the_tv() -> None:
+    # Pelo canal direto a chegada é carimbada na thread do canal, com o laço principal preso.
+    process, transport, remote, clock = build(loop_progress=True)
+    await ready_session(process, transport, clock, remote)
+    direct: list[str] = []
+
+    clock.advance(1.0)
+    received_at = clock.monotonic()
+    clock.advance(2.0)
+    process.submit_direct_tv(
+        Command("d1", "tv.key.v3", {"key": "DOWN"}),
+        received_at,
+        lambda result: direct.append(result.status.value),
+    )
+    await finish_keys(process)
+
+    assert remote.sent == [("DOWN", "SHORT")]
+    assert direct == ["ok"]
+
+
+def test_a_stall_counts_less_than_the_coalescing_wait() -> None:
+    assert SLACK_SECONDS < KEY_COALESCE_AFTER_SECONDS
+
+
+def test_the_loop_clock_discounts_only_the_stalls() -> None:
+    clock = FakeClock()
+    progress = LoopProgress(monotonic=clock.monotonic)
+    start = clock.monotonic()
+    assert progress.elapsed_since(start) == 0.0  # sem carimbo: nada a descontar
+    progress.observe()
+    for _ in range(10):
+        clock.advance(0.1)
+        progress.observe()
+    assert progress.elapsed_since(start) == pytest.approx(1.0)
+    clock.advance(5.0)  # parada ainda sem carimbo depois dela: a consulta já a enxerga
+    assert progress.elapsed_since(start) == pytest.approx(1.0 + SLACK_SECONDS)
+    progress.observe()
+    clock.advance(0.1)
+    progress.observe()
+    assert progress.elapsed_since(start) == pytest.approx(1.1 + SLACK_SECONDS)
+    # Antes do primeiro carimbo não há parada conhecida.
+    assert progress.elapsed_since(start - 1.0) == pytest.approx(2.1 + SLACK_SECONDS)
