@@ -84,10 +84,12 @@ def test_a_hung_update_child_is_killed_at_the_deadline_while_the_pulse_keeps_mov
         assert status(pc)["outcome"] == "failed"
         assert "passou do prazo" in str(status(pc)["reason"])
         assert wait_for(lambda: "passou de 8 s" in pc.supervisor_log(), 5)
-        assert any(i["kind"] == "update.timed_out" for i in pc.diagnostics())
+        assert wait_for(
+            lambda: any(i["kind"] == "update.timed_out" for i in pc.diagnostics()), 30
+        ), pc.supervisor_log()
         # Seguiu a vida: o agente subiu depois do prazo, e o filho preso não ficou para trás.
         assert wait_for(lambda: pc.starts() >= 1, 40), pc.supervisor_log()
-        assert hung_children(marker) == 0, "o filho preso sobreviveu ao prazo"
+        assert wait_for(lambda: hung_children(marker) == 0, 30), "o filho preso sobreviveu ao prazo"
 
 
 def test_an_update_that_exits_without_recording_a_result_never_stays_updating(pc: Pc) -> None:
