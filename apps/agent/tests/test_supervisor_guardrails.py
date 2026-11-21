@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from .support import read_text_retrying
+from .support import read_now, read_text_retrying
 
 SYSTEM32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
 POWERSHELL = SYSTEM32 / "WindowsPowerShell" / "v1.0" / "powershell.exe"
@@ -184,7 +184,7 @@ def test_a_live_but_mute_agent_is_killed_and_restarted_and_the_reason_is_left_be
         assert (item["severity"], item["component"]) == ("error", "supervisor")
         assert item["detail"].isascii()
         # O motivo fica para o agente novo ler ao subir: uma parada de propósito não é "queda".
-        assert (pc.runtime / "stop-reason.txt").read_text(encoding="ascii") == "unresponsive"
+        assert wait_for(lambda: read_now(pc.runtime / "stop-reason.txt") == "unresponsive", 10)
         assert "mudo" in pc.supervisor_log()
 
 

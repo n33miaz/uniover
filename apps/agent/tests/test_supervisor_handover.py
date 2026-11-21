@@ -16,6 +16,7 @@ import pytest
 
 from uniover_agent.adapters.update_lock import update_lock
 
+from .support import read_now, read_text_retrying
 from .test_supervisor_guardrails import CURRENT, POWERSHELL, Pc, heartbeat, wait_for
 from .test_update_lock import held_by_another_process
 
@@ -133,9 +134,18 @@ class HandoverPc(Pc):
 
     def pointer(self) -> dict[str, dict[str, str | None]]:
         loaded: dict[str, dict[str, str | None]] = json.loads(
-            (self.runtime / "current.json").read_text(encoding="utf-8")
+            read_text_retrying(self.runtime / "current.json", encoding="utf-8")
         )
         return loaded
+
+    def pointer_app(self) -> str | None:
+        """A pasta da versão em uso segundo o ponteiro, ou `None` se ele não está legível agora
+        (para esperar com `wait_for` sem que um instante de troca derrube o teste)."""
+        try:
+            app = json.loads(read_now(self.runtime / "current.json"))["current"]["app"]
+        except ValueError, KeyError, TypeError:
+            return None
+        return app if isinstance(app, str) else None
 
     def environment(self, *, handover: bool = True) -> dict[str, str]:
         """O ambiente do supervisor. A passagem (`update_handover`) vem LIGADA aqui: o padrão da
@@ -152,8 +162,10 @@ class HandoverPc(Pc):
         return len(text.splitlines())
 
     def trial(self) -> str | None:
-        path = self.runtime / "update-trial.txt"
-        return path.read_text(encoding="ascii") if path.exists() else None
+        try:
+            return read_text_retrying(self.runtime / "update-trial.txt", encoding="ascii")
+        except FileNotFoundError:
+            return None
 
     def write_trial_for_current(self) -> None:
         """A versão de sempre (`app`) está em prova, com a anterior guardada para onde voltar."""
@@ -173,8 +185,10 @@ class HandoverPc(Pc):
         return loaded if isinstance(loaded, dict) else {}
 
     def text(self, name: str) -> str:
-        path = self.runtime / name
-        return path.read_text(encoding="utf-8").strip() if path.exists() else ""
+        try:
+            return read_text_retrying(self.runtime / name, encoding="utf-8").strip()
+        except FileNotFoundError:
+            return ""
 
 
 @pytest.fixture
@@ -272,7 +286,7 @@ def test_an_old_one_that_exits_normally_still_requires_the_new_ready_mark(
         assert wait_for(lambda: "nao assumiu" in pc.supervisor_log(), 60), pc.supervisor_log()
         assert not (pc.runtime / "current.json").exists()
         assert pc.trial() is None
-        assert NEW in (pc.runtime / ".deferred-versions").read_text(encoding="ascii")
+        assert wait_for(lambda: NEW in read_now(pc.runtime / ".deferred-versions"), 10)
         assert wait_for(
             lambda: any(item["kind"] == "update.handover_failed" for item in pc.diagnostics()), 30
         ), pc.supervisor_log()
@@ -343,8 +357,7 @@ def test_a_new_version_that_crashes_on_start_is_blocked_and_the_old_one_never_st
         assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
         trigger_update(pc)
         blocked = pc.runtime / ".blocked-versions"
-        assert wait_for(blocked.exists, 60), pc.supervisor_log()
-        assert NEW in blocked.read_text(encoding="ascii")
+        assert wait_for(lambda: NEW in read_now(blocked), 60), pc.supervisor_log()
         assert not pc.old_stop.exists()
         assert not (pc.runtime / "current.json").exists()
         assert pc.trial() is None
@@ -380,8 +393,7 @@ def test_a_new_version_that_never_connects_is_stopped_and_deferred_not_blocked(
         # Sem queda: a antiga segue e o ponteiro não mudou. Não conectar no prazo é rede ou API
         # lentas (do PC, não da versão): adiada, nunca bloqueada.
         deferred = pc.runtime / ".deferred-versions"
-        assert wait_for(deferred.exists, 10)
-        assert NEW in deferred.read_text(encoding="ascii")
+        assert wait_for(lambda: NEW in read_now(deferred), 10)
         assert not pc.old_stop.exists()
         assert not (pc.runtime / "current.json").exists()
         assert not (pc.runtime / ".blocked-versions").exists()
@@ -575,8 +587,7 @@ def test_a_new_one_that_connected_but_never_takes_over_is_stopped_and_deferred(
         trigger_update(pc)
         assert wait_for(lambda: "nao assumiu" in pc.supervisor_log(), 60), pc.supervisor_log()
         deferred = pc.runtime / ".deferred-versions"
-        assert wait_for(deferred.exists, 10)
-        assert NEW in deferred.read_text(encoding="ascii")
+        assert wait_for(lambda: NEW in read_now(deferred), 10)
         assert not (pc.runtime / ".blocked-versions").exists()
         assert not (pc.runtime / "current.json").exists()
         assert pc.trial() is None
@@ -600,8 +611,7 @@ def test_a_new_one_that_exits_after_connecting_gets_the_old_one_stopped_and_the_
             lambda: "o agente reinicia pela versao em uso" in pc.supervisor_log(), 60
         ), pc.supervisor_log()
         deferred = pc.runtime / ".deferred-versions"
-        assert wait_for(deferred.exists, 10)
-        assert NEW in deferred.read_text(encoding="ascii")
+        assert wait_for(lambda: NEW in read_now(deferred), 10)
         assert not (pc.runtime / ".blocked-versions").exists()
         assert wait_for(lambda: pc.starts() >= 2, 30), pc.supervisor_log()
         assert not (pc.runtime / "current.json").exists()
@@ -617,8 +627,7 @@ def test_a_new_version_that_found_the_old_one_still_holding_the_lock_is_deferred
         assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
         trigger_update(pc)
         deferred = pc.runtime / ".deferred-versions"
-        assert wait_for(deferred.exists, 60), pc.supervisor_log()
-        assert NEW in deferred.read_text(encoding="ascii")
+        assert wait_for(lambda: NEW in read_now(deferred), 60), pc.supervisor_log()
         assert not (pc.runtime / ".blocked-versions").exists()
         assert pc.trial() is None
         assert pc.starts() == 1
@@ -651,8 +660,7 @@ def test_an_api_that_cannot_hand_over_sends_the_update_down_the_reserve_path(
         assert wait_for(lambda: "versao nova instalada" in pc.supervisor_log(), 30), (
             pc.supervisor_log()
         )
-        assert wait_for((pc.runtime / "stop-reason.txt").exists, 10)
-        assert (pc.runtime / "stop-reason.txt").read_text(encoding="ascii") == "update"
+        assert wait_for(lambda: read_now(pc.runtime / "stop-reason.txt") == "update", 10)
         assert pc.handover_starts() == 1
         assert wait_for((pc.runtime / "update-window.json").exists, 10)
         window = json.loads(pc.text("update-window.json"))
@@ -694,8 +702,7 @@ def test_with_the_handover_off_the_supervisor_never_starts_a_handover_process(
         )
         assert pc.handover_starts() == 0
         assert "passagem sem queda" not in pc.supervisor_log()
-        assert wait_for((pc.runtime / "stop-reason.txt").exists, 10)
-        assert (pc.runtime / "stop-reason.txt").read_text(encoding="ascii") == "update"
+        assert wait_for(lambda: read_now(pc.runtime / "stop-reason.txt") == "update", 10)
 
 
 def test_the_handover_can_be_turned_on_in_the_config_file(pc: HandoverPc) -> None:
@@ -800,9 +807,8 @@ def test_a_version_that_keeps_falling_in_proof_goes_back_by_rewriting_the_pointe
     (pc.bin / "uv.cmd").write_text(lines, encoding="ascii")
     with pc.running(**pc.environment()):
         blocked = pc.runtime / ".blocked-versions"
-        assert wait_for(blocked.exists, 300), pc.supervisor_log()
-        assert NEW in blocked.read_text(encoding="ascii")
-        assert wait_for(lambda: pc.pointer()["current"]["app"] == "app", 20)
+        assert wait_for(lambda: NEW in read_now(blocked), 300), pc.supervisor_log()
+        assert wait_for(lambda: pc.pointer_app() == "app", 20)
         assert wait_for(lambda: pc.trial() is None, 30), pc.supervisor_log()
         assert (pc.base / "app.staging" / NEW).is_dir()
         # O ponteiro é regravado antes do estado e do registro: espera os dois.
@@ -830,12 +836,10 @@ def test_the_owner_asking_to_go_back_rewrites_the_pointer_and_restarts(pc: Hando
     with heartbeat(pc.alive), pc.running(**pc.environment()):
         assert wait_for(lambda: pc.starts() >= 1, 60), pc.supervisor_log()
         (pc.runtime / "rollback-now").write_text("", encoding="ascii")
-        assert wait_for(lambda: pc.pointer()["current"]["app"] == "app", 60), pc.supervisor_log()
+        assert wait_for(lambda: pc.pointer_app() == "app", 60), pc.supervisor_log()
         blocked = pc.runtime / ".blocked-versions"
-        assert wait_for(blocked.exists, 10)
-        assert NEW in blocked.read_text(encoding="ascii")
-        assert wait_for((pc.runtime / "stop-reason.txt").exists, 10)
-        assert (pc.runtime / "stop-reason.txt").read_text(encoding="ascii") == "rollback"
+        assert wait_for(lambda: NEW in read_now(blocked), 10)
+        assert wait_for(lambda: read_now(pc.runtime / "stop-reason.txt") == "rollback", 10)
 
 
 # ---- agente que sai por disputa de identidade (codigo 7) ----

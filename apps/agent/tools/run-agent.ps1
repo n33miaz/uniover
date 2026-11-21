@@ -121,6 +121,29 @@ function Test-UvVersion([string]$Uv) {
     } catch { }
 }
 
+function Move-FileOver([string]$From, [string]$To) {
+    # Poe o temporario $From no lugar de $To sem que $To falte nem por um instante. O `Move-Item -Force` do PowerShell 5.1
+    # apaga o destino e so depois renomeia: quem lia no meio (o agente, o lancador, o proprio laco) nao achava o arquivo e
+    # caia no layout de sempre, e com o destino aberto por um leitor a renomeacao falhava e o arquivo sumia de vez. O
+    # `File.Replace` tambem deixa o nome vago por um instante. `MoveFileEx` com REPLACE_EXISTING troca numa operacao so (o
+    # mesmo que o `os.replace` do agente); cria o arquivo se ainda nao existe. Um leitor com o destino aberto faz a troca
+    # falhar sem estragar nada: tenta de novo por ate 2 s e, se nao der, apaga o temporario e levanta o erro.
+    if (-not ('UniOver.NativeFile' -as [type])) {
+        Add-Type -Namespace UniOver -Name NativeFile -MemberDefinition '[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern bool MoveFileEx(string from, string to, int flags);'
+    }
+    $fromFull = [System.IO.Path]::GetFullPath($From)
+    $toFull = [System.IO.Path]::GetFullPath($To)
+    for ($try = 1; ; $try++) {
+        if ([UniOver.NativeFile]::MoveFileEx($fromFull, $toFull, 1)) { return }
+        $code = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        if ($try -ge 10) {
+            Remove-Item -LiteralPath $From -Force -ErrorAction SilentlyContinue
+            throw (New-Object System.ComponentModel.Win32Exception($code))
+        }
+        Start-Sleep -Milliseconds 200
+    }
+}
+
 function Get-Version {
     try { return [System.IO.File]::ReadAllText((Join-Path $source '.version')).Trim() }
     catch { return $null }
@@ -443,7 +466,7 @@ function Update-AnchorLauncher {
         $current = [System.IO.File]::ReadAllBytes($installed)
         if ([Convert]::ToBase64String($wanted) -eq [Convert]::ToBase64String($current)) { return }
         [System.IO.File]::WriteAllBytes($temp, $wanted)
-        Move-Item -LiteralPath $temp -Destination $installed -Force
+        Move-FileOver $temp $installed
         Write-SupLog 'INFO' 'o lancador da pasta fixa foi atualizado para o do app'
     } catch { Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue }
 }
@@ -1047,7 +1070,7 @@ function Set-UpdateState([hashtable]$Changes) {
         }
         $temp = $path + '.tmp'
         [System.IO.File]::WriteAllText($temp, $serializer.Serialize($state), (New-Object System.Text.UTF8Encoding($false)))
-        Move-Item -LiteralPath $temp -Destination $path -Force
+        Move-FileOver $temp $path
     } catch { }
 }
 
@@ -1234,7 +1257,7 @@ function Update-Layout {
 }
 
 function Write-Pointer($Current, $Previous) {
-    # Grava `runtime\current.json` de uma vez (temporario + Move-Item). Nao levanta erro: devolve se gravou.
+    # Grava `runtime\current.json` de uma vez (temporario + troca, sem o arquivo faltar). Nao levanta erro: devolve se gravou.
     try {
         $body = @{ v = 1; current = @{ sha = $Current.sha; app = (Get-RelativeToBase $Current.app); venv = (Get-RelativeToBase $Current.venv) } }
         if ($null -ne $Previous) { $body['previous'] = @{ sha = $Previous.sha; app = (Get-RelativeToBase $Previous.app); venv = (Get-RelativeToBase $Previous.venv) } }
@@ -1243,7 +1266,7 @@ function Write-Pointer($Current, $Previous) {
         $path = Join-Path $runtime 'current.json'
         $temp = $path + '.tmp'
         [System.IO.File]::WriteAllText($temp, $serializer.Serialize($body), (New-Object System.Text.UTF8Encoding($false)))
-        Move-Item -LiteralPath $temp -Destination $path -Force
+        Move-FileOver $temp $path
         return $true
     } catch { return $false }
 }
@@ -1314,7 +1337,7 @@ function Set-UpdateWindow([string]$Mode, [string]$Sha, [string]$Token = '', $New
         $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
         $path = Join-Path $runtime 'update-window.json'
         [System.IO.File]::WriteAllText(($path + '.tmp'), $serializer.Serialize($window), (New-Object System.Text.UTF8Encoding($false)))
-        Move-Item -LiteralPath ($path + '.tmp') -Destination $path -Force
+        Move-FileOver ($path + '.tmp') $path
     } catch { }
 }
 
@@ -1368,17 +1391,13 @@ function Request-OldExit([string]$Token) {
     # Pede a execucao em uso que saia de forma ordenada (como no 4410). O arquivo leva o codigo da passagem: a versao nova, que
     # tem o mesmo codigo, o ignora. Quem nao conhece o pedido (uma versao antiga) nao o le, e o supervisor derruba depois do prazo.
     # Formato `handover-exit:<codigo>` (o agente recusa vazio, parcial ou de outro formato) e gravacao atomica: temporario e renomeacao.
-    # O destino pode estar aberto por um instante (antivirus, a leitura do agente): tenta de novo por ate 2 s e registra se nao der.
+    # O destino pode estar aberto por um instante (antivirus, a leitura do agente): a troca tenta de novo por ate 2 s e registra se nao der.
     $path = Join-Path $runtime 'handover-exit'
-    for ($try = 1; $try -le 10; $try++) {
-        try {
-            [System.IO.File]::WriteAllText(($path + '.tmp'), ('handover-exit:' + $Token), [System.Text.Encoding]::ASCII)
-            Move-Item -LiteralPath ($path + '.tmp') -Destination $path -Force -ErrorAction Stop
-            return
-        } catch {
-            Start-Sleep -Milliseconds 200
-        }
-    }
+    try {
+        [System.IO.File]::WriteAllText(($path + '.tmp'), ('handover-exit:' + $Token), [System.Text.Encoding]::ASCII)
+        Move-FileOver ($path + '.tmp') $path
+        return
+    } catch { }
     Remove-Item -LiteralPath ($path + '.tmp') -Force -ErrorAction SilentlyContinue
     Write-SupLog 'WARNING' 'nao consegui gravar o pedido de saida da versao em uso; ela sera derrubada no prazo'
 }
