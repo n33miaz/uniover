@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.76.0](https://github.com/n33miaz/uniover/compare/v0.75.1...v0.76.0) (2026-11-21)
+
+
+### Identity 0.46.5
+
+#### Bug Fixes
+
+* **identity:** prove and extend capacity lock
+
+
+### Devices 0.68.0
+
+#### Features
+
+* **pc:** audit when windows refuses power
+
+#### Bug Fixes
+
+* **agent:** report a countdown lost on restart
+* **pc:** one power countdown per agent process
+
+
+### Web 0.73.0
+
+#### Features
+
+* **pc:** audit when windows refuses power
+
+#### Bug Fixes
+
+* **agent:** report a countdown lost on restart
+* **pc:** one power countdown per agent process
+
+
+### Agent 0.63.0
+
+#### Features
+
+* **agent:** show the power countdown on the pc
+* **pc:** audit when windows refuses power
+
+#### Bug Fixes
+
+* **agent:** report a countdown lost on restart
+* **pc:** one power countdown per agent process
+
 ## [0.75.1](https://github.com/n33miaz/uniover/compare/v0.75.0...v0.75.1) (2026-11-21)
 
 
