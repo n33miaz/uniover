@@ -58,7 +58,9 @@ real em vez do palpite, e a troca de campo vem por esse aviso, não pela pausa d
 `observe_field`). Sem esse aviso, o comportamento é exatamente o descrito acima.
 
 Se uma edição falha depois de enviar `DEL`, o agente preserva a base anterior. Um eco com o valor
-esperado confirma a edição. Sem esse eco, a próxima edição esvazia o campo e redigita o texto.
+esperado confirma a edição. Sem esse eco, a próxima edição esvazia o campo e redigita o texto. A
+dúvida é do campo em que nasceu: outro campo informado pela TV (mesmo depois de uma reconexão), ou,
+sem esse aviso, um texto sem relação depois da pausa de `field_idle_seconds`, a descarta.
 
 Cada comando deixa **uma** linha de resumo no log (tamanhos, canal e duração de cada fase), sem o
 texto: o que se digita pode ser uma senha.
@@ -234,6 +236,13 @@ class TextReconciler:
         self._uncertain: tuple[str, int] | None = None
         # Quantos `DEL` ainda faltam para esvaziar o campo duvidoso (só enquanto refaz).
         self._erase_left: int | None = None
+        # Contador do campo em que a dúvida nasceu (`None`: a TV não informou o campo). Outro campo
+        # descarta a dúvida: o refazer nunca apaga o texto de um campo que o agente não editou.
+        self._doubt_counter: int | None = None
+        # Contador do campo da edição em curso (o de antes de uma queda zerar `_field_counter`).
+        self._edit_counter: int | None = None
+        # Durante o refazer o conteúdo antigo do campo é desconhecido: nenhum eco prova as teclas.
+        self._resyncing = False
         # Último eco do campo (mesmo contador) que chegou com uma edição nossa em andamento.
         self._echo: TextFieldStatus | None = None
         self._sleep = sleep
@@ -320,6 +329,16 @@ class TextReconciler:
         if previous == field.counter:
             return
         if previous is None and self._last_at is not None:
+            if (
+                self._uncertain is not None
+                and self._doubt_counter is not None
+                and field.counter != self._doubt_counter
+            ):
+                # Depois de uma reconexão chegou outro campo: a dúvida era do anterior.
+                self._last = unicodedata.normalize("NFC", field.value)
+                self._last_at = self._monotonic()
+                self._clear_doubt()
+                return
             self._resolve_doubt(field)
             return
         self._last = unicodedata.normalize("NFC", field.value)
@@ -376,7 +395,13 @@ class TextReconciler:
     async def _reconcile(self, target: str, trace: _Trace) -> None:
         self._socket_keys = 0
         now = self._monotonic()
+        self._edit_counter = (
+            self._field_counter if self._field_counter is not None else self._doubt_counter
+        )
         uncertain = self._uncertain
+        if uncertain is not None and self._doubt_outlived(now, target, uncertain[0]):
+            self._clear_doubt()
+            uncertain = None
         if uncertain is not None and not self._resolve_doubt(self._echo):
             await self._resync(target, uncertain[1], trace)
             return
@@ -404,12 +429,25 @@ class TextReconciler:
 
     def _set_doubt(self, expected: str, erase_count: int) -> None:
         self._uncertain = (expected, erase_count)
+        self._doubt_counter = self._edit_counter
         self._erase_left = None
-        self._resolve_doubt(self._echo)
+        if not self._resyncing:
+            self._resolve_doubt(self._echo)
 
     def _clear_doubt(self) -> None:
         self._uncertain = None
+        self._doubt_counter = None
         self._erase_left = None
+
+    def _doubt_outlived(self, now: float, target: str, expected: str) -> bool:
+        """Sem o campo informado pela TV, a dúvida vale só para o mesmo campo, como a base.
+
+        Passada a pausa de `field_idle_seconds`, um texto que não continua nem encurta o esperado
+        (nem a base anterior) é de outro campo: nada se apaga lá (ver `_field_changed`).
+        """
+        if not self._field_changed(now, target):
+            return False
+        return not (target.startswith(expected) or expected.startswith(target))
 
     def _resolve_doubt(self, field: TextFieldStatus | None) -> bool:
         """Só o eco com o valor esperado prova a edição e vira o `last_text`.
@@ -440,6 +478,7 @@ class TextReconciler:
         """
         if self._erase_left is None:
             self._erase_left = erase_count
+        self._echo = None  # um eco de antes do refazer não prova nada do que vem agora
         trace.previous, trace.delete, trace.insert = len(self._last), self._erase_left, len(target)
         started = self._monotonic()
         await self._effect().wake()
@@ -462,6 +501,9 @@ class TextReconciler:
         self._last_at = self._monotonic()
         if target:
             started = self._monotonic()
+            # Ecos dos `DEL` (ou atrasados) podem igualar o prefixo redigitado sem provar nada.
+            self._echo = None
+            self._resyncing = True
             try:
                 await self._type(target, trace)
             except TvSessionError, asyncio.CancelledError:
@@ -469,6 +511,8 @@ class TextReconciler:
                 self._doubt_deletes("", erase_count)
                 raise
             finally:
+                self._resyncing = False
+                self._echo = None  # um eco do refazer não resolve a dúvida dele
                 trace.typing = self._monotonic() - started
         self._last_at = self._monotonic()
 
@@ -639,7 +683,7 @@ class TextReconciler:
         Nada saiu: provado. Se só `DEL` saíram, `_apply` registra a dúvida sobre as exclusões."""
         if self._socket_keys == 0:
             return True
-        echo = self._echo
+        echo = None if self._resyncing else self._echo
         if echo is not None and unicodedata.normalize("NFC", echo.value) == self._last:
             return True
         if prefix:
