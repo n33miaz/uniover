@@ -298,7 +298,10 @@ def build_driver_setup(  # noqa: PLR0913 - idem `build_tv`
     # A parada do laço do próprio agente não envelhece a tecla (até o teto da idade inteira).
     loop_progress = LoopProgress()
     keys = tv_key_handler(
-        manager, timings=timings, loop_elapsed=key_elapsed(loop_progress, arrival_progress)
+        manager,
+        timings=timings,
+        loop_elapsed=key_elapsed(loop_progress, arrival_progress),
+        direct_elapsed=loop_progress.elapsed_since,
     )
     text = TextReconciler(
         manager,
@@ -519,7 +522,10 @@ def build_samsung_tv(  # noqa: PLR0913 - idem `build_tv`
     # A parada do laço do próprio agente não envelhece a tecla (até o teto da idade inteira).
     loop_progress = LoopProgress()
     keys = tv_key_handler(
-        manager, timings=timings, loop_elapsed=key_elapsed(loop_progress, arrival_progress)
+        manager,
+        timings=timings,
+        loop_elapsed=key_elapsed(loop_progress, arrival_progress),
+        direct_elapsed=loop_progress.elapsed_since,
     )
     apps = SamsungTvApps(manager, remote, transport, envelopes)
     announcer = AppsAnnouncer(

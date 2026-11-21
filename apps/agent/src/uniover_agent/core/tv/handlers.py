@@ -43,6 +43,8 @@ KEY_COALESCE_AFTER_SECONDS: Final = 0.3
 AGENT_TIMEOUT: Final = "agent_timeout"
 # O canal direto que mandou a tecla fechou antes de ela chegar à TV.
 CHANNEL_CLOSED: Final = "channel_closed"
+# O caminho de quem chegou pelo canal direto (`TimedKeyCommand.path`).
+PATH_DIRECT: Final = "canal direto"
 # A tecla passou da validade contada desde o envio: o mesmo código dos comandos velhos do PC.
 EXPIRED: Final = "expired"
 
@@ -121,20 +123,34 @@ class _KeyAges:
     `KEY_STALLED_MAX_AGE_SECONDS` da idade inteira.
     """
 
-    def __init__(self, monotonic: Callable[[], float], loop_elapsed: LoopElapsed | None) -> None:
+    def __init__(
+        self,
+        monotonic: Callable[[], float],
+        loop_elapsed: LoopElapsed | None,
+        direct_elapsed: LoopElapsed | None = None,
+    ) -> None:
         self._monotonic = monotonic
         self._loop_elapsed = loop_elapsed
+        # A tecla do canal direto não passa pelo laço que a recebe da nuvem: só o relógio do laço
+        # da TV conta (`direct_elapsed`; sem ele, o mesmo das outras).
+        self._direct_elapsed = direct_elapsed or loop_elapsed
         self._discarded = 0
         self._kept_after_stall = 0
         # A sessão confere a mesma tecla mais de uma vez: ela só entra uma vez na conta.
         self._last_kept: object | None = None
 
-    def _effective(self, start: float, sent_age: float | None) -> tuple[float, float]:
+    def _clock(self, command: object) -> LoopElapsed | None:
+        if isinstance(command, TimedKeyCommand) and command.path == PATH_DIRECT:
+            return self._direct_elapsed
+        return self._loop_elapsed
+
+    def _effective(
+        self, elapsed: LoopElapsed | None, start: float, sent_age: float | None
+    ) -> tuple[float, float]:
         """A espera aqui dentro e a idade que conta, as duas sem as paradas do laço do agente.
 
         Pela nuvem, a idade desde o envio foi lida na chegada e já leva a parada que houve antes da
         leitura: ela também sai, pelo trecho do relógio que cobre a idade."""
-        elapsed = self._loop_elapsed
         if elapsed is None:
             waited = self._monotonic() - start
             return waited, waited if sent_age is None else sent_age + waited
@@ -149,7 +165,8 @@ class _KeyAges:
         A junção usa a espera sem parada nenhuma (nem a folga): toques repetidos durante a parada
         foram intencionais, e só a espera com o laço andando (a sessão abrindo) os junta."""
         raw_age = (sent_age or 0.0) + self._monotonic() - start
-        waited, age = self._effective(start, sent_age)
+        elapsed = self._clock(command)
+        waited, age = self._effective(elapsed, start, sent_age)
         if age > KEY_MAX_AGE_SECONDS or raw_age > KEY_STALLED_MAX_AGE_SECONDS:
             self._discarded += 1
             # O total evita uma linha por tecla durante a rajada, sem identificar a TV.
@@ -167,9 +184,9 @@ class _KeyAges:
                 _log.info(
                     "teclas mantidas apesar da parada do agente: total=%d", self._kept_after_stall
                 )
-        if self._loop_elapsed is None:
+        if elapsed is None:
             return waited
-        return self._loop_elapsed(start, strict=True)
+        return elapsed(start, strict=True)
 
 
 def tv_key_handler(  # noqa: PLR0913 - tempos e medidas injetáveis para os testes
@@ -180,6 +197,7 @@ def tv_key_handler(  # noqa: PLR0913 - tempos e medidas injetáveis para os test
     timings: KeyTimings | None = None,
     clock_ns: Callable[[], int] = time.perf_counter_ns,
     loop_elapsed: LoopElapsed | None = None,
+    direct_elapsed: LoopElapsed | None = None,
 ) -> Handler:
     """Trata `tv.key.v1`, `v2` e `v3` (a direção existe nas duas últimas).
 
@@ -196,7 +214,7 @@ def tv_key_handler(  # noqa: PLR0913 - tempos e medidas injetáveis para os test
     """
 
     latest: dict[str, int] = {}
-    ages = _KeyAges(monotonic, loop_elapsed)
+    ages = _KeyAges(monotonic, loop_elapsed, direct_elapsed)
 
     async def send(command: Command, ready: list[int] | None) -> CommandResult:
         key = command.body.get("key")
