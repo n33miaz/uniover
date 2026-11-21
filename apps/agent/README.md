@@ -742,7 +742,7 @@ acréscimo segue esta ordem de preferência:
   `DEL`, sem processo novo. Maiúsculas e `_` precisariam de SHIFT (a biblioteca aceita `SHIFT_LEFT` com
   `START_LONG`/`END_LONG`, mas ninguém mediu se a TV aplica o SHIFT à tecla seguinte, então não se inventa);
   `@` e os demais símbolos dependem do mapa de teclas da TV e entram quando a medição provar;
-- **ADB** (`input text`) para ASCII imprimível sem `%`, quando o canal está pronto: um processo `adb` por trecho. Se uma tecla falhar, só o trecho que ainda falta segue pelo ADB.
+- **ADB** (`input text`) para ASCII imprimível sem `%`, quando o canal está pronto: um processo `adb` por trecho. Se uma tecla falhar, o ADB só completa o trecho que falta quando nada saiu pelo socket ou o eco do campo prova as teclas que saíram (o Remote v2 não confirma a tecla aplicada); senão o comando falha e o próximo texto refaz o campo.
   No Android TV o `input text` sobe uma JVM a cada chamada (de ~300 ms a mais de 1 s);
 - **Remote v2** (`send_text`) para o resto (acentos, emoji, `%`) e quando o ADB não está pronto.
 

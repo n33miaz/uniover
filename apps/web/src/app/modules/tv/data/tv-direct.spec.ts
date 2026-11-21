@@ -189,6 +189,19 @@ describe('TvDirect: the command', () => {
     expect(channel.command).not.toHaveBeenCalled();
   });
 
+  it('carries the keys only when the agent listed them, like the command does', () => {
+    const { direct, channel } = setup();
+    channel.usable = true;
+    expect(direct.carriesKeys()).toBe(true);
+
+    channel.listed = false;
+    expect(direct.carriesKeys()).toBe(false);
+
+    channel.listed = true;
+    channel.usable = false;
+    expect(direct.carriesKeys()).toBe(false);
+  });
+
   it('is done (true) when the agent answers the key', async () => {
     const { direct, channel } = setup();
     channel.usable = true;

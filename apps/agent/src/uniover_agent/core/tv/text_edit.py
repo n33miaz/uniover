@@ -8,8 +8,10 @@ Aqui o agente guarda o que ele mesmo digitou (`last_text`) e a cada mensagem:
 2. apaga o excedente com `DEL` (teclas curtas, uma a uma);
 3. digita só o acréscimo.
 
-A digitação escolhe o canal para o acréscimo inteiro. Se uma tecla falhar, o ADB recebe só o
-restante, com uma pausa para as teclas anteriores chegarem. Do mais rápido para o mais lento:
+A digitação escolhe o canal para o acréscimo inteiro. Se uma tecla falhar, o ADB só recebe o
+restante quando o que já saiu pelo socket está provado (ver `_type_keys`): o Remote v2 não confirma
+a tecla aplicada, e o ADB por cima de uma letra perdida gravaria o texto truncado. Do mais rápido
+para o mais lento:
 
 * **teclas do controle remoto** (opcional, `keys=True`): cada caractere é um pacote no mesmo fluxo
   do `DEL`, sem processo novo. Só vale quando **todos** os caracteres do acréscimo têm tecla sem
@@ -246,6 +248,9 @@ class TextReconciler:
         self._lock = asyncio.Lock()
         # A validade da edicao em curso (so o canal direto a da); lida e escrita sob a trava.
         self._validate: Callable[[], None] | None = None
+        # Teclas (`DEL` e letras) que saíram pelo socket do Remote v2 no comando em curso: nenhuma
+        # tem confirmação de que a TV a aplicou (ver `_type_keys`).
+        self._socket_keys = 0
 
     @property
     def last_text(self) -> str:
@@ -370,6 +375,7 @@ class TextReconciler:
             _log.info("%s", trace.line())
 
     async def _reconcile(self, target: str, trace: _Trace) -> None:
+        self._socket_keys = 0
         now = self._monotonic()
         if self._uncertain is not None and not self._resolve_doubt(self._echo):
             await self._resync(target, trace)
@@ -439,6 +445,7 @@ class TextReconciler:
         try:
             while self._erase_left > 0 and sent < MAX_DELETIONS:
                 await self._effect().send_key(DELETE_KEY)
+                self._socket_keys += 1
                 self._erase_left -= 1
                 sent += 1
         finally:
@@ -486,6 +493,7 @@ class TextReconciler:
         try:
             for _ in range(min(edit.delete, MAX_DELETIONS)):
                 await self._effect().send_key(DELETE_KEY)
+                self._socket_keys += 1
                 self._last = self._last[:-1]
                 self._last_at = self._monotonic()
         finally:
@@ -562,7 +570,17 @@ class TextReconciler:
             await self._sleep(remaining)
 
     async def _type_keys(self, text: str, keys: list[str]) -> str:
-        """Uma tecla por caractere, na ordem; `last_text` anda tecla a tecla, como no `DEL`."""
+        """Uma tecla por caractere, na ordem; `last_text` anda tecla a tecla, como no `DEL`.
+
+        Devolve o que o ADB ainda deve digitar (`""`: tudo foi). Uma tecla que a TV não conhece
+        (`ValueError`) não saiu, e o socket segue vivo e em ordem: o ADB digita o resto depois da
+        pausa. Já o socket que caiu (`TvSessionError`) deixa incerto tudo o que saiu por ele neste
+        comando: o `await` só prova que o pacote entrou no socket. O ADB só completa quando nada
+        saiu por ele, ou quando o eco do campo (mesmo contador) prova o que foi; senão o prefixo
+        digitado vira dúvida (`_doubt`, resolvida por eco ou pelo refazer do próximo texto) e o
+        erro sobe, sem gravar um texto truncado como concluído.
+        """
+        self._echo = None  # só o eco desta digitação prova alguma coisa
         for index, (char, key) in enumerate(zip(text, keys, strict=True)):
             if index and self._key_pause > 0:
                 await self._sleep(self._key_pause)
@@ -576,12 +594,30 @@ class TextReconciler:
                     raise TvSessionError(
                         "text_key_unsupported", "a TV não aceita esta tecla de digitação"
                     ) from None
+                if isinstance(exc, TvSessionError) and not self._proven(text[:index]):
+                    raise
                 if index:
                     self._remote_at = self._monotonic()
                 return text[index:]
+            self._socket_keys += 1
             self._typed(char)
         self._mark_key_run(len(keys))
         return ""
+
+    def _proven(self, prefix: str) -> bool:
+        """O que saiu pelo socket neste comando chegou ao campo? Sem prova, `prefix` vira dúvida.
+
+        Nada saiu: provado. Só `DEL` saíram (`prefix` vazio): não há grupo a duvidar, e o erro sobe
+        com a base de sempre (o mesmo de quando não há ADB)."""
+        if self._socket_keys == 0:
+            return True
+        echo = self._echo
+        if echo is not None and unicodedata.normalize("NFC", echo.value) == self._last:
+            return True
+        if prefix:
+            self._last = self._last[: len(self._last) - len(prefix)]
+            self._doubt(prefix)
+        return False
 
     def _typed(self, text: str) -> None:
         self._last += text

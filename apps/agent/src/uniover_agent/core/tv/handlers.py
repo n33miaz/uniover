@@ -107,6 +107,12 @@ def unsupported_handler(message: str) -> Handler:
     return handle
 
 
+class LoopElapsed(Protocol):
+    """Quanto o laço andou desde um instante, sem as paradas dele (`LoopProgress.elapsed_since`)."""
+
+    def __call__(self, moment: float, *, strict: bool = False) -> float: ...
+
+
 class _KeyAges:
     """A idade das teclas: descarta a velha e conta, no registro, as descartadas e as mantidas.
 
@@ -115,9 +121,7 @@ class _KeyAges:
     `KEY_STALLED_MAX_AGE_SECONDS` da idade inteira.
     """
 
-    def __init__(
-        self, monotonic: Callable[[], float], loop_elapsed: Callable[[float], float] | None
-    ) -> None:
+    def __init__(self, monotonic: Callable[[], float], loop_elapsed: LoopElapsed | None) -> None:
         self._monotonic = monotonic
         self._loop_elapsed = loop_elapsed
         self._discarded = 0
@@ -140,7 +144,10 @@ class _KeyAges:
         return waited, elapsed(start - sent_age)
 
     def check(self, command: object, start: float, sent_age: float | None) -> float:
-        """A espera da tecla (para a junção); velha demais, `TvSessionError`."""
+        """A espera da tecla para a junção; velha demais, `TvSessionError`.
+
+        A junção usa a espera sem parada nenhuma (nem a folga): toques repetidos durante a parada
+        foram intencionais, e só a espera com o laço andando (a sessão abrindo) os junta."""
         raw_age = (sent_age or 0.0) + self._monotonic() - start
         waited, age = self._effective(start, sent_age)
         if age > KEY_MAX_AGE_SECONDS or raw_age > KEY_STALLED_MAX_AGE_SECONDS:
@@ -160,7 +167,9 @@ class _KeyAges:
                 _log.info(
                     "teclas mantidas apesar da parada do agente: total=%d", self._kept_after_stall
                 )
-        return waited
+        if self._loop_elapsed is None:
+            return waited
+        return self._loop_elapsed(start, strict=True)
 
 
 def tv_key_handler(  # noqa: PLR0913 - tempos e medidas injetáveis para os testes
@@ -170,13 +179,12 @@ def tv_key_handler(  # noqa: PLR0913 - tempos e medidas injetáveis para os test
     monotonic: Callable[[], float] = time.monotonic,
     timings: KeyTimings | None = None,
     clock_ns: Callable[[], int] = time.perf_counter_ns,
-    loop_elapsed: Callable[[float], float] | None = None,
+    loop_elapsed: LoopElapsed | None = None,
 ) -> Handler:
     """Trata `tv.key.v1`, `v2` e `v3` (a direção existe nas duas últimas).
 
-    Com `loop_elapsed` (o `LoopProgress.elapsed_since`, no mesmo relógio de `monotonic`), a espera
-    que conta para a idade e para a junção é só a do laço andando: uma parada do próprio agente
-    não descarta a tecla, até o teto `KEY_STALLED_MAX_AGE_SECONDS` da idade inteira.
+    Com `loop_elapsed` (ver `_KeyAges`), uma parada do próprio agente não descarta a tecla nem a
+    junta com a repetição, até o teto `KEY_STALLED_MAX_AGE_SECONDS` da idade inteira.
 
     Com `timings`, cada tecla que passou pela fila (`TimedKeyCommand` com `received_ns`) deixa ali
     quanto levou em cada trecho: fila, sessão e envio (medidos por `clock_ns`), além da idade.
