@@ -1,4 +1,4 @@
-import { Page } from '@playwright/test';
+import { Locator, Page } from '@playwright/test';
 import { expect, expectNoHorizontalScroll, test } from '../fixtures';
 import {
   dropConnection,
@@ -337,13 +337,22 @@ test.describe('tela de entrada: teclado virtual', () => {
     page,
   }) => {
     await openLogin(page);
-    await password(page).focus();
     const width = page.viewportSize()!.width;
-    // Primeiro passo: a moldura rola um pouco para mostrar o campo e o botão.
-    await page.setViewportSize({ width, height: 450 });
-    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
-    // Segundo passo, ainda dentro da rolagem que a moldura pediu.
-    await page.setViewportSize({ width, height: 300 });
+    // Alturas tiradas da própria tela (e não fixas): a fonte e o layout do executor mudam a posição do botão.
+    const bottomOf = async (locator: Locator) => {
+      const box = (await locator.boundingBox())!;
+      return box.y + box.height;
+    };
+    const submitBottom = await bottomOf(submit(page));
+    const fieldBottom = await bottomOf(password(page));
+    await password(page).focus();
+    // Primeiro passo: só o botão fica 20 px atrás da margem de baixo, então a moldura rola pouco (campo e botão juntos).
+    await page.setViewportSize({ width, height: Math.floor(submitBottom) + 24 - 20 });
+    // A rolagem começou: a condição é olhada a cada quadro, para o segundo passo cair dentro dela.
+    await page.waitForFunction(() => window.scrollY > 0, null, { polling: 'raf' });
+    // Segundo passo, no meio da rolagem que a moldura pediu: a pouca rolagem do primeiro passo não basta e o campo
+    // fica cortado até a moldura conferir de novo.
+    await page.setViewportSize({ width, height: Math.floor(fieldBottom) - 60 });
     await expect(password(page)).toBeInViewport({ ratio: 1 });
   });
 });
