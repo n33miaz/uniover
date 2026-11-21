@@ -2422,6 +2422,43 @@ test.describe('Texto e cliques do pc.text.v2 e do pc.click.v2', () => {
       expect(pc.sent('/key')).toEqual([]);
     });
 
+    test('envia a composição antes de concluir e aplica a autocorreção uma vez', async ({ page }) => {
+      await openPc(page);
+      const field = await openKeyboard(page);
+      const padding = await field.inputValue();
+      await field.dispatchEvent('compositionstart');
+      for (const value of ['o', 'ol', 'ola']) {
+        await field.evaluate((element: HTMLTextAreaElement, nextValue) => {
+          element.value = nextValue;
+          element.dispatchEvent(
+            new InputEvent('input', {
+              bubbles: true,
+              inputType: 'insertCompositionText',
+              isComposing: true,
+            }),
+          );
+        }, padding + value);
+        await expect.poll(typedText).toBe(value);
+      }
+      await field.evaluate((element: HTMLTextAreaElement, nextValue) => {
+        element.value = nextValue;
+        element.dispatchEvent(
+          new InputEvent('input', {
+            bubbles: true,
+            inputType: 'insertCompositionText',
+            isComposing: true,
+          }),
+        );
+        element.dispatchEvent(new CompositionEvent('compositionend', { data: 'olá' }));
+      }, padding + 'olá');
+      await expect.poll(edits).toEqual([
+        { text: 'o' },
+        { text: 'l' },
+        { text: 'a' },
+        { erase: 1, text: 'á' },
+      ]);
+    });
+
     test('uma palavra trocada é um pedido só: apagar e digitar juntos', async ({ page }) => {
       await openPc(page);
       const field = await openKeyboard(page);

@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { PcArmed } from '../data/pc-armed';
 import { PcInput } from '../data/pc-input';
 import { PcStore } from '../data/pc-store';
+import { PC_CLIPBOARD_CAPABILITY } from '../data/pc-types';
 import { FakePcStore, createFakePcStore } from '../pc-test-kit';
 import { PcLiveKeyboard, SENTINEL } from './live-keyboard';
 
@@ -321,26 +322,129 @@ describe('PcLiveKeyboard', () => {
     expect(field.value).toBe(SENTINEL);
   });
 
-  it('never refills in the middle of a composition', async () => {
+  it('never refills or sends Backspace for padding lost during composition', async () => {
     field.dispatchEvent(new Event('compositionstart'));
     type('');
     await flush();
     expect(field.value).toBe('');
+    type(SENTINEL);
     field.dispatchEvent(new Event('compositionend'));
+    await flush();
+    expect(store.sendKey).not.toHaveBeenCalled();
   });
 
-  it('sends only the committed composition even if the final input event follows it', async () => {
-    field.dispatchEvent(new Event('compositionstart'));
-    type(SENTINEL + 'ca');
-    type(SENTINEL + 'caf');
-    await flush();
-    expect(store.sendText).not.toHaveBeenCalled();
+  function compose(value: string) {
+    field.value = SENTINEL + value;
+    field.dispatchEvent(
+      new InputEvent('input', {
+        bubbles: true,
+        inputType: 'insertCompositionText',
+        isComposing: true,
+      }),
+    );
+  }
 
-    field.value = SENTINEL + 'café';
-    field.dispatchEvent(new Event('compositionend'));
-    type(SENTINEL + 'café');
+  it('sends each Android input before the composition ends', async () => {
+    field.dispatchEvent(new CompositionEvent('compositionstart'));
+    compose('o');
+    expect(store.sendText.mock.calls).toEqual([['o']]);
     await flush();
-    expect(store.sendText).toHaveBeenCalledExactlyOnceWith('café');
+    compose('ol');
+    expect(store.sendText.mock.calls).toEqual([['o'], ['l']]);
+    await flush();
+    compose('ola');
+    expect(store.sendText.mock.calls).toEqual([['o'], ['l'], ['a']]);
+    field.dispatchEvent(new CompositionEvent('compositionend', { data: 'ola' }));
+    type(SENTINEL + 'ola');
+    await flush();
+    expect(store.sendText.mock.calls).toEqual([['o'], ['l'], ['a']]);
+    expect(store.sendKey).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('reconciles autocorrect once (value changes before end: %s)', async (beforeEnd) => {
+    field.dispatchEvent(new CompositionEvent('compositionstart'));
+    compose('o');
+    await flush();
+    compose('ol');
+    await flush();
+    compose('ola');
+    await flush();
+
+    if (beforeEnd) field.value = SENTINEL + 'olá';
+    field.dispatchEvent(new CompositionEvent('compositionend', { data: 'olá' }));
+    type(SENTINEL + 'olá');
+    await flush();
+    expect(store.sendText.mock.calls).toEqual([['o'], ['l'], ['a'], ['á']]);
+    expect(store.sendKey.mock.calls).toEqual([['BACKSPACE', []]]);
+  });
+
+  it('sends deletion while Android is still composing', async () => {
+    field.dispatchEvent(new CompositionEvent('compositionstart'));
+    compose('o');
+    await flush();
+    compose('ol');
+    await flush();
+    compose('o');
+    expect(store.sendKey.mock.calls).toEqual([['BACKSPACE', []]]);
+    field.dispatchEvent(new CompositionEvent('compositionend', { data: 'o' }));
+    await flush();
+    expect(store.sendText.mock.calls).toEqual([['o'], ['l']]);
+    expect(store.sendKey.mock.calls).toEqual([['BACKSPACE', []]]);
+  });
+
+  it('replaces the visible dead-key accent with Backspace and the accented letter', async () => {
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Dead', bubbles: true }));
+    field.dispatchEvent(new CompositionEvent('compositionstart'));
+    compose('´');
+    expect(store.sendText.mock.calls).toEqual([['´']]);
+    await flush();
+    compose('á');
+    expect(store.sendKey.mock.calls).toEqual([['BACKSPACE', []]]);
+    field.dispatchEvent(new CompositionEvent('compositionend', { data: 'á' }));
+    type(SENTINEL + 'á');
+    await flush();
+    expect(store.sendText.mock.calls).toEqual([['´'], ['á']]);
+    expect(store.sendKey.mock.calls).toEqual([['BACKSPACE', []]]);
+  });
+
+  it('discards deletion and autocorrect after a send fails during composition', async () => {
+    field.dispatchEvent(new CompositionEvent('compositionstart'));
+    compose('te');
+    await flush();
+    store.sendText.mockResolvedValueOnce({ kind: 'timeout', message: 'Tempo.' });
+    compose('tes');
+    await flush();
+    compose('t');
+    compose('teste');
+    field.value = SENTINEL + 'testes';
+    field.dispatchEvent(new CompositionEvent('compositionend', { data: 'testes' }));
+    await flush();
+    expect(store.sendText.mock.calls).toEqual([['te'], ['s']]);
+    expect(store.sendKey).not.toHaveBeenCalled();
+  });
+
+  it('pastes the final long dictation once through the PC clipboard', async () => {
+    store.capabilities.set([PC_CLIPBOARD_CAPABILITY]);
+    const dictated = 'Esta frase ditada pelo teclado tem mais de quarenta caracteres.';
+    field.dispatchEvent(new CompositionEvent('compositionstart'));
+    compose(dictated.slice(0, -1));
+    await flush();
+    expect(store.writeClipboard).not.toHaveBeenCalled();
+    compose(dictated);
+    field.dispatchEvent(new CompositionEvent('compositionend', { data: dictated }));
+    await flush();
+    expect(store.writeClipboard.mock.calls).toEqual([[dictated]]);
+    expect(store.sendKey.mock.calls).toEqual([['V', ['CTRL']]]);
+    expect(store.sendText).not.toHaveBeenCalled();
+  });
+
+  it('sends iPhone insertText events as they arrive without composition', async () => {
+    for (const [index, letter] of Array.from('ola').entries()) {
+      field.value += letter;
+      field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: letter }));
+      expect(store.sendText.mock.calls.map(([text]) => text)).toEqual(Array.from('ola').slice(0, index + 1));
+      await flush();
+    }
   });
 
   it('tells when the keyboard mode turns on and off', () => {
@@ -986,14 +1090,14 @@ describe('PcLiveKeyboard: rotation and composition', () => {
       expect(field.value).toBe(SENTINEL);
     });
 
-    it('the final input of the composition that comes after its end is handled before the restart', async () => {
+    it('discards the final input that arrives after composition ends before a pending restart', async () => {
       composing();
       fixture.componentInstance.press('TAB');
       composed();
       field.value = SENTINEL + 'oi';
       field.dispatchEvent(new Event('input', { bubbles: true }));
       for (let round = 0; round < 8; round++) await Promise.resolve();
-      expect(store.sendText).toHaveBeenCalledWith('oi');
+      expect(store.sendText).not.toHaveBeenCalled();
       vi.advanceTimersByTime(1);
       expect(field.value).toBe(SENTINEL);
     });

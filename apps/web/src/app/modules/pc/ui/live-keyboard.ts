@@ -394,19 +394,21 @@ export class PcLiveKeyboard {
     } else if (!NOTED_FAILURES.has(failure.kind)) this.failed.emit(failure.message);
   }
 
-  protected onInput(event?: Event): void {
+  protected onInput(event?: Event, compositionEnded = false): void {
     const input = event as InputEvent | undefined;
-    if (this.composing || input?.isComposing) return;
+    const composing = this.composing || input?.isComposing || input?.inputType === 'insertCompositionText';
     const field = this.field().nativeElement;
-    const { diff, after } = fieldDiff(this.mirror, field.value);
-    if (diff.erase === 0 && diff.insert === '') {
-      this.mirror = after;
+    const { diff, after } = fieldDiff(this.mirror, field.value, !composing);
+    const nextMirror = composing && !compositionEnded ? { ...after, padding: this.mirror.padding } : after;
+    if (this.resetPending || (diff.erase === 0 && diff.insert === '')) {
+      this.mirror = nextMirror;
       this.lastValue = field.value;
       return;
     }
     const armed = this.armed.armed();
     // Com uma tecla armada, uma letra sozinha é o atalho (Ctrl armado e "c" é Ctrl+C), não texto: sai como tecla e some do campo.
     if (
+      !composing &&
       input?.inputType !== 'insertFromPaste' &&
       input?.inputType !== 'insertReplacementText' &&
       input !== undefined &&
@@ -424,21 +426,22 @@ export class PcLiveKeyboard {
       return;
     }
     // Apagar com uma tecla armada (Ctrl+Backspace) é a tecla da barra: sai como tecla com o modificador, não como texto.
-    if (armed.size > 0 && diff.insert === '' && diff.erase > 0) {
+    if (!composing && armed.size > 0 && diff.insert === '' && diff.erase > 0) {
       this.phoneBackspace(false);
       return;
     }
     // Modificador não vale para texto: qualquer outro texto vai inteiro e as armadas se soltam do mesmo jeito.
     this.armed.clear();
-    // Um texto longo (ou com quebra de linha) que chegou num evento só foi colado: vai pela área de transferência do PC e um
-    // colar, inteiro de uma vez. O campo recomeça (o PC já tem o texto, como depois de um Enter).
+    // Em composição, o ditado pode revisar a frase inteira. Uma diferença longa que cabe na área de transferência
+    // espera o valor final para fazer uma única colagem.
     if (isLongPaste(diff.insert) && this.input.canPaste(lineText(diff.insert))) {
+      if (this.composing && !compositionEnded) return;
       this.input.paste(diff);
       this.recordEcho((echo) => echo.edit(diff));
       this.reset();
       return;
     }
-    this.mirror = after;
+    this.mirror = nextMirror;
     this.lastValue = field.value;
     this.input.edit(diff);
     this.recordEcho((echo) => echo.edit(diff));
@@ -469,7 +472,7 @@ export class PcLiveKeyboard {
     ) {
       event.preventDefault();
       this.press('ENTER');
-    } else if (type === 'deleteContentBackward' && this.caretAtStart() && !this.composing) {
+    } else if (type === 'deleteContentBackward' && !isComposing && !this.composing && this.caretAtStart()) {
       event.preventDefault();
       this.phoneBackspace(false);
     }
@@ -515,10 +518,11 @@ export class PcLiveKeyboard {
   }
 
   protected onCompositionEnd(): void {
+    // O valor final pode trazer uma autocorreção, mesmo sem outro evento de input.
+    this.onInput(undefined, true);
     this.composing = false;
-    this.onInput();
     if (!this.resetPending) return;
-    // O `input` final da composição pode chegar depois deste evento: ele é processado primeiro e só então o campo recomeça.
+    // Um último input pode chegar depois deste evento. Mantenha o recomeço pendente para descartar esse evento também.
     setTimeout(() => {
       if (this.resetPending && !this.composing) this.reset();
     }, 0);

@@ -70,10 +70,11 @@ export function fieldState(value: string): FieldState {
 export function fieldDiff(
   before: FieldState,
   value: string,
+  countPaddingDeletes = true,
 ): { diff: TextDiff; after: FieldState } {
   const after = fieldState(value);
   const diff = diffText(before.typed, after.typed);
-  if (diff.erase === 0 && diff.insert === '' && after.padding < before.padding) {
+  if (countPaddingDeletes && diff.erase === 0 && diff.insert === '' && after.padding < before.padding) {
     return { diff: { erase: before.padding - after.padding, insert: '' }, after };
   }
   return { diff, after };
