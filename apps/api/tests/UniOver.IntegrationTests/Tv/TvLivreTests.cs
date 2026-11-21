@@ -43,20 +43,32 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         return await db.Tvs.Where(tv => tv.AgentSlug == TvApp.AgentSlug).Select(tv => tv.Id).SingleAsync(Ct);
     }
 
+    private const string SleepNoInstallCapability = "tv.livre.sleep-no-install.v1";
+
     /// <summary>Um agente conectado que anuncia (ou não) o TV Livre, já com a presença conhecida pela API.</summary>
-    private static async Task<FakeAgent> ConnectAsync(TvApp app, bool withCapability = true, bool extended = false)
+    private static async Task<FakeAgent> ConnectAsync(
+        TvApp app, bool withCapability = true, bool extended = false, bool sleepNoInstall = false)
     {
         var agent = await app.ConnectAsync();
-        await (withCapability
-            ? extended
-                ? agent.SendHelloAsync("2.0.0", "tv.remote", Capability, ExtendedCapability)
-                : agent.SendHelloAsync("2.0.0", "tv.remote", Capability)
-            : agent.SendHelloAsync("2.0.0", "tv.remote"));
+        List<string> capabilities = ["tv.remote"];
+        if (withCapability)
+        {
+            capabilities.Add(Capability);
+        }
+        if (extended)
+        {
+            capabilities.Add(ExtendedCapability);
+        }
+        if (sleepNoInstall)
+        {
+            capabilities.Add(SleepNoInstallCapability);
+        }
+        await agent.SendHelloAsync("2.0.0", [.. capabilities]);
         // Quem reconecta depois de outro hello não pode confiar em "tv.remote": a presença antiga ainda o tem. Por isso
         // com a capacidade espera por ela, e sem ela só vale a primeira conexão do teste.
         await TvApp.WaitUntilAsync(
             () => app.Presence.Get(TvApp.AgentSlug) is { Connected: true } info
-                && info.Capabilities.Contains(withCapability ? Capability : "tv.remote"),
+                && info.Capabilities.Contains(capabilities[^1]),
             "agente conectado com o hello");
         return agent;
     }
@@ -1334,11 +1346,13 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         ("POST", $"{Base}/sleep", new { minutes = 30 }),
     ];
 
-    [Fact]
-    public async Task Sleep_IsOpenToAGuestWhoCanControlTheTv_AndOnlyToThem()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Sleep_IsOpenToAGuestWhoCanControlTheTv_AndOnlyToThem(bool stillInstalled)
     {
         await using var app = await TvApp.StartAsync(postgres);
-        await using var agent = await ConnectAsync(app, extended: true);
+        await using var agent = await ConnectAsync(app, extended: true, sleepNoInstall: true);
         var controller = await app.NewGuestAsync("Sala", ["module:tv", "tv:control"], 62);
         var viewer = await app.NewGuestAsync("Sala", ["module:tv", "tv:power", "tv:launch"], 63);
 
@@ -1351,18 +1365,24 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         using var read = await app.SendAsync(HttpMethod.Get, $"{Base}/sleep", null, bearer: controller.Login.AccessToken);
         read.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Para quem não é o dono o pedido confere antes que o launcher está na TV; com ele lá, dorme.
+        // Para quem não é o dono o pedido confere antes que o launcher está na TV; com ele lá, dorme. Se ele some entre a
+        // leitura e o dormir, o agente recusa (`skipInstall`) em vez de instalar, e a resposta é a mesma de sem launcher.
         var request = app.SendAsync(HttpMethod.Post, $"{Base}/sleep", new { minutes = 30 }, bearer: controller.Login.AccessToken);
         var check = await NextAsync(agent, "tv.livre.v1");
         ActionOf(check).Should().Be("status");
         await StateThenReplyAsync(agent, check, StateBody(check, installed: true));
         var command = await NextAsync(agent, "tv.livre.v1");
-        await TvApp.ReplyAsync(agent, command);
+        await TvApp.ReplyAsync(agent, command, stillInstalled ? null : TvApp.Failed("launcher_required"));
         using var sent = await Within(request);
 
-        sent.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        sent.StatusCode.Should().Be(stillInstalled ? HttpStatusCode.NoContent : HttpStatusCode.Conflict);
+        if (!stillInstalled)
+        {
+            (await TvApp.JsonAsync(sent)).GetProperty("type").GetString().Should().EndWith("tv-livre-owner-required");
+        }
         ActionOf(command).Should().Be("sleep");
         command.GetProperty("body").GetProperty("minutes").GetInt32().Should().Be(30);
+        command.GetProperty("body").GetProperty("skipInstall").GetBoolean().Should().BeTrue();
         await using var db = app.Db();
         (await db.CommandAudit.SingleAsync(Ct)).Command.Should().Be("tv.livre.sleep");
     }
@@ -1394,10 +1414,31 @@ public sealed class TvLivreTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Sleep_WithoutTheLauncher_GoesStraightToTheAgentForTheOwner_WhoMayInstallIt()
+    public async Task GuestSleep_OnAnOlderAgent_KeepsTheCheck_AndSendsTheUsualSleep()
     {
         await using var app = await TvApp.StartAsync(postgres);
         await using var agent = await ConnectAsync(app, extended: true);
+        var controller = await app.NewGuestAsync("Sala", ["module:tv", "tv:control"], 65);
+
+        var request = app.SendAsync(HttpMethod.Post, $"{Base}/sleep", null, bearer: controller.Login.AccessToken);
+        var check = await NextAsync(agent, "tv.livre.v1");
+        ActionOf(check).Should().Be("status");
+        await StateThenReplyAsync(agent, check, StateBody(check, installed: true));
+        var command = await NextAsync(agent, "tv.livre.v1");
+        ActionOf(command).Should().Be("sleep");
+        // O agente anterior não conhece o campo e recusaria o pedido inteiro: só a leitura de antes protege.
+        command.GetProperty("body").TryGetProperty("skipInstall", out _).Should().BeFalse();
+        await TvApp.ReplyAsync(agent, command);
+        using var sent = await Within(request);
+
+        sent.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task Sleep_WithoutTheLauncher_GoesStraightToTheAgentForTheOwner_WhoMayInstallIt()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, extended: true, sleepNoInstall: true);
         var refresh = app.PostAsync($"{Base}/refresh");
         var status = await NextAsync(agent, "tv.livre.v1");
         await StateThenReplyAsync(agent, status, StateBody(status, installed: false));
@@ -1406,6 +1447,7 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         var request = app.PostAsync($"{Base}/sleep");
         var command = await NextAsync(agent, "tv.livre.v1");
         ActionOf(command).Should().Be("sleep", "o dono pode instalar o launcher que falta, então o pedido vai direto ao agente");
+        command.GetProperty("body").TryGetProperty("skipInstall", out _).Should().BeFalse();
         await TvApp.ReplyAsync(agent, command);
         using var sent = await Within(request);
         sent.StatusCode.Should().Be(HttpStatusCode.NoContent);

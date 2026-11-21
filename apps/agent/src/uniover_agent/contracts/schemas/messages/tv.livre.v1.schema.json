@@ -114,6 +114,10 @@
           },
           "description": "set-apps: pacotes a reativar."
         },
+        "skipInstall": {
+          "type": "boolean",
+          "description": "sleep: recusa abrir o Modo Dormir se o launcher estiver ausente. Só vai a agente que declara tv.livre.sleep-no-install.v1."
+        },
         "minutes": {
           "type": "integer",
           "minimum": 0,

@@ -122,6 +122,7 @@ from uniover_agent.core.tv.key_timing import KeyTimings
 from uniover_agent.core.tv.livre import CAPABILITY as LIVRE_CAPABILITY
 from uniover_agent.core.tv.livre import EXTENDED_CAPABILITY as LIVRE_EXTENDED_CAPABILITY
 from uniover_agent.core.tv.livre import (
+    SLEEP_NO_INSTALL_CAPABILITY,
     LivreStateFile,
     PhotoStaging,
     TvLivre,
@@ -947,6 +948,7 @@ def compose_livre(setup: TvSetup, settings: Settings, adb: AdbTv, host: str, clo
             setup.capabilities.append(LIVRE_CAPABILITY)
             # Só chega ao `hello` depois de a API listá-la (ver `API_LISTED_CAPABILITIES`).
             setup.capabilities.append(LIVRE_EXTENDED_CAPABILITY)
+            setup.capabilities.append(SLEEP_NO_INSTALL_CAPABILITY)
 
     async def declare_when_usable() -> None:
         # Depois da declaração do ADB (passo anterior).

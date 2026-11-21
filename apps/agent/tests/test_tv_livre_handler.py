@@ -18,6 +18,7 @@ from uniover_agent.core.tv import livre as livre_module
 from uniover_agent.core.tv.livre import (
     CAPABILITY,
     EXTENDED_CAPABILITY,
+    SLEEP_NO_INSTALL_CAPABILITY,
     LivreStateFile,
     PhotoStaging,
     TvLivre,
@@ -121,6 +122,22 @@ async def test_a_deferred_apply_is_told_once_and_only_to_a_new_api(tmp_path: Pat
     android.foreground = None
     await handler(command({"action": "apply", "revision": 4, "configJson": config}))
     assert "applyDeferred" not in transport.sent[-1]["body"]
+
+
+async def test_sleep_without_install_checks_the_launcher_again(tmp_path: Path) -> None:
+    handler, transport, android, _ = build(tmp_path)
+    await handler(command({"action": "install"}))
+    await handler(command({"action": "status"}))
+    assert transport.sent[-1]["body"]["installed"] is True
+    android.installed = False
+    android.log.clear()
+
+    result = await handler(command({"action": "sleep", "skipInstall": True}))
+
+    assert result.status is ResultStatus.REJECTED
+    assert result.code == "launcher_required"
+    assert transport.sent[-1]["body"]["installed"] is False
+    assert not any("install" in entry or ".SleepActivity" in entry for entry in android.log)
 
 
 async def test_the_sleep_time_reaches_the_tv_and_a_bad_one_is_refused(tmp_path: Path) -> None:
@@ -335,10 +352,10 @@ async def test_nothing_is_changed_on_an_unsupported_tv(tmp_path: Path, action: s
 
 
 def test_the_livre_extension_only_reaches_the_hello_after_the_api_lists_it() -> None:
-    both = [CAPABILITY, EXTENDED_CAPABILITY]
+    capabilities = [CAPABILITY, EXTENDED_CAPABILITY, SLEEP_NO_INSTALL_CAPABILITY]
     # Uma API anterior recusaria o `hello` com a capacidade nova: o módulo segue, sem ela.
-    assert declarable_capabilities(both, lambda _: False) == (CAPABILITY,)
-    assert declarable_capabilities(both, lambda feature: feature == EXTENDED_CAPABILITY) == (
-        CAPABILITY,
-        EXTENDED_CAPABILITY,
-    )
+    assert declarable_capabilities(capabilities, lambda _: False) == (CAPABILITY,)
+    assert declarable_capabilities(
+        capabilities, lambda feature: feature == EXTENDED_CAPABILITY
+    ) == (CAPABILITY, EXTENDED_CAPABILITY)
+    assert declarable_capabilities(capabilities, lambda _: True) == tuple(capabilities)

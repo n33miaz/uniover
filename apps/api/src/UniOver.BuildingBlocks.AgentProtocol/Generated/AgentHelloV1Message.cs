@@ -161,7 +161,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public bool? RolledBack { get; set; }
     }
 
-    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentHandoverV1, AgentLogsV1, AgentMaintenanceV1, PcClickV2, PcClipboardV1, PcControlV1, PcDeviceV1, PcKeyV2, PcMediaStateV1, PcMouseV1, PcOpV1, PcPointerZoomV1, PcPowerCancelV1, PcPowerHibernateV1, PcPowerOutcomeAckV1, PcPowerV2, PcRtcReconcileV1, PcRtcV1, PcScreenV1, PcTargetV1, PcTextV2, PcTextV3, PcVolumeV1, TransportKeepaliveV1, TransportRestartV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreV1, TvLivreV2, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvRtcV1, TvSettingsOpenV1 };
+    public enum AgentHelloV1BodyCapabilitiesItem { AgentDiagnosticsV1, AgentHandoverV1, AgentLogsV1, AgentMaintenanceV1, PcClickV2, PcClipboardV1, PcControlV1, PcDeviceV1, PcKeyV2, PcMediaStateV1, PcMouseV1, PcOpV1, PcPointerZoomV1, PcPowerCancelV1, PcPowerHibernateV1, PcPowerOutcomeAckV1, PcPowerV2, PcRtcReconcileV1, PcRtcV1, PcScreenV1, PcTargetV1, PcTextV2, PcTextV3, PcVolumeV1, TransportKeepaliveV1, TransportRestartV1, TvAdb, TvAdbRebindV1, TvCleanupAutomaticV1, TvDiscoveryV1, TvFocusCatalogV1, TvFocusClosesBackgroundV1, TvKeyAspect, TvKeyBlue, TvKeyChannelList, TvKeyEManual, TvKeyExit, TvKeyFastForward, TvKeyGreen, TvKeyGuide, TvKeyInfo, TvKeyInput, TvKeyPause, TvKeyPlay, TvKeyPreviousChannel, TvKeyRed, TvKeyRewind, TvKeySleep, TvKeyStop, TvKeySubtitle, TvKeyTools, TvKeyV3, TvKeyYellow, TvKindAndroid, TvKindSamsung, TvLightSettingsV1, TvLivreSleepNoInstallV1, TvLivreV1, TvLivreV2, TvMaintenanceV1, TvPairV1, TvPermissionV1, TvPowerOffV1, TvPresenceV1, TvRemote, TvRtcV1, TvSettingsOpenV1 };
 
     public enum AgentHelloV1BodyTvKind { Android, Samsung };
 
@@ -339,6 +339,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return AgentHelloV1BodyCapabilitiesItem.TvKindSamsung;
                 case "tv.light-settings.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvLightSettingsV1;
+                case "tv.livre.sleep-no-install.v1":
+                    return AgentHelloV1BodyCapabilitiesItem.TvLivreSleepNoInstallV1;
                 case "tv.livre.v1":
                     return AgentHelloV1BodyCapabilitiesItem.TvLivreV1;
                 case "tv.livre.v2":
@@ -534,6 +536,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvLightSettingsV1:
                     JsonSerializer.Serialize(writer, "tv.light-settings.v1", options);
+                    return;
+                case AgentHelloV1BodyCapabilitiesItem.TvLivreSleepNoInstallV1:
+                    JsonSerializer.Serialize(writer, "tv.livre.sleep-no-install.v1", options);
                     return;
                 case AgentHelloV1BodyCapabilitiesItem.TvLivreV1:
                     JsonSerializer.Serialize(writer, "tv.livre.v1", options);
