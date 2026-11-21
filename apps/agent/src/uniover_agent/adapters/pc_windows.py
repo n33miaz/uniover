@@ -25,6 +25,7 @@ from uniover_agent.ports.pc import (
     CAUSE_UNKNOWN,
     PcInputRefused,
     PcUnsupported,
+    PowerNotice,
 )
 
 _log = logging.getLogger(__name__)
@@ -681,6 +682,8 @@ class WindowsPcInput:
 
 # `ERROR_NO_SHUTDOWN_IN_PROGRESS`: o `shutdown /a` não tinha contagem do Windows para cancelar.
 _NO_SHUTDOWN_IN_PROGRESS = 1116
+# A ação do contrato de cada opção do `shutdown.exe` (o aviso da tela fala a língua do contrato).
+_POWER_ACTIONS: Final = {"/s": "SHUTDOWN", "/r": "RESTART"}
 
 
 def _start_power_timer(delay: float, callback: Callable[[], None]) -> _Cancelable:
@@ -702,15 +705,19 @@ class WindowsPcPower:
     encerrar a sessão e apagar o monitor. Cada primitiva do sistema é trocável: os testes nunca
     executam nenhuma delas de verdade."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - cada primitiva do sistema é trocável nos testes
         self,
         run: Callable[[list[str]], int] | None = None,
         lock: Callable[[], bool] | None = None,
         suspend: Callable[[], bool] | None = None,
         hibernation: Callable[[], bool] | None = None,
         monitor_off: Callable[[], bool] | None = None,
+        *,
+        notice: PowerNotice | None = None,
     ) -> None:
         self._run = run or _run_shutdown
+        # O aviso na tela do PC durante a contagem; sem ele (testes, outro sistema), só o app avisa.
+        self._notice = notice
         self._can_schedule = run is not None or sys.platform == "win32"
         self._power_lock = threading.Lock()
         self._pending: _Cancelable | None = None
@@ -748,6 +755,7 @@ class WindowsPcPower:
                     return
                 self._pending = None
                 self._requested = True
+            self._close_notice()
             try:
                 code = self._run([action, "/t", "0"])
             except OSError, subprocess.TimeoutExpired:
@@ -763,8 +771,35 @@ class WindowsPcPower:
             if self._pending is not None:
                 raise OSError("já há uma ação de energia agendada")
             self._requested = False
-            timer = _start_power_timer(max(10, delay_seconds), request_power)
+            seconds = max(10, delay_seconds)
+            timer = _start_power_timer(seconds, request_power)
             self._pending = timer
+            # Dentro da trava: um cancelamento que chegue junto nunca deixa um aviso órfão aberto.
+            self._show_notice(_POWER_ACTIONS[action], seconds)
+
+    def _show_notice(self, action: str, seconds: int) -> None:
+        if self._notice is None:
+            return
+        try:
+            self._notice.show(action, seconds, self._cancel_from_notice)
+        except Exception:
+            # O aviso é ajuda a quem está no PC: a contagem segue (e o app ainda cancela) sem ele.
+            _log.warning("não consegui abrir o aviso da contagem na tela do PC", exc_info=True)
+
+    def _close_notice(self) -> None:
+        if self._notice is None:
+            return
+        try:
+            self._notice.close()
+        except Exception:
+            _log.warning("não consegui fechar o aviso da contagem na tela do PC", exc_info=True)
+
+    def _cancel_from_notice(self) -> None:
+        """Quem está no PC clicou em Cancelar no aviso: o mesmo cancelamento do app."""
+        try:
+            self.cancel_shutdown()
+        except (OSError, PcUnsupported) as exc:
+            _log.warning("o cancelamento pedido na tela do PC não valeu: %s", exc)
 
     def hibernation_available(self) -> bool:
         return self._hibernation()
@@ -794,6 +829,7 @@ class WindowsPcPower:
             elif self._requested:
                 # A contagem acabou e o pedido foi ao Windows: "cancelado" seria mentira.
                 raise OSError("a contagem já terminou e o Windows já recebeu o pedido")
+        self._close_notice()
         # Garantia: cai também a contagem do Windows aberta por uma versão anterior.
         try:
             code = self._run(["/a"])

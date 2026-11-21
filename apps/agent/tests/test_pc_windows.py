@@ -160,6 +160,81 @@ def test_a_refusal_after_the_countdown_is_logged(
     assert "O Windows recusou a ação de energia /s (código 5)." in caplog.text
 
 
+class FakeNotice:
+    def __init__(self) -> None:
+        self.calls: list[tuple[object, ...]] = []
+        self.cancel: Callable[[], None] | None = None
+
+    def show(self, action: str, seconds: int, cancel: Callable[[], None]) -> None:
+        self.calls.append(("show", action, seconds))
+        self.cancel = cancel
+
+    def close(self) -> None:
+        self.calls.append(("close",))
+
+
+@pytest.mark.parametrize(("method", "action"), [("shutdown", "SHUTDOWN"), ("restart", "RESTART")])
+def test_the_countdown_shows_on_the_pc_and_closes_when_windows_is_asked(
+    power_timers: list[FakeTimer], method: str, action: str
+) -> None:
+    notice = FakeNotice()
+    power = WindowsPcPower(run=exits_with(0), notice=notice)
+    getattr(power, method)(30)
+    assert notice.calls == [("show", action, 30)]
+    power_timers[0].callback()
+    assert notice.calls == [("show", action, 30), ("close",)]
+
+
+def test_the_notice_shows_the_real_countdown_never_less_than_ten_seconds(
+    power_timers: list[FakeTimer],
+) -> None:
+    notice = FakeNotice()
+    WindowsPcPower(run=exits_with(0), notice=notice).shutdown(0)
+    assert notice.calls == [("show", "SHUTDOWN", 10)]
+
+
+def test_cancelling_from_the_app_closes_the_notice(power_timers: list[FakeTimer]) -> None:
+    notice = FakeNotice()
+    power = WindowsPcPower(run=exits_with(0), notice=notice)
+    power.restart(30)
+    power.cancel_shutdown()
+    assert notice.calls == [("show", "RESTART", 30), ("close",)]
+
+
+def test_cancel_on_the_notice_stops_the_countdown(
+    power_timers: list[FakeTimer], caplog: pytest.LogCaptureFixture
+) -> None:
+    calls: list[list[str]] = []
+    notice = FakeNotice()
+    power = WindowsPcPower(run=exits_with(0, calls), notice=notice)
+    power.shutdown(30)
+    assert notice.cancel is not None
+    notice.cancel()
+    assert power_timers[0].cancelled
+    power_timers[0].callback()
+    assert calls == [["/a"]]
+    # Tarde demais (o Windows já recebeu o pedido): o clique só vai ao registro, nunca derruba.
+    power.restart(30)
+    power_timers[1].callback()
+    notice.cancel()
+    assert "o cancelamento pedido na tela do PC não valeu" in caplog.text
+
+
+def test_a_broken_notice_never_stops_the_countdown(power_timers: list[FakeTimer]) -> None:
+    class Broken:
+        def show(self, action: str, seconds: int, cancel: Callable[[], None]) -> None:
+            raise OSError("sem desktop")
+
+        def close(self) -> None:
+            raise OSError("sem desktop")
+
+    calls: list[list[str]] = []
+    power = WindowsPcPower(run=exits_with(0, calls), notice=Broken())
+    power.shutdown(30)
+    power_timers[0].callback()
+    assert calls == [["/s", "/t", "0"]]
+
+
 def test_hibernate_and_log_off_use_the_system_tool_and_report_a_refusal() -> None:
     calls: list[list[str]] = []
     power = WindowsPcPower(run=exits_with(0, calls))
