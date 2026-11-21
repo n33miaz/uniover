@@ -213,6 +213,11 @@ test.describe('nenhuma tela deixa um alvo tocável sob a barra de baixo do celul
       await simulateInset(page, inset);
       await expectBottomClear(page, inset);
       const tabs = page.getByRole('navigation', { name: 'Abas do módulo' });
+      if (path === '/pc/teclado') {
+        // O endereço do teclado abre a digitação no PC: enquanto se digita, a barra de abas some e a de ações fica embaixo.
+        await expect(page.locator('app-tab-bar nav')).toBeHidden();
+        continue;
+      }
       expect(await bottomOf(tabs), `${path}: abas`).toBeLessThanOrEqual(
         page.viewportSize()!.height + 0.5,
       );
@@ -344,7 +349,7 @@ test.describe('com o teclado aberto a área segura não é somada duas vezes', (
     expect(await bottomOf(bar)).toBeCloseTo(height, 0);
   });
 
-  test('o teclado do PC: as abas encostam no teclado e nada fica abaixo dele', async ({
+  test('o teclado do PC: as abas somem, a barra de ações encosta no teclado e nada fica abaixo dele', async ({
     context,
     page,
   }, info) => {
@@ -358,14 +363,19 @@ test.describe('com o teclado aberto a área segura não é somada duas vezes', (
       'Conectado',
     );
     await settle(page);
-    await simulateInset(page, insetOf(info));
+    const inset = insetOf(info);
+    await simulateInset(page, inset);
     await page.getByRole('button', { name: 'Teclado', exact: true }).click();
     await expect(page.getByLabel('Digitar no PC')).toBeFocused();
     await cover(page);
     await expectSafeBottomCollapsed(page);
-    const tabs = page.getByRole('navigation', { name: 'Abas do módulo' });
+    // Enquanto se digita no PC a barra de abas sai de cena; quem fica embaixo é a barra de ações (apagar, Enter, fechar).
+    await expect(page.locator('app-tab-bar nav')).toBeHidden();
     const height = page.viewportSize()!.height;
-    expect(await bottomOf(tabs)).toBeCloseTo(height - KEYBOARD, 0);
+    const barBottom = await bottomOf(page.locator('app-pc-action-bar'));
+    expect(barBottom, 'barra de ações acima do teclado').toBeLessThanOrEqual(height - KEYBOARD + 0.5);
+    // Encosta no teclado: o vão que sobra é menor que a área segura, que não entra na conta com o teclado aberto.
+    expect(barBottom, 'sem o vão da área segura').toBeGreaterThan(height - KEYBOARD - inset);
     expect(await bandIntruders(page, KEYBOARD, true)).toEqual([]);
   });
 
