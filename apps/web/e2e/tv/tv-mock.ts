@@ -819,6 +819,10 @@ export async function installFakeEventSource(page: Page): Promise<void> {
       closed: boolean;
     }
     const sources: Fake[] = [];
+    // Com `holding`, as conexões novas ficam em "conectando" até `release()`: o teste vê o estado intermediário sem
+    // correr contra a volta rápida do app (de 200 a 500 ms depois do corte).
+    let holding = false;
+    const held: (() => void)[] = [];
     class FakeEventSource extends EventTarget {
       readonly CONNECTING = 0;
       readonly OPEN = 1;
@@ -834,11 +838,13 @@ export async function installFakeEventSource(page: Page): Promise<void> {
       ) {
         super();
         sources.push(this);
-        setTimeout(() => {
+        const open = () => {
           if (this.closed) return;
           this.readyState = 1;
           this.dispatchEvent(new Event('open'));
-        }, 0);
+        };
+        if (holding) held.push(open);
+        else setTimeout(open, 0);
       }
       close(): void {
         this.closed = true;
@@ -858,10 +864,15 @@ export async function installFakeEventSource(page: Page): Promise<void> {
             }
           }
         },
-        fail() {
+        fail(hold: boolean) {
+          holding = hold;
           for (const source of sources) {
             if (!source.closed) source.dispatchEvent(new Event('error'));
           }
+        },
+        release() {
+          holding = false;
+          for (const open of held.splice(0)) open();
         },
       },
     });
@@ -880,8 +891,20 @@ export async function emitSse(page: Page, type: string, data: unknown): Promise<
   );
 }
 
-export async function failSse(page: Page): Promise<void> {
-  await page.evaluate(() => (window as unknown as { __sse: { fail(): void } }).__sse.fail());
+/**
+ * Corta as conexões abertas do fluxo. Com `holdReconnect`, a conexão que o app abrir em seguida fica em "conectando"
+ * até `releaseSse`.
+ */
+export async function failSse(page: Page, { holdReconnect = false } = {}): Promise<void> {
+  await page.evaluate(
+    (hold) => (window as unknown as { __sse: { fail(hold: boolean): void } }).__sse.fail(hold),
+    holdReconnect,
+  );
+}
+
+/** Deixa abrir as conexões seguradas por `failSse(page, { holdReconnect: true })`. */
+export async function releaseSse(page: Page): Promise<void> {
+  await page.evaluate(() => (window as unknown as { __sse: { release(): void } }).__sse.release());
 }
 
 export async function sseUrls(page: Page): Promise<string[]> {
