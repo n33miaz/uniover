@@ -19,7 +19,7 @@ from uniover_agent.core import (
     TvSessionManager,
     tv_text_handler,
 )
-from uniover_agent.core.tv.text_edit import TYPING_KEYS, typing_keys
+from uniover_agent.core.tv.text_edit import FIELD_IDLE_SECONDS, TYPING_KEYS, typing_keys
 from uniover_agent.ports import AdbTimeout, AdbUnauthorized, TextFieldStatus, TvUnreachable
 
 Events = list[tuple[str, str]]
@@ -382,6 +382,89 @@ async def test_a_drop_while_retyping_keeps_the_unconfirmed_resync_deletes_in_dou
     remote.fail_on = None
     await editor.set_text("abd")
     assert remote.field == editor.last_text == "abd"
+
+
+class StaleEchoRemote(FieldRemote):
+    """Entrega, na tecla `trigger`, um eco atrasado com `stale` (como a TV faz com ecos velhos)."""
+
+    def __init__(self) -> None:
+        super().__init__(lose=set(), fail_on=None)
+        self.stale: str | None = None
+        self.trigger = "DEL"
+        self.target: TextReconciler | None = None
+
+    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+        await super().send_key(key, direction)
+        if key == self.trigger and self.stale is not None and self.target is not None:
+            self.target.observe_field(TextFieldStatus(self.stale, 0, 0, "", counter=1))
+            self.stale = None
+
+
+@pytest.mark.parametrize("trigger", ["DEL", "TYPE_H"])
+async def test_an_old_echo_never_proves_the_keys_of_a_resync(trigger: str) -> None:
+    remote = StaleEchoRemote()
+    editor, adb = field_rig(remote)
+    remote.target = editor
+    editor.observe_field(TextFieldStatus("", 0, 0, "", counter=1))
+    await editor.set_text("hel")
+    remote.lose, remote.fail_on = {"DEL"}, "TYPE_X"
+    with pytest.raises(TvSessionError):
+        await editor.set_text("hex")
+    assert remote.field == "hel"
+
+    # No refazer chega um eco velho igual ao prefixo; o "e" fica no socket e o "l" cai.
+    remote.stale, remote.trigger = "he", trigger
+    remote.lose, remote.fail_on = {"TYPE_E"}, "TYPE_L"
+    with pytest.raises(TvSessionError):
+        await editor.set_text("hello")
+    assert adb.typed == []  # o ADB não completa por cima do "h" sem prova
+
+    remote.fail_on = None
+    await editor.set_text("hello")
+    assert remote.field == editor.last_text == "hello"
+
+
+async def test_a_doubt_is_dropped_when_another_field_reports_after_a_reconnect() -> None:
+    remote = FieldRemote(lose={"DEL"}, fail_on=None)
+    editor, _ = field_rig(remote)
+    editor.observe_field(TextFieldStatus("", 0, 0, "", counter=1))
+    await editor.set_text("abc")
+    remote.fail_on = "TYPE_D"
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+
+    # Reconectou e o foco está em outro campo do mesmo app, com texto que o agente não digitou.
+    editor.forget_field()
+    remote.field = "xyz"
+    editor.observe_field(TextFieldStatus("xyz", 0, 0, "", counter=2))
+    remote.fail_on = None
+    remote.keys.clear()
+    await editor.set_text("xyzw")
+
+    assert "DEL" not in remote.keys
+    assert remote.field == editor.last_text == "xyzw"
+
+
+async def test_without_field_reports_a_doubt_ends_with_the_field_idle_pause() -> None:
+    clock = FakeClock()
+    remote = FieldRemote(lose={"DEL"}, fail_on=None)
+    session = TvSessionManager(clock, remote, backoff=())
+    editor = TextReconciler(session, monotonic=clock.monotonic, keys=True, sleep=clock.sleep)
+    editor.use_adb(FieldAdb(remote))
+    await editor.set_text("abc")
+    remote.fail_on = "TYPE_D"
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+
+    # Muito depois, um texto sem relação: é outro campo, e nada se apaga nele.
+    clock.advance(FIELD_IDLE_SECONDS + 1)
+    remote.field = ""
+    remote.fail_on = None
+    remote.keys.clear()
+    await editor.set_text("qq")
+
+    assert "DEL" not in remote.keys
+    assert remote.field == editor.last_text == "qq"
 
 
 async def test_the_field_echo_proves_the_keys_and_adb_completes_the_text() -> None:
