@@ -186,12 +186,20 @@ async def test_a_countdown_lost_in_a_restart_is_logged_and_told_to_the_app(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     class LostMarker:
+        def __init__(self) -> None:
+            self.confirmed: list[str] = []
+
         def save(self, action: str, countdown_id: str) -> None: ...
 
         def clear(self) -> None: ...
 
-        def take(self) -> tuple[str, str] | None:
-            return "RESTART", "0192f1e4-0000-7000-8000-0000000000c2"
+        def take_lost(self) -> list[tuple[str, str]]:
+            return [("RESTART", "0192f1e4-0000-7000-8000-0000000000c2")]
+
+        def confirm_lost(self, countdown_id: str) -> None:
+            self.confirmed.append(countdown_id)
+
+    marker = LostMarker()
 
     settings, transport, envelopes = parts(Settings(pc_control=True))
     pc = build_pc(
@@ -202,16 +210,55 @@ async def test_a_countdown_lost_in_a_restart_is_logged_and_told_to_the_app(
         pc_input=FakeInput(),
         launcher=FakeLauncher(),
         audio=FakeAudio(),
-        power_marker=LostMarker(),
+        power_marker=marker,
     )
     assert pc is not None and pc.power_outcomes is not None
     assert "reiniciou no meio da contagem para reiniciar" in caplog.text
     pc.power_outcomes.bind_enabled(lambda: True)
+    pc.power_outcomes.bind_acks(lambda: True)
     for step in pc.after_hello:
         await step()
     (sent,) = [m for m in transport.sent if m["type"] == "pc.power.outcome.v1"]
     assert (sent["body"]["action"], sent["body"]["outcome"]) == ("RESTART", "lost")
     assert sent["body"]["countdownId"] == "0192f1e4-0000-7000-8000-0000000000c2"
+    # A marca em disco só sai quando a API confirma o aviso.
+    assert marker.confirmed == []
+    pc.power_outcomes.acked("0192f1e4-0000-7000-8000-0000000000c2", "lost")
+    assert marker.confirmed == ["0192f1e4-0000-7000-8000-0000000000c2"]
+
+
+async def test_a_remount_in_the_same_process_keeps_the_unconfirmed_outcomes() -> None:
+    settings, transport, envelopes = parts(Settings(pc_control=True))
+    first = build_pc(
+        settings,
+        transport,
+        envelopes,
+        platform="win32",
+        pc_input=FakeInput(),
+        power=FakePower(),
+        launcher=FakeLauncher(),
+        audio=FakeAudio(),
+    )
+    assert first is not None and first.power_outcomes is not None
+    first.power_outcomes.report("0192f1e4-0000-7000-8000-0000000000c3", "SHUTDOWN", "refused", 5)
+    # A conexão é remontada (a TV mudou de endereço) antes de o desfecho sair.
+    second = build_pc(
+        settings,
+        transport,
+        envelopes,
+        platform="win32",
+        pc_input=FakeInput(),
+        power=FakePower(),
+        launcher=FakeLauncher(),
+        audio=FakeAudio(),
+    )
+    assert second is not None and second.power_outcomes is not None
+    second.power_outcomes.bind_enabled(lambda: True)
+    for step in second.after_hello:
+        await step()
+    assert [m["body"]["outcome"] for m in transport.sent if m["type"] == "pc.power.outcome.v1"] == [
+        "refused"
+    ]
 
 
 def test_turned_on_declares_the_capability_and_every_command() -> None:
@@ -238,6 +285,7 @@ def test_turned_on_declares_the_capability_and_every_command() -> None:
         "pc.pointer.zoom.v1",
         "pc.power.v2",
         "pc.power.cancel.v1",
+        "pc.power.outcome.ack.v1",
         "pc.power.hibernate.v1",
         "pc.media.state.v1",
         "pc.clipboard.v1",
@@ -930,3 +978,33 @@ async def test_run_declares_nothing_when_the_control_is_off() -> None:
         assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
     assert "pc.control.v1" not in api.received[0]["body"]["capabilities"]
     assert all(m["type"] != "pc.apps.v1" for m in api.received)
+
+
+async def test_the_api_confirmation_reaches_the_outcomes_waiting_for_it() -> None:
+    from uniover_agent.composition.connection import _power_outcome_notices  # noqa: PLC0415
+    from uniover_agent.core import Command  # noqa: PLC0415
+
+    settings, transport, envelopes = parts(Settings(pc_control=True))
+    pc = build_pc(
+        settings,
+        transport,
+        envelopes,
+        platform="win32",
+        pc_input=FakeInput(),
+        power=FakePower(),
+        launcher=FakeLauncher(),
+        audio=FakeAudio(),
+    )
+    assert pc is not None and pc.power_outcomes is not None
+    pc.power_outcomes.bind_enabled(lambda: True)
+    pc.power_outcomes.bind_acks(lambda: True)
+    countdown = "0192f1e4-0000-7000-8000-0000000000c4"
+    pc.power_outcomes.report(countdown, "SHUTDOWN", "cancelled")
+    await pc.power_outcomes.flush()
+    (acked,) = _power_outcome_notices(pc).values()
+    acked(
+        Command("a1", "pc.power.outcome.ack.v1", {"countdownId": countdown, "outcome": "cancelled"})
+    )
+    await pc.power_outcomes.after_hello()
+    assert len([m for m in transport.sent if m["type"] == "pc.power.outcome.v1"]) == 1
+    assert _power_outcome_notices(None) == {}

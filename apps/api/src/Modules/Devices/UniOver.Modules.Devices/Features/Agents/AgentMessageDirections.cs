@@ -66,6 +66,7 @@ internal static class AgentMessageDirections
         AgentMessageTypes.PcRtcCloseV1,
         AgentMessageTypes.PcRtcOfferV1,
         AgentMessageTypes.PcRtcReconciledV1,
+        AgentMessageTypes.PcPowerOutcomeAckV1,
         AgentMessageTypes.PcTextV1,
         AgentMessageTypes.PcTextV2,
         AgentMessageTypes.PcTextV3,

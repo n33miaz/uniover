@@ -8,7 +8,13 @@ from typing import Any
 from uniover_agent.adapters.fakes import FakeClock, FakeTransport
 from uniover_agent.contracts.registry import MESSAGE_MODELS
 from uniover_agent.core import EnvelopeFactory, EnvelopeGate
-from uniover_agent.core.pc.power_outcomes import KEEP_SECONDS, PowerOutcomes
+from uniover_agent.core.pc.power_outcomes import (
+    ACKED_KEEP_SECONDS,
+    KEEP_SECONDS,
+    RESEND_SECONDS,
+    PendingOutcomes,
+    PowerOutcomes,
+)
 from uniover_agent.ports import TransportError
 
 from .support import AGENT_ID
@@ -116,3 +122,124 @@ async def test_two_sends_at_once_never_send_the_same_outcome_twice() -> None:
     outcomes.report(ID_A, "SHUTDOWN", "cancelled")
     await asyncio.gather(outcomes.flush(), outcomes.flush())
     assert [body["outcome"] for body in _bodies(transport)] == ["cancelled"]
+
+
+def _acking(
+    transport: FakeTransport | None = None,
+    clock: FakeClock | None = None,
+    pending: PendingOutcomes | None = None,
+    settled: list[tuple[str, str]] | None = None,
+) -> tuple[PowerOutcomes, FakeTransport, FakeClock]:
+    transport = transport or FakeTransport()
+    clock = clock or FakeClock()
+    envelopes = EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock)
+    outcomes = PowerOutcomes(
+        transport,
+        envelopes,
+        clock,
+        pending=pending,
+        on_settled=(lambda cid, outcome: settled.append((cid, outcome)))
+        if settled is not None
+        else None,
+    )
+    outcomes.bind_enabled(lambda: True)
+    outcomes.bind_acks(lambda: True)
+    return outcomes, transport, clock
+
+
+async def test_with_acks_an_outcome_stays_until_the_api_confirms_it() -> None:
+    settled: list[tuple[str, str]] = []
+    outcomes, transport, clock = _acking(settled=settled)
+    outcomes.report(ID_A, "SHUTDOWN", "lost")
+    await outcomes.flush()
+    assert len(_bodies(transport)) == 1
+    # Sem a confirmação, não sai de novo antes da hora...
+    await outcomes.flush()
+    assert len(_bodies(transport)) == 1
+    # ...mas sai depois dela, com a conexão de pé (a API pode ter falhado ao gravar).
+    clock.advance(RESEND_SECONDS)
+    await outcomes.flush()
+    assert len(_bodies(transport)) == 2
+    assert settled == []
+
+    outcomes.acked(ID_A, "lost")
+    assert settled == [(ID_A, "lost")]
+    clock.advance(RESEND_SECONDS)
+    await outcomes.flush()
+    assert len(_bodies(transport)) == 2, "confirmado, não sai mais"
+
+
+async def test_the_connection_dropping_before_the_ack_resends_it_on_the_next_hello() -> None:
+    settled: list[tuple[str, str]] = []
+    outcomes, transport, _ = _acking(settled=settled)
+    outcomes.report(ID_A, "SHUTDOWN", "refused", 5)
+    await outcomes.flush()
+    assert len(_bodies(transport)) == 1
+    # A conexão caiu antes da confirmação: a seguinte manda de novo, logo depois do `hello`.
+    following = FakeTransport()
+    outcomes._sender = following
+    await outcomes.after_hello()
+    assert len(_bodies(following)) == 1
+    outcomes.acked(ID_A, "refused")
+    await outcomes.after_hello()
+    assert len(_bodies(following)) == 1
+    assert settled == [(ID_A, "refused")]
+
+
+async def test_an_ack_of_another_countdown_or_outcome_removes_nothing() -> None:
+    settled: list[tuple[str, str]] = []
+    outcomes, transport, clock = _acking(settled=settled)
+    outcomes.report(ID_A, "SHUTDOWN", "lost")
+    await outcomes.flush()
+    outcomes.acked(ID_B, "lost")
+    outcomes.acked(ID_A, "refused")
+    clock.advance(RESEND_SECONDS)
+    await outcomes.flush()
+    assert len(_bodies(transport)) == 2
+    assert settled == []
+
+
+async def test_without_acks_the_outcome_is_settled_once_sent() -> None:
+    settled: list[tuple[str, str]] = []
+    outcomes, transport, clock = _acking(settled=settled)
+    outcomes.bind_acks(lambda: False)  # uma API anterior, que não confirma
+    outcomes.report(ID_A, "RESTART", "lost")
+    await outcomes.flush()
+    assert settled == [(ID_A, "lost")]
+    clock.advance(RESEND_SECONDS)
+    await outcomes.after_hello()
+    assert len(_bodies(transport)) == 1
+
+
+async def test_the_same_outcome_reported_again_is_kept_once() -> None:
+    pending = PendingOutcomes()
+    first, transport, _ = _acking(pending=pending)
+    first.report(ID_A, "SHUTDOWN", "lost")
+    # A remontagem da conexão no mesmo processo lê a marca de novo: o guardado é o mesmo.
+    second, _, _ = _acking(transport, pending=pending)
+    second.report(ID_A, "SHUTDOWN", "lost")
+    await second.flush()
+    assert len(_bodies(transport)) == 1
+
+
+async def test_with_acks_an_outcome_waits_longer_than_without() -> None:
+    outcomes, transport, clock = _acking()
+    outcomes.report(ID_A, "SHUTDOWN", "refused", 5)
+    clock.advance(KEEP_SECONDS + 1)
+    await outcomes.flush()
+    assert len(_bodies(transport)) == 1
+    clock.advance(ACKED_KEEP_SECONDS)
+    await outcomes.after_hello()
+    assert len(_bodies(transport)) == 1, "passado um dia sem confirmação, desiste"
+
+
+async def test_with_the_connection_up_an_unacked_outcome_goes_again_by_itself() -> None:
+    outcomes, _, _ = _acking()
+    outcomes.report(ID_A, "SHUTDOWN", "refused", 5)
+    await outcomes.flush()
+    retry = outcomes._retry
+    assert retry is not None, "o reenvio ficou agendado"
+    retry.cancel()
+    outcomes.acked(ID_A, "refused")
+    await outcomes.flush()
+    assert outcomes._retry is None, "sem nada à espera, nada agendado"

@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable, Collection
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass
 from functools import partial
 from typing import Final
@@ -145,8 +145,12 @@ class ProcessMessage:
         power_store: PowerIdStore | None = None,
         wall_clock: Callable[[], float] = time.time,
         clock_ns: Callable[[], int] = time.perf_counter_ns,
+        notices: Mapping[str, Callable[[Command], None]] | None = None,
     ) -> None:
         self._agent_id = agent_id
+        # Avisos da API que não são comando: atendidos no próprio leitor, sem resposta, sem fila
+        # (nem a do PC, que exige o aparelho aprovado) e sem contar como uso.
+        self._notices: Mapping[str, Callable[[Command], None]] = notices or {}
         self._clock_ns = clock_ns
         self._gate = gate
         self._handle_command = handle_command
@@ -205,7 +209,7 @@ class ProcessMessage:
         self._last_repeat_reply: asyncio.Task[None] | None = None
         self._pending_repeat_replies = 0
 
-    async def __call__(self, raw: str | bytes) -> None:
+    async def __call__(self, raw: str | bytes) -> None:  # noqa: PLR0911 - um desvio por caminho
         outcome = self._gate.check_inbound(raw)
         if isinstance(outcome, Rejected):
             await self._reject(outcome)
@@ -216,6 +220,10 @@ class ProcessMessage:
             if self._observe_timestamp is not None:
                 self._observe_timestamp(command.sent_at)
             # Batimento da API: já chegou pelo canal; não executa comando nem produz resultado.
+            return
+        notice = self._notices.get(command.type)
+        if notice is not None:
+            notice(command)
             return
         if await self._is_repeat(command):
             return

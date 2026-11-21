@@ -402,9 +402,12 @@ class FakeMarker:
     def clear(self) -> None:
         self.marked = None
 
-    def take(self) -> tuple[str, str] | None:
-        lost, self.lost = self.lost, None
-        return lost
+    def take_lost(self) -> list[tuple[str, str]]:
+        return [self.lost] if self.lost is not None else []
+
+    def confirm_lost(self, countdown_id: str) -> None:
+        if self.lost is not None and self.lost[1] == countdown_id:
+            self.lost = None
 
 
 def test_the_countdown_is_marked_and_unmarked_before_windows_is_asked(
@@ -437,11 +440,14 @@ def test_a_cancelled_or_refused_countdown_leaves_no_mark(power_timers: list[Fake
     assert marker.marked is None
 
 
-def test_the_lost_countdown_of_the_previous_agent_is_read_once() -> None:
-    power = WindowsPcPower(run=exits_with(0), marker=FakeMarker(lost=("SHUTDOWN", "c1")))
-    assert power.take_lost_countdown() == ("SHUTDOWN", "c1")
-    assert power.take_lost_countdown() is None
-    assert WindowsPcPower(run=exits_with(0)).take_lost_countdown() is None
+def test_the_lost_countdown_of_the_previous_agent_is_read_until_confirmed() -> None:
+    marker = FakeMarker(lost=("SHUTDOWN", "c1"))
+    power = WindowsPcPower(run=exits_with(0), marker=marker)
+    assert power.take_lost_countdowns() == [("SHUTDOWN", "c1")]
+    assert power.take_lost_countdowns() == [("SHUTDOWN", "c1")]
+    marker.confirm_lost("c1")
+    assert power.take_lost_countdowns() == []
+    assert WindowsPcPower(run=exits_with(0)).take_lost_countdowns() == []
 
 
 def test_hibernate_and_log_off_use_the_system_tool_and_report_a_refusal() -> None:

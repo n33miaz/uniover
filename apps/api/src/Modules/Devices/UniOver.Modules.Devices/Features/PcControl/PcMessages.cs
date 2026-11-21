@@ -68,6 +68,20 @@ internal static class PcMessages
     /// </summary>
     public const string PowerCancelCapability = "pc.power.cancel.v1";
 
+    /// <summary>
+    /// Capacidade de quem espera a confirmação de cada desfecho de contagem (<c>pc.power.outcome.ack.v1</c>) e o reenvia até ela chegar. Sem ela
+    /// a confirmação nem sai (um agente anterior recusaria o tipo).
+    /// </summary>
+    public const string PowerOutcomeAckCapability = "pc.power.outcome.ack.v1";
+
+    /// <summary>A confirmação de que o desfecho <paramref name="outcome"/> da contagem está resolvido na API (gravado agora ou antes).</summary>
+    public static OutboundMessage PowerOutcomeAck(Guid countdownId, string outcome) =>
+        Live(AgentMessageTypes.PcPowerOutcomeAckV1, JsonSerializer.SerializeToElement(new JsonObject
+        {
+            ["countdownId"] = countdownId.ToString(),
+            ["outcome"] = outcome,
+        }));
+
     /// <summary>O cancelamento com o identificador da contagem que o app mostra. Só para um agente que declarou <see cref="PowerCancelCapability"/>.</summary>
     public static OutboundMessage WithCountdown(OutboundMessage message, Guid countdownId)
     {

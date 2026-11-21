@@ -1,8 +1,10 @@
+using System.Data.Common;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -35,6 +37,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
     private const string PowerV2 = "pc.power.v2";
     private const string Hibernate = "pc.power.hibernate.v1";
     private const string PowerCancel = "pc.power.cancel.v1";
+    private const string OutcomeAck = "pc.power.outcome.ack.v1";
     private const string MediaState = "pc.media.state.v1";
     private const string Clipboard = "pc.clipboard.v1";
 
@@ -1987,6 +1990,85 @@ public sealed class PcControlTests(PostgresFixture postgres)
         failed.AgentId.Should().Be(app.Agent.Id);
         failed.UserId.Should().Be(done.UserId, "quem pediu");
         failed.UserAgent.Should().Be("painel/1.0");
+    }
+
+    [Fact]
+    public async Task Power_TheOutcomeIsConfirmedToAnAgentThatWaitsForIt_AndAResendIsConfirmedAgainWithoutASecondLine()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, OutcomeAck);
+        var countdown = await ScheduleAsync(app, agent, "SHUTDOWN");
+
+        await SendPowerOutcomeAsync(agent, countdown, "SHUTDOWN", "lost");
+        var ack = (await Within(agent.ReceiveAsync()))!.Value;
+        ack.GetProperty("type").GetString().Should().Be("pc.power.outcome.ack.v1");
+        ack.GetProperty("body").GetProperty("countdownId").GetGuid().Should().Be(countdown);
+        ack.GetProperty("body").GetProperty("outcome").GetString().Should().Be("lost");
+
+        // A confirmação se perdeu com a conexão: o agente reenvia, a API confirma de novo e não grava outra linha.
+        await SendPowerOutcomeAsync(agent, countdown, "SHUTDOWN", "lost");
+        var again = (await Within(agent.ReceiveAsync()))!.Value;
+        again.GetProperty("type").GetString().Should().Be("pc.power.outcome.ack.v1");
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_shutdown_failed", Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Power_AnOutcomeWhoseAuditFailed_IsNotConfirmed_AndTheResendIsRecordedOnceForWhoAsked()
+    {
+        var failing = new FailFirstOutcomeAudit();
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { CommandInterceptor = failing });
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, OutcomeAck);
+        var countdown = await ScheduleAsync(app, agent, "SHUTDOWN", "painel/1.0");
+
+        failing.Armed = true;
+        await SendPowerOutcomeAsync(agent, countdown, "SHUTDOWN", "refused");
+        await TransportApp.WaitUntilAsync(() => Task.FromResult(failing.Failed), "gravação recusada");
+        await Task.Delay(300, Ct);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_shutdown_failed", Ct)).Should().Be(0);
+        (await PowerOfStatusAsync(app)).ValueKind.Should().Be(JsonValueKind.Null, "o app só sabe do desfecho gravado");
+
+        // O agente não recebeu a confirmação e reenvia: agora grava, com quem pediu, e confirma.
+        await SendPowerOutcomeAsync(agent, countdown, "SHUTDOWN", "refused");
+        var ack = (await Within(agent.ReceiveAsync()))!.Value;
+        ack.GetProperty("type").GetString().Should().Be("pc.power.outcome.ack.v1");
+        var failed = await db.PairingAudit.SingleAsync(a => a.Event == "pc_shutdown_failed", Ct);
+        failed.UserAgent.Should().Be("painel/1.0");
+        (await PowerOfStatusAsync(app)).GetProperty("countdownId").GetGuid().Should().Be(countdown);
+    }
+
+    /// <summary>Quando armado, recusa a primeira gravação da linha de falha do desligamento (o banco caiu no meio).</summary>
+    private sealed class FailFirstOutcomeAudit : DbCommandInterceptor
+    {
+        public volatile bool Armed;
+
+        public volatile bool Failed;
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Refuse(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            Refuse(command);
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void Refuse(DbCommand command)
+        {
+            if (Armed && command.CommandText.Contains("pairing_audit", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains("INSERT", StringComparison.OrdinalIgnoreCase))
+            {
+                Armed = false;
+                Failed = true;
+                throw new InvalidOperationException("gravação recusada no teste");
+            }
+        }
     }
 
     [Fact]

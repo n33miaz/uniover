@@ -181,3 +181,23 @@ async def test_a_silent_type_is_executed_but_never_answered() -> None:
     await feed(process, dump(tv_key("HOME")))
     assert [c.body for c in spy.calls] == [{"key": "HOME"}]
     assert transport.sent == []
+
+
+async def test_the_confirmation_of_a_power_outcome_is_a_notice_never_answered() -> None:
+    # Não passa pela faixa do PC (que exige o aparelho aprovado) nem produz resultado.
+    clock = FakeClock()
+    gate = EnvelopeGate(AGENT_ID)
+    transport = FakeTransport()
+    seen: list[Command] = []
+    process = ProcessMessage(
+        AGENT_ID,
+        gate,
+        HandleCommand({}, clock),
+        EnvelopeFactory(AGENT_ID, gate, clock),
+        transport,
+        notices={"pc.power.outcome.ack.v1": seen.append},
+    )
+    body = {"countdownId": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e00", "outcome": "lost"}
+    await feed(process, dump(envelope("pc.power.outcome.ack.v1", body)))
+    assert [c.body for c in seen] == [body]
+    assert transport.sent == []

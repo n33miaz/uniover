@@ -33,6 +33,7 @@ from .pc_media_state_v1 import PcMediaStateV1Message
 from .pc_media_v1 import PcMediaV1Message
 from .pc_pointer_v1 import PcPointerV1Message
 from .pc_pointer_zoom_v1 import PcPointerZoomV1Message
+from .pc_power_outcome_ack_v1 import PcPowerOutcomeAckV1Message
 from .pc_power_outcome_v1 import PcPowerOutcomeV1Message
 from .pc_power_v1 import PcPowerV1Message
 from .pc_power_v2 import PcPowerV2Message
@@ -103,6 +104,7 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.media.v1": PcMediaV1Message,
     "pc.pointer.v1": PcPointerV1Message,
     "pc.pointer.zoom.v1": PcPointerZoomV1Message,
+    "pc.power.outcome.ack.v1": PcPowerOutcomeAckV1Message,
     "pc.power.outcome.v1": PcPowerOutcomeV1Message,
     "pc.power.v1": PcPowerV1Message,
     "pc.power.v2": PcPowerV2Message,

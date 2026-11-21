@@ -28,7 +28,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     /// daquela contagem, e devolve o desfecho em `GET /api/v1/pc/status` (`power`) só enquanto
     /// ele for da contagem mais recente, para o app parar de oferecer o cancelamento. Só vai a
     /// uma API que listou `pc.power.outcome.v1` em `features` (uma anterior recusaria o tipo).
-    /// Sem resposta.
+    /// Ao agente que declarou `pc.power.outcome.ack.v1`, a API responde com
+    /// `pc.power.outcome.ack.v1` depois de gravar (ou se já tinha gravado); até essa confirmação
+    /// o agente guarda o desfecho e o reenvia. Sem a capacidade, sem resposta.
     /// </summary>
     public partial class PcPowerOutcomeV1Message
     {
