@@ -1,0 +1,85 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Automated pull request reviews. Repository rules are in the README and ADRs.
+language: en-US
+reviews:
+  profile: assertive
+  # Só comentários de revisão: nada de poema, resumo, mensagens de status nem mudança na descrição do PR.
+  poem: false
+  high_level_summary: false
+  high_level_summary_in_walkthrough: false
+  collapse_walkthrough: true
+  review_status: false
+  review_info: false
+  review_details: false
+  in_progress_fortune: false
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  assess_linked_issues: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  auto_apply_labels: false
+  suggested_reviewers: false
+  auto_assign_reviewers: false
+  enable_prompt_for_ai_agents: false
+  auto_approvals:
+    enabled: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    base_branches:
+      - develop
+      - main
+  path_instructions:
+    - path: "apps/api/src/Modules/Identity/**"
+      instructions: >-
+        Accounts and sessions: use strong password hashing, short-lived access JWTs, and rotating refresh
+        tokens in HttpOnly, Secure, SameSite=Strict cookies. Revoke the token family on reuse. Use passkeys
+        only to confirm sensitive actions, with confirmation valid for a few minutes. Flag authentication
+        or authorization gaps: routes without policies, tokens in query strings, missing rate limits on
+        login or refresh, and session data leaks.
+    - path: "apps/api/src/Modules/Devices/**"
+      instructions: >-
+        Paired agents and PC power commands: validate the target on the server and deliver commands to the
+        correct device. Guests must never target someone else's PC. Rate-limit and audit every command,
+        recording who issued it, where it originated, the target device, and the result.
+    - path: "apps/api/src/Modules/**/Persistence/Migrations/**"
+      instructions: >-
+        Applied migrations are immutable. Make fixes in new migrations. Each module uses its own schema
+        and migration history table. Disallow cross-schema foreign keys, joins, and views.
+    - path: "apps/api/src/Modules/**"
+      instructions: >-
+        Modular monolith: use only another module's public *.Contracts API or integration events written
+        to the outbox in the same transaction. Reference other modules only by ID. Declare authorization
+        within the module and put routes under /api/v1/<module>.
+    - path: "contracts/**"
+      instructions: >-
+        These contracts are the source of truth across languages. Never edit generated types by hand.
+        Agent messages are versioned (*.v1). Introduce breaking changes as a new type (.v2) and keep both
+        versions available for older agents.
+    - path: "apps/agent/**"
+      instructions: >-
+        Runs on household Windows PCs. Flag file deletion outside the agent directory, shutdown with /f,
+        secrets or tokens in logs, messages executed without JSON Schema validation, and inbound listening
+        ports. The agent initiates outbound connections only. Files in contracts/ are generated and must
+        not be edited by hand.
+    - path: "apps/web/**"
+      instructions: >-
+        Use $localize for all UI text. Avoid hardcoded strings in templates and code. Use generated
+        contract types for HTTP calls. Check accessible labels, contrast, and visible focus.
+    - path: "**/*.md"
+      instructions: >-
+        Public text should describe the subject and outcome. Omit internal process history, internal
+        planning codes, tool names, personal data, and local filesystem paths.
+chat:
+  art: false
+  allow_non_org_members: false
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "README.md"
+      - "SECURITY.md"
+      - "adr/**/*.md"
