@@ -133,10 +133,20 @@
 
 /* A coluna do meio: só o nome (o ponto de estado mora à direita, junto do desligar). */
 .name {
+  position: relative;
   display: grid;
   min-width: 0;
   max-width: 100%;
   justify-self: center;
+}
+.direct-label {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-start: calc(100% - 0.45rem);
+  text-align: center;
+  font-size: 0.65rem;
+  line-height: 1;
+  pointer-events: none;
 }
 h1 {
   min-width: 0;

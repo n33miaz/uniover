@@ -339,7 +339,9 @@ export class DirectChannel {
   /** A TV que a tela da TV quer controlar pelo canal; `null` sem a tela (ou sem TV). */
   private readonly tvTarget = signal<DirectTvTarget | null>(null);
   /** Pedidos da TV em voo pela nuvem: o canal só leva a TV com a nuvem em silêncio (a ordem das teclas). */
-  private tvCloudInFlight = 0;
+  private readonly tvCloudInFlight = signal(0);
+  private hidden = false;
+  private resumedAt: number | null = null;
   /** O que a API concedeu ao canal aberto agora (vazio sem canal). */
   private readonly grantedScopes = signal<readonly DirectScope[]>([]);
   /** Outro aparelho tomou o canal, ou a sessão deixou de valer: só uma ação da pessoa (a tela abrir de novo) tenta outra vez. */
@@ -467,7 +469,7 @@ export class DirectChannel {
     if (
       !this.open() ||
       !this.grantedScopes().includes('tv') ||
-      this.tvCloudInFlight > 0 ||
+      this.tvCloudInFlight() > 0 ||
       target?.usable !== true ||
       !target.live ||
       // O canal é da TV que ele pediu: trocar de TV o refaz, e até lá a nuvem leva.
@@ -481,9 +483,9 @@ export class DirectChannel {
 
   /** Marca um pedido da TV em voo pela nuvem até terminar: o canal só volta a levar a TV quando nenhum está no ar. */
   trackTvCloud<T>(call: Promise<T>): Promise<T> {
-    this.tvCloudInFlight++;
+    this.tvCloudInFlight.update((count) => count + 1);
     const done = () => {
-      this.tvCloudInFlight--;
+      this.tvCloudInFlight.update((count) => count - 1);
     };
     call.then(done, done);
     return call;
@@ -548,16 +550,25 @@ export class DirectChannel {
       this.evaluate();
       return;
     }
+    this.hidden = document.visibilityState === 'hidden';
+    const onPageHide = () => {
+      this.hidden = true;
+      this.resumedAt = null;
+      this.teardown('hidden', { keepalive: true });
+    };
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
-        this.teardown('hidden', { keepalive: true });
+        onPageHide();
       } else {
+        if (this.hidden) {
+          this.hidden = false;
+          this.resumedAt = performance.now();
+        }
         // A pessoa voltou: tenta já, sem esperar o recuo de uma tentativa de antes de esconder.
         this.clearBackoff();
         this.evaluate();
       }
     };
-    const onPageHide = () => this.teardown('hidden', { keepalive: true });
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pagehide', onPageHide);
     this.cleanup = () => {
@@ -576,6 +587,7 @@ export class DirectChannel {
     if (this.wanted) return;
     this.cleanup?.();
     this.cleanup = null;
+    this.resumedAt = null;
     this.clearBackoff();
     this.attempts = 0;
     this.teardown('stopped', {});
@@ -847,6 +859,10 @@ export class DirectChannel {
     this.stallStrikes = 0;
     this.pingSentAt.clear();
     this.open.set(true);
+    if (this.resumedAt !== null) {
+      this.usage.noteResume(this.resumedAt);
+      this.resumedAt = null;
+    }
     this.pingTimer = setInterval(() => this.ping(), PING_MS);
     // A vida do canal é curta (a da sessão que o autorizou): abre outro um pouco antes do fim, sem ninguém notar.
     if (lifeSeconds > 0) {
