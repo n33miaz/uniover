@@ -29,6 +29,12 @@ export class DirectUsage {
   private readonly lastSecond = new Map<string, number>();
   private timer: ReturnType<typeof setTimeout> | null = null;
 
+  /** Tempo local do retorno à tela até o canal ficar pronto, no painel de desempenho do navegador. */
+  noteResume(start: number): void {
+    performance.clearMeasures('direct.resume-to-ready');
+    performance.measure('direct.resume-to-ready', { start, end: performance.now() });
+  }
+
   /** Saiu tecla ou mouse pelo canal da sessão `sessionId` agora. */
   note(sessionId: string | null, now: number = Date.now()): void {
     if (!sessionId) return;

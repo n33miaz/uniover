@@ -90,6 +90,9 @@
           >
         }
       </h1>
+      @if (store.directReady()) {
+        <span class="direct-label" role="status" i18n="@@tv.status.direct">Direto</span>
+      }
     </div>
     <div class="actions">
       <!-- Sem ver a TV não há estado nenhum para mostrar. -->

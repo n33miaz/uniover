@@ -95,6 +95,16 @@ describe('TvPage', () => {
   });
 
   describe('header', () => {
+    it('shows the direct indicator only when the TV can use the channel', async () => {
+      expect(root.querySelector('.direct-label')).toBeNull();
+      store.directReady.set(true);
+      await render();
+      expect(root.querySelector('.direct-label')?.textContent?.trim()).toBe('Direto');
+      store.directReady.set(false);
+      await render();
+      expect(root.querySelector('.direct-label')).toBeNull();
+    });
+
     it('has back and menu on the left, the name TV as the h1 in the middle, and state dot and power on the right', () => {
       const back = root.querySelector('a.back')!;
       expect(back.getAttribute('href')).toBe('/');

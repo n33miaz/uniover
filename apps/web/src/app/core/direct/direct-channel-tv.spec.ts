@@ -15,6 +15,7 @@ import {
   type DirectScope,
   type DirectTvTarget,
 } from './direct-channel';
+import { DirectUsage } from './direct-usage';
 
 /** Um canal de dados de mentira: guarda o que se manda e deixa o teste abrir, fechar e responder. */
 class FakeChannel extends EventTarget {
@@ -168,6 +169,35 @@ afterEach(() => {
 });
 
 describe('DirectChannel scopes', () => {
+  it('measures from returning to the app until the channel is ready', async () => {
+    const { channel, connections } = setup();
+    const note = vi.spyOn(TestBed.inject(DirectUsage), 'noteResume');
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    visibility.mockReturnValue('visible');
+    try {
+      await openForTv(channel, connections);
+      expect(note).not.toHaveBeenCalled();
+
+      visibility.mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(channel.mode()).toBe('cloud');
+
+      visibility.mockReturnValue('visible');
+      const before = performance.now();
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(note).not.toHaveBeenCalled();
+      await finishOpening(channel, connections, 1);
+      expect(note).toHaveBeenCalledTimes(1);
+      expect(note.mock.calls[0]?.[0]).toBeGreaterThanOrEqual(before);
+      expect(performance.getEntriesByName('direct.resume-to-ready', 'measure')).toHaveLength(1);
+    } finally {
+      channel.stop('tv');
+      visibility.mockRestore();
+      note.mockRestore();
+      performance.clearMeasures('direct.resume-to-ready');
+    }
+  });
+
   it('opens for the TV alone, asking only for the tv scope and the chosen TV', async () => {
     const { channel, signaling, connections } = setup();
     await openForTv(channel, connections);

@@ -126,6 +126,7 @@ export function createFakeTvStore() {
     state: signal<TvState | null>(HOT),
     shortcuts,
     status: signal<TvStatus>('hot'),
+    directReady: signal(false),
     lastKnownStatus: signal<TvStatus | null>('hot'),
     link: signal<TvLink>('ok'),
     canSend: signal(true),
