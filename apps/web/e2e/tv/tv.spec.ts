@@ -2776,13 +2776,14 @@ test.describe('carrossel do palco: o indicador e a posição não perdem o fio',
 /**
  * Gesto de toque com ritmo: `steps` passos de `stepMs` cada, sem soltar se `release` for falso. O ritmo vai no carimbo
  * de tempo de cada evento (é por ele que o navegador mede a velocidade do dedo), e os eventos saem em seguida, sem
- * esperar tempo de verdade entre eles.
+ * esperar tempo de verdade entre eles. `holdMs` deixa o dedo parado esse tanto antes de sair da tela (só no carimbo do
+ * `touchEnd`): sem ele o dedo sai um passo depois do último movimento, ainda com a velocidade do arrasto.
  */
 async function drag(
   page: Page,
   from: { x: number; y: number },
   to: { x: number; y: number },
-  opts: { steps: number; stepMs: number; release?: boolean },
+  opts: { steps: number; stepMs: number; release?: boolean; holdMs?: number },
 ) {
   const cdp = await page.context().newCDPSession(page);
   // O último evento fica no instante de agora e os anteriores no passado, na cadência pedida.
@@ -2809,7 +2810,8 @@ async function drag(
     await cdp.send('Input.dispatchTouchEvent', {
       type: 'touchEnd',
       touchPoints: [],
-      timestamp: at(opts.steps + 1),
+      timestamp:
+        opts.holdMs === undefined ? at(opts.steps + 1) : at(opts.steps) + opts.holdMs / 1000,
     });
   }
   return cdp;
@@ -2828,6 +2830,9 @@ test.describe('carrossel do palco: gestos de dedo (toque sintético, só Chromiu
     await openTv(page);
     const box = (await stageBox(page))!;
     const y = box.y + box.height / 2;
+    // Arrasto lento termina com o dedo parado antes de sair. Soltar ainda com a velocidade do arrasto faz o Chromium às
+    // vezes lançar uma inércia mínima e não encaixar; o carrossel, achando a página presa no meio, a vira (o arrasto
+    // passou de `advanceRatio`) e o teste mediria esse socorro, não a regra da metade.
     // Menos de um terço da largura, devagar: fica na página 1.
     await drag(
       page,
@@ -2836,6 +2841,7 @@ test.describe('carrossel do palco: gestos de dedo (toque sintético, só Chromiu
       {
         steps: 25,
         stepMs: 40,
+        holdMs: 150,
       },
     );
     await settlePage(page, 0);
@@ -2848,6 +2854,7 @@ test.describe('carrossel do palco: gestos de dedo (toque sintético, só Chromiu
       {
         steps: 25,
         stepMs: 40,
+        holdMs: 150,
       },
     );
     await settlePage(page, 1);
