@@ -152,6 +152,7 @@ from uniover_agent.core.pc.devices import DeviceApprovals
 from uniover_agent.core.pc.direct import PC_SCREEN_CAPABILITY
 from uniover_agent.core.pc.focus import PC_TARGET_CAPABILITY
 from uniover_agent.core.pc.handlers import PC_DEVICE_CAPABILITY, PC_OP_CAPABILITY
+from uniover_agent.core.pc.power_outcomes import PC_POWER_OUTCOME_FEATURE
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
 from uniover_agent.core.tv.livre import EXTENDED_CAPABILITY as LIVRE_EXTENDED_CAPABILITY
@@ -932,6 +933,12 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         if tv.wake_check is not None:
             # Um ajuste de ligar pela rede desligado (ou a TV que não ligou) chega ao celular.
             tv.wake_check.on_change(lambda: publisher.publish(tv.manager.snapshot()))
+    if pc is not None and pc.power_outcomes is not None:
+        outcomes = pc.power_outcomes
+        # A contagem recusada (ou perdida) só sobe a uma API que lista o tipo, e sobe assim que
+        # ela passa a listá-lo.
+        outcomes.bind_enabled(lambda: features.supports(PC_POWER_OUTCOME_FEATURE))
+        features.on_change(outcomes.soon)
     if pc is not None and pc.volume is not None:
         volume = pc.volume
         # O nível só sobe depois de a API listar a capacidade (uma anterior recusaria o tipo), e

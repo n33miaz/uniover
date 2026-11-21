@@ -702,10 +702,11 @@ internal sealed class PcAgentMessageHandler(
     PcDeviceStates deviceStates,
     PcRtcReconciler? reconciler = null,
     PcMediaStates? media = null,
-    PcClipboardInbox? clipboard = null) : IAgentMessageHandler
+    PcClipboardInbox? clipboard = null,
+    PcPowerOutcomeRecorder? powerOutcomes = null) : IAgentMessageHandler
 {
     public IReadOnlyCollection<string> HandledTypes { get; } =
-        [AgentMessageTypes.PcAppsV1, AgentMessageTypes.PcRtcAnswerV1, AgentMessageTypes.PcRtcClosedV1, AgentMessageTypes.PcRtcReconcileV1, AgentMessageTypes.PcVolumeStateV1, AgentMessageTypes.PcDeviceStateV1, AgentMessageTypes.PcMediaStateV1, AgentMessageTypes.PcClipboardV1];
+        [AgentMessageTypes.PcAppsV1, AgentMessageTypes.PcRtcAnswerV1, AgentMessageTypes.PcRtcClosedV1, AgentMessageTypes.PcRtcReconcileV1, AgentMessageTypes.PcVolumeStateV1, AgentMessageTypes.PcDeviceStateV1, AgentMessageTypes.PcMediaStateV1, AgentMessageTypes.PcClipboardV1, AgentMessageTypes.PcPowerOutcomeV1];
 
     public async Task HandleAsync(InboundMessage message, CancellationToken cancellationToken)
     {
@@ -738,6 +739,18 @@ internal sealed class PcAgentMessageHandler(
             {
                 var claims = message.Body.GetProperty("sessions").EnumerateArray().Select(ClaimOf).ToList();
                 await reconciler.ReconcileAsync(message.AgentId, claims, cancellationToken);
+            }
+
+            return;
+        }
+
+        // A contagem de desligar ou reiniciar não terminou no pedido (o Windows recusou, ou o agente reiniciou no meio): a falha vai à
+        // auditoria, com quem pediu se a instância ainda lembra.
+        if (string.Equals(message.Type, AgentMessageTypes.PcPowerOutcomeV1, StringComparison.Ordinal))
+        {
+            if (powerOutcomes is not null)
+            {
+                await powerOutcomes.RecordAsync(message.AgentId, message.Body.GetProperty("action").GetString()!, cancellationToken);
             }
 
             return;

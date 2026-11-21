@@ -714,10 +714,14 @@ class WindowsPcPower:
         monitor_off: Callable[[], bool] | None = None,
         *,
         notice: PowerNotice | None = None,
+        on_refused: Callable[[str, int | None], None] | None = None,
     ) -> None:
         self._run = run or _run_shutdown
         # O aviso na tela do PC durante a contagem; sem ele (testes, outro sistema), só o app avisa.
         self._notice = notice
+        # Quem avisa a API quando o Windows recusa a ação no fim da contagem (ação do contrato e
+        # código de saída, quando houve).
+        self._on_refused = on_refused
         self._can_schedule = run is not None or sys.platform == "win32"
         self._power_lock = threading.Lock()
         self._pending: _Cancelable | None = None
@@ -766,6 +770,7 @@ class WindowsPcPower:
                     _log.error("O Windows recusou a ação de energia %s (código %d).", action, code)
                 with self._power_lock:
                     self._requested = False
+                self._report_refusal(_POWER_ACTIONS[action], code)
 
         with self._power_lock:
             if self._pending is not None:
@@ -776,6 +781,14 @@ class WindowsPcPower:
             self._pending = timer
             # Dentro da trava: um cancelamento que chegue junto nunca deixa um aviso órfão aberto.
             self._show_notice(_POWER_ACTIONS[action], seconds)
+
+    def _report_refusal(self, action: str, code: int | None) -> None:
+        if self._on_refused is None:
+            return
+        try:
+            self._on_refused(action, code)
+        except Exception:
+            _log.warning("não consegui avisar a recusa do Windows à API", exc_info=True)
 
     def _show_notice(self, action: str, seconds: int) -> None:
         if self._notice is None:

@@ -26,6 +26,7 @@ export * from './pc_media_state_v1';
 export * from './pc_media_v1';
 export * from './pc_pointer_v1';
 export * from './pc_pointer_zoom_v1';
+export * from './pc_power_outcome_v1';
 export * from './pc_power_v1';
 export * from './pc_power_v2';
 export * from './pc_rtc_answer_v1';

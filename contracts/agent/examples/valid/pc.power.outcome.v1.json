@@ -1,0 +1,1 @@
+{"v":1,"id":"0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e9f","type":"pc.power.outcome.v1","source":"agent:pc-casa","target":"api","ts":"2026-11-21T14:00:00Z","correlationId":null,"body":{"action":"SHUTDOWN","outcome":"refused","code":5,"at":"2026-11-21T14:00:00Z"}}

@@ -452,6 +452,7 @@ internal sealed partial class PcControlHandler(
     TimeProvider time,
     PcOriginReader origins,
     PcDeviceStates deviceStates,
+    PcPowerCountdowns countdowns,
     IOptions<DevicesModuleOptions> options,
     ILogger<PcControlHandler> logger)
 {
@@ -630,9 +631,29 @@ internal sealed partial class PcControlHandler(
             await db.SaveChangesAsync(cancellationToken);
         }
 
+        RememberCountdown(auditEvent, target, userId, client);
+
         // Os comandos que devolvem dados (o que toca, o texto da área de transferência) montam a resposta com o que o agente mandou antes do
         // resultado, achado pelo agente e pelo identificador deste pedido.
         return onSuccess is null ? TypedResults.NoContent() : onSuccess(target.Slug, reply.Value.CorrelationId);
+    }
+
+    /// <summary>
+    /// A contagem de desligar ou reiniciar que o agente acabou de aceitar fica lembrada (quem pediu, de onde): se ela não terminar no
+    /// pedido, o agente avisa depois e a falha vai à auditoria com essa pessoa. O cancelamento aceito a esquece.
+    /// </summary>
+    private void RememberCountdown(string? auditEvent, ReadyTarget target, Guid userId, ClientInfo client)
+    {
+        if (auditEvent == PairingEvents.PcShutdown || auditEvent == PairingEvents.PcRestart)
+        {
+            countdowns.Scheduled(
+                target.Slug,
+                new PcPowerCountdown(target.AgentId, userId, client, auditEvent == PairingEvents.PcShutdown ? "SHUTDOWN" : "RESTART"));
+        }
+        else if (auditEvent == PairingEvents.PcShutdownCancelled)
+        {
+            countdowns.Cancelled(target.Slug);
+        }
     }
 
     /// <summary>

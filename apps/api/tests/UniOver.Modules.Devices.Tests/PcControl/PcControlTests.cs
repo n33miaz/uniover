@@ -1122,3 +1122,49 @@ public sealed class PcKeyBudgetTests
         budget.TryTake(Alice, PcKeyBudget.PressesPerMinute).Should().BeTrue();
     }
 }
+
+public sealed class PcPowerCountdownsTests
+{
+    private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-11-21T14:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
+    private static readonly Guid Agent = Guid.Parse("0192f1e4-0000-7000-8000-000000000001");
+    private static readonly Guid Owner = Guid.Parse("0192f1e4-0000-7000-8000-000000000002");
+
+    private static PcPowerCountdown Countdown(string action) =>
+        new(Agent, Owner, new Security.ClientInfo("203.0.113.9", "painel/1.0"), action);
+
+    [Fact]
+    public void TheApi_ListsTheOutcomeOfTheCountdown_AndTakesItFromTheAgent()
+    {
+        GetModuleInfoHandler.AgentFeatures.Should().Contain("pc.power.outcome.v1");
+        AgentMessageDirections.FromAgent.Should().Contain(AgentMessageTypes.PcPowerOutcomeV1);
+        new PcAgentMessageHandler(null!, null!, null!, null!, null!).HandledTypes.Should().Contain(AgentMessageTypes.PcPowerOutcomeV1);
+    }
+
+    [Fact]
+    public void TheCountdown_IsTakenOnce_WithWhoAskedForIt()
+    {
+        var countdowns = new PcPowerCountdowns(new FakeTimeProvider(T0));
+        countdowns.Scheduled("pc-casa", Countdown("RESTART"));
+
+        var taken = countdowns.Take("pc-casa");
+
+        taken.Should().NotBeNull();
+        taken!.UserId.Should().Be(Owner);
+        taken.Action.Should().Be("RESTART");
+        countdowns.Take("pc-casa").Should().BeNull("o desfecho só é gravado uma vez");
+    }
+
+    [Fact]
+    public void ACancelledOrOldCountdown_IsForgotten()
+    {
+        var time = new FakeTimeProvider(T0);
+        var countdowns = new PcPowerCountdowns(time);
+        countdowns.Scheduled("pc-casa", Countdown("SHUTDOWN"));
+        countdowns.Cancelled("pc-casa");
+        countdowns.Take("pc-casa").Should().BeNull();
+
+        countdowns.Scheduled("pc-casa", Countdown("SHUTDOWN"));
+        time.Advance(PcPowerCountdowns.Lifetime + TimeSpan.FromSeconds(1));
+        countdowns.Take("pc-casa").Should().BeNull();
+    }
+}

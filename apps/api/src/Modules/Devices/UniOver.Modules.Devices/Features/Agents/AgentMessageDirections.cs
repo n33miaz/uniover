@@ -28,6 +28,7 @@ internal static class AgentMessageDirections
         AgentMessageTypes.PcMediaStateV1,
         AgentMessageTypes.PcClipboardV1,
         AgentMessageTypes.PcDeviceStateV1,
+        AgentMessageTypes.PcPowerOutcomeV1,
         AgentMessageTypes.PcRtcAnswerV1,
         AgentMessageTypes.PcRtcClosedV1,
         AgentMessageTypes.PcRtcReconcileV1,

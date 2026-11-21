@@ -341,6 +341,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.device.state.v1.schema.json'
+      pcPowerOutcome:
+        name: pc.power.outcome.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.power.outcome.v1.schema.json'
       pcRtcAnswer:
         name: pc.rtc.answer.v1
         contentType: application/json
@@ -706,6 +711,13 @@ operations:
       - $ref: '#/channels/agentEvents/messages/pcMediaState'
       - $ref: '#/channels/agentEvents/messages/pcClipboard'
       - $ref: '#/channels/agentEvents/messages/pcDeviceState'
+  receivePcPowerOutcome:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: A API recebe a contagem de desligar ou reiniciar que não terminou no pedido (recusada pelo Windows ou perdida num reinício do agente).
+    messages:
+      - $ref: '#/channels/agentEvents/messages/pcPowerOutcome'
   sendPcRtcOffer:
     action: send
     channel:

@@ -120,6 +120,8 @@ public static class DevicesModule
         services.AddSingleton<PcDeviceStates>();
         services.AddSingleton<IAgentPresenceListener>(sp => sp.GetRequiredService<PcDeviceStates>());
         services.AddScoped<IAgentMessageHandler, PcAgentMessageHandler>();
+        services.AddSingleton<PcPowerCountdowns>();
+        services.AddScoped<PcPowerOutcomeRecorder>();
         services.AddSingleton<PcTargetCache>();
         services.AddSingleton<PcKeyBudget>();
         services.AddScoped<IIntegrationEventHandler<AgentRevoked>, PcAgentRevokedInvalidator>();

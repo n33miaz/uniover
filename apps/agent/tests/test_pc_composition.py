@@ -158,6 +158,30 @@ async def test_the_built_handlers_feed_the_use_tracker_the_update_waits_on() -> 
     assert pc.use.seconds_since_use() is not None
 
 
+async def test_a_power_outcome_goes_out_after_the_hello_once_the_api_lists_it() -> None:
+    settings, transport, envelopes = parts(Settings(pc_control=True))
+    pc = build_pc(
+        settings,
+        transport,
+        envelopes,
+        platform="win32",
+        pc_input=FakeInput(),
+        power=FakePower(),
+        launcher=FakeLauncher(),
+        audio=FakeAudio(),
+    )
+    assert pc is not None and pc.power_outcomes is not None
+    pc.power_outcomes.refused("SHUTDOWN", 5)
+    for step in pc.after_hello:
+        await step()
+    assert [m for m in transport.sent if m["type"] == "pc.power.outcome.v1"] == []
+    pc.power_outcomes.bind_enabled(lambda: True)
+    for step in pc.after_hello:
+        await step()
+    (sent,) = [m for m in transport.sent if m["type"] == "pc.power.outcome.v1"]
+    assert sent["body"]["outcome"] == "refused"
+
+
 def test_turned_on_declares_the_capability_and_every_command() -> None:
     settings, transport, envelopes = parts(Settings(pc_control=True, pc_apps=["Notas=notepad"]))
     pc = build_pc(
