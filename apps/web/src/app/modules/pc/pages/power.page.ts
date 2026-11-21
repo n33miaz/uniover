@@ -94,7 +94,7 @@ interface Sheet {
     @if (pending(); as action) {
       <app-pc-confirm-sheet
         [heading]="sheets[action].title"
-        [text]="sheets[action].text"
+        [text]="sheetText(action)"
         [confirmLabel]="sheets[action].confirm"
         [busy]="busy()"
         [error]="sheetError()"
@@ -199,6 +199,24 @@ export class PowerPage {
       confirm: $localize`:@@pc.power.logoff-confirm:Encerrar Sessão`,
     },
   };
+
+  /**
+   * Sem `pc.power.cancel.v1` (0.77.0) o agente pode ser um de antes da 0.74.2, que agenda `shutdown /t`, e prazo maior que zero
+   * implica `/f`: os programas fecham sem pedir para salvar. O caminho sem `/f` veio na 0.74.2 sem capacidade própria, então a
+   * ausência é evidência conservadora, não certeza. O cancelamento segue valendo (`shutdown /a`).
+   */
+  private readonly forcedTexts: Readonly<Record<Countdown, string>> = {
+    SHUTDOWN: $localize`:@@pc.power.shutdown-text-forced:Os apps abertos podem fechar sem pedir para salvar. Dá para cancelar aqui antes do fim.`,
+    RESTART: $localize`:@@pc.power.restart-text-forced:Os apps abertos podem fechar sem pedir para salvar. Dá para cancelar aqui antes do fim. O controle volta quando o Windows abrir de novo.`,
+  };
+
+  /** O texto da folha: o de desligar e reiniciar ressalva o fechamento forçado quando o agente não prova que pede sem forçar. */
+  protected sheetText(action: Confirmed): string {
+    if ((action === 'SHUTDOWN' || action === 'RESTART') && !this.store.supportsPowerCancel()) {
+      return this.forcedTexts[action];
+    }
+    return this.sheets[action].text;
+  }
 
   private readonly sheet = viewChild(PcConfirmSheet);
   private hideTimer: number | null = null;

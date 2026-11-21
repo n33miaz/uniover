@@ -203,6 +203,14 @@ export const PC_POWER_V2_CAPABILITY = 'pc.power.v2';
 /** A capacidade que o PC só declara com a hibernação ligada nele: sem ela a tela nem mostra "Hibernar" (e a API recusaria). */
 export const PC_HIBERNATE_CAPABILITY = 'pc.power.hibernate.v1';
 
+/**
+ * A capacidade que o PC declara quando o agente cancela só a contagem que o app mostra (pelo identificador; veio na 0.77.0). O
+ * caminho que pede ao Windows sem forçar veio antes, na 0.74.2, sem capacidade própria: sem esta, o agente pode ser um anterior,
+ * que agenda `shutdown /t` (prazo maior que zero implica `/f`) e fecha os programas sem pedir para salvar. Evidência
+ * conservadora, não certeza.
+ */
+export const PC_POWER_CANCEL_CAPABILITY = 'pc.power.cancel.v1';
+
 /** A capacidade que o PC declara quando o agente diz o que o Windows está tocando ("Tocando agora"). */
 export const PC_MEDIA_STATE_CAPABILITY = 'pc.media.state.v1';
 

@@ -22,6 +22,7 @@ import {
   PC_HIBERNATE_CAPABILITY,
   PC_KEY_V2_CAPABILITY,
   PC_MEDIA_STATE_CAPABILITY,
+  PC_POWER_CANCEL_CAPABILITY,
   PC_POWER_V2_CAPABILITY,
   PC_TARGET_CAPABILITY,
   PC_TEXT_V2_CAPABILITY,
@@ -252,6 +253,10 @@ export class PcStore {
   /** O PC hiberna: o agente só o declara com a hibernação ligada nele (e com a `pc.power.v2`). */
   readonly supportsHibernate = computed(
     () => this.supportsPowerV2() && this.capabilities().includes(PC_HIBERNATE_CAPABILITY),
+  );
+  /** O agente cancela só a contagem que o app mostra (e, por consequência, desliga ou reinicia sem forçar). */
+  readonly supportsPowerCancel = computed(() =>
+    this.capabilities().includes(PC_POWER_CANCEL_CAPABILITY),
   );
   /** O agente diz o que o Windows está tocando ("Tocando agora"). */
   readonly supportsNowPlaying = computed(() =>
