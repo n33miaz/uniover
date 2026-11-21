@@ -28,6 +28,7 @@ from uniover_agent.adapters.network_change import network_change_watcher
 from uniover_agent.adapters.pairing_http import fetch_api_features
 from uniover_agent.adapters.pc_approval_prompt import WindowsApprovalPrompt
 from uniover_agent.adapters.pc_device_store import JsonDeviceStore
+from uniover_agent.adapters.pc_direct_aiortc import warm_up_aiortc
 from uniover_agent.adapters.power_id_file import PowerIdFile
 from uniover_agent.adapters.run_state import PreviousRun, RunState
 from uniover_agent.adapters.self_care_checks import ConnectionWatch
@@ -983,6 +984,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         await delivery.after_hello()
 
     deferred_announce: list[asyncio.Task[None]] = []
+    webrtc_warmup: asyncio.Task[None] | None = None
 
     async def announce_when_owner() -> None:
         await owner.wait()
@@ -993,9 +995,14 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             _log.exception("falha ao anunciar a conexão depois de virar a dona")
 
     async def on_connected() -> None:
+        nonlocal webrtc_warmup
         mark_session_started()  # daqui em diante, o que cair não é falha de partida
         if not handover:
             connection_mark.connected()
+        # O primeiro hello já saiu. A oferta pode reutilizar a importação sem esperar neste laço.
+        if webrtc_warmup is None and pc is not None and pc.direct is not None:
+            webrtc_warmup = asyncio.create_task(warm_up_aiortc())
+            background.append(webrtc_warmup)
         if owner.is_set():
             await announce_connected()
             return

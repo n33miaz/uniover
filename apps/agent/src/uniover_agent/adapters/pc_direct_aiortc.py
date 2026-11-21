@@ -1,7 +1,7 @@
 """Canal direto (WebRTC) com o `aiortc`: dois canais de dados, sem mídia e sem terceiros.
 
-Carregado só na primeira oferta (importar o `aiortc` leva cerca de 1 s e não pode parar o laço de
-eventos). `iceServers=[]`: nenhum STUN do Google. Só endereços da rede local, dos dois lados (ver
+Carregado em segundo plano na partida ou, se preciso, na primeira oferta.
+`iceServers=[]`: nenhum STUN do Google. Só endereços da rede local, dos dois lados (ver
 `pc_direct_network`): da oferta só entram candidatos privados, de enlace local ou ULA, e o que o
 agente oferece na resposta são só os IPv4 privados e IPv6 ULA de interfaces físicas, sem o IPv6
 global (o endereço público do PC), VPN, WSL nem Hyper-V. Os candidatos `.local` da oferta são
@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import importlib.util
 import logging
+from threading import Lock
 from typing import Any, Final
 
 from uniover_agent.adapters import pc_direct_network, pc_direct_stub_av
@@ -34,6 +35,7 @@ _CHANNELS: Final = (POINTER_CHANNEL, INPUT_CHANNEL)
 # Um estado da biblioteca (`connected`, `checking`...) nunca passa disto; o que passar não é rótulo.
 _MAX_STATE_CHARS: Final = 24
 _loaded: dict[str, Any] = {}
+_load_lock = Lock()
 
 
 def _state_of(owner: Any, attribute: str) -> str:
@@ -60,12 +62,26 @@ def _import_aiortc() -> Any:
     return aiortc
 
 
+def _load_once() -> Any:
+    with _load_lock:
+        if "aiortc" not in _loaded:
+            if not aiortc_installed():
+                raise DirectUnavailable("aiortc não está instalado")
+            _loaded["aiortc"] = _import_aiortc()
+        return _loaded["aiortc"]
+
+
 async def _load() -> Any:
-    if "aiortc" not in _loaded:
-        if not aiortc_installed():
-            raise DirectUnavailable("aiortc não está instalado")
-        _loaded["aiortc"] = await asyncio.to_thread(_import_aiortc)
-    return _loaded["aiortc"]
+    if "aiortc" in _loaded:
+        return _loaded["aiortc"]
+    return await asyncio.to_thread(_load_once)
+
+
+async def warm_up_aiortc() -> None:
+    try:
+        await _load()
+    except Exception as exc:
+        _log.debug("WebRTC fica para a primeira oferta (%s)", type(exc).__name__)
 
 
 def prepare_offer(sdp: str) -> str:
