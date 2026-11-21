@@ -277,18 +277,18 @@ class DropsAfterThree(FakeTvRemote):
         await super().send_key(key, direction)
 
 
-async def test_last_text_follows_what_really_happened_when_a_failure_hits_halfway() -> None:
+async def test_failed_deletions_keep_the_previous_base_without_an_echo() -> None:
     clock = FakeClock()
     remote = DropsAfterThree()
     session = TvSessionManager(clock, remote, backoff=())
     editor = TextReconciler(session, monotonic=clock.monotonic)
     await editor.set_text("abcdef")
     remote.keys.clear()
-    # Três `DEL` saem, a quarta falha: o campo agora tem "abc", e é isso que o agente guarda.
+    # Três `DEL` saem e o quarto falha, sem eco que confirme o valor do campo.
     remote.connect_errors = []
     with pytest.raises(TvSessionError):
         await editor.set_text("")
-    assert editor.last_text == "abc"
+    assert editor.last_text == "abcdef"
     assert remote.keys.count("DEL") == 3
 
 
