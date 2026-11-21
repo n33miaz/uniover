@@ -451,10 +451,12 @@ mídia, zoom, volume e o canal direto dividiam o laço com a TV, a rede, o diagn
   agente, no instante da oferta), o canal leva `tv.key.v2`, `tv.key.v3` e `tv.text.v1`. Não há caminho paralelo: o canal valida o esquema (o
   mesmo portão da nuvem), confere a idade da tecla (mais de 1,5 s no caminho é `expired`, sem tocar na TV) e a entrega, por uma ponte
   (`core/pc/tv_bridge.py`: `call_soon_threadsafe` para o laço principal e `post` na volta, nunca esperando), a
-  `ProcessMessage.submit_direct_tv`, que usa a MESMA fila de teclas da nuvem (ordem, descarte por idade de 1,5 s contado desde a chegada ao canal,
+  `ProcessMessage.submit_direct_tv`, que usa a MESMA fila de teclas da nuvem (ordem, descarte por idade de 1,5 s contado desde a chegada ao canal, sem as paradas do laço,
   junção de repetições, `on_command` do agendador de limpeza) e só troca a resposta: ela volta pelo `ack` do canal, não pelo transporte. Com o
   laço principal parado, a entrada do PC segue respondendo (sinal de vida, PC) e a ponte recusa com `busy` o que passa de 32 pendentes; a tecla que
-  esperou mais que 1,5 s é descartada quando o laço volta. A sessão do canal é conferida no laço principal antes de cada entrega e de novo antes de a tecla ir à TV: fechar o canal descarta as teclas que ainda esperavam (`channel_closed`). `POWER`, desligar, abrir app, limpar e as outras ações da TV só existem pela nuvem
+  esperou mais que 1,5 s com o laço andando é descartada; o tempo em que o próprio laço ficou parado não conta (`core/loop_progress.py`: um
+  carimbo a cada 0,1 s, e um intervalo acima de 0,15 s é parada), até o teto de 4 s de idade inteira, abaixo dos prazos do `ack` (6,5 s) e da
+  API (8 s). O mesmo vale para a tecla da nuvem. Uma linha `teclas mantidas apesar da parada do agente: total=n` conta as que antes se perdiam. A sessão do canal é conferida no laço principal antes de cada entrega e de novo antes de a tecla ir à TV: fechar o canal descarta as teclas que ainda esperavam (`channel_closed`). `POWER`, desligar, abrir app, limpar e as outras ações da TV só existem pela nuvem
   (a API confere a permissão de cada uma e grava a trilha). Um canal só da TV nunca recebe o ponteiro nem `pc.*`, não pede a aprovação do aparelho
   no PC e, ao fechar, não solta o que o PC segura; um canal só do PC não leva a TV. O `ready` lista os escopos (`sc`) e as mensagens que o canal
   aceita (`caps`). Ao fechar por conta própria o agente soma `tvKeys` e `tvTexts` em `pc.rtc.closed.v1`, e a API grava a soma na trilha da TV. A

@@ -31,8 +31,14 @@ LINK_SCHEME_BLOCKED: Final = "link_scheme_not_allowed"
 INVALID_TARGET: Final = "invalid_target"
 # A tecla perde o sentido depois da espera pela sessão; a API já pode ter desistido do toque.
 KEY_MAX_AGE_SECONDS: Final = 1.5
+# A parada do próprio laço do agente não conta para `KEY_MAX_AGE_SECONDS` (ver `LoopProgress`), mas
+# nenhuma tecla passa desta idade inteira, com a parada: não se executa um toque de minutos atrás.
+# Abaixo dos prazos de quem espera a resposta (6,5 s no canal direto, 8 s na API) e nenhum dos dois
+# reenvia a tecla: ela nunca chega à TV depois de o app já ter desistido dela.
+KEY_STALLED_MAX_AGE_SECONDS: Final = 4.0
 # Toques que chegam juntos com a sessão pronta são todos intencionais. Só se junta uma repetição
-# depois desta espera, que indica que a abertura da sessão segurou a fila.
+# depois desta espera, que indica que a abertura da sessão segurou a fila. A parada do laço do
+# agente não conta: as teclas tocadas durante ela foram intencionais e vão todas, na ordem.
 KEY_COALESCE_AFTER_SECONDS: Final = 0.3
 AGENT_TIMEOUT: Final = "agent_timeout"
 # O canal direto que mandou a tecla fechou antes de ela chegar à TV.
@@ -101,15 +107,76 @@ def unsupported_handler(message: str) -> Handler:
     return handle
 
 
-def tv_key_handler(
+class _KeyAges:
+    """A idade das teclas: descarta a velha e conta, no registro, as descartadas e as mantidas.
+
+    Com `loop_elapsed` (o `LoopProgress.elapsed_since`, no mesmo relógio de `monotonic`), a espera
+    que conta é só a do laço andando: uma parada do próprio agente não descarta a tecla, até o teto
+    `KEY_STALLED_MAX_AGE_SECONDS` da idade inteira.
+    """
+
+    def __init__(
+        self, monotonic: Callable[[], float], loop_elapsed: Callable[[float], float] | None
+    ) -> None:
+        self._monotonic = monotonic
+        self._loop_elapsed = loop_elapsed
+        self._discarded = 0
+        self._kept_after_stall = 0
+        # A sessão confere a mesma tecla mais de uma vez: ela só entra uma vez na conta.
+        self._last_kept: object | None = None
+
+    def _effective(self, start: float, sent_age: float | None) -> tuple[float, float]:
+        """A espera aqui dentro e a idade que conta, as duas sem as paradas do laço do agente.
+
+        Pela nuvem, a idade desde o envio foi lida na chegada e já leva a parada que houve antes da
+        leitura: ela também sai, pelo trecho do relógio que cobre a idade."""
+        elapsed = self._loop_elapsed
+        if elapsed is None:
+            waited = self._monotonic() - start
+            return waited, waited if sent_age is None else sent_age + waited
+        waited = elapsed(start)
+        if sent_age is None or sent_age <= 0:
+            return waited, waited + (sent_age or 0.0)
+        return waited, elapsed(start - sent_age)
+
+    def check(self, command: object, start: float, sent_age: float | None) -> float:
+        """A espera da tecla (para a junção); velha demais, `TvSessionError`."""
+        raw_age = (sent_age or 0.0) + self._monotonic() - start
+        waited, age = self._effective(start, sent_age)
+        if age > KEY_MAX_AGE_SECONDS or raw_age > KEY_STALLED_MAX_AGE_SECONDS:
+            self._discarded += 1
+            # O total evita uma linha por tecla durante a rajada, sem identificar a TV.
+            if self._discarded == 1 or self._discarded % 10 == 0:
+                _log.info("teclas descartadas por idade: total=%d", self._discarded)
+            # Medida desde o envio, é o "comando velho" de sempre (`expired`, que a tela cala);
+            # sem a referência, segue o código de antes.
+            code = AGENT_TIMEOUT if sent_age is None else EXPIRED
+            raise TvSessionError(code, "a tecla expirou antes de chegar à TV")
+        if raw_age > KEY_MAX_AGE_SECONDS and self._last_kept is not command:
+            # Antes, esta tecla seria descartada: quem a atrasou foi o laço do agente parado.
+            self._last_kept = command
+            self._kept_after_stall += 1
+            if self._kept_after_stall == 1 or self._kept_after_stall % 10 == 0:
+                _log.info(
+                    "teclas mantidas apesar da parada do agente: total=%d", self._kept_after_stall
+                )
+        return waited
+
+
+def tv_key_handler(  # noqa: PLR0913 - tempos e medidas injetáveis para os testes
     tv: TvControl,
     *,
     blocked_keys: frozenset[str] = frozenset(),
     monotonic: Callable[[], float] = time.monotonic,
     timings: KeyTimings | None = None,
     clock_ns: Callable[[], int] = time.perf_counter_ns,
+    loop_elapsed: Callable[[float], float] | None = None,
 ) -> Handler:
     """Trata `tv.key.v1`, `v2` e `v3` (a direção existe nas duas últimas).
+
+    Com `loop_elapsed` (o `LoopProgress.elapsed_since`, no mesmo relógio de `monotonic`), a espera
+    que conta para a idade e para a junção é só a do laço andando: uma parada do próprio agente
+    não descarta a tecla, até o teto `KEY_STALLED_MAX_AGE_SECONDS` da idade inteira.
 
     Com `timings`, cada tecla que passou pela fila (`TimedKeyCommand` com `received_ns`) deixa ali
     quanto levou em cada trecho: fila, sessão e envio (medidos por `clock_ns`), além da idade.
@@ -121,10 +188,9 @@ def tv_key_handler(
     """
 
     latest: dict[str, int] = {}
-    discarded_by_age = 0
+    ages = _KeyAges(monotonic, loop_elapsed)
 
     async def send(command: Command, ready: list[int] | None) -> CommandResult:
-        nonlocal discarded_by_age
         key = command.body.get("key")
         if not isinstance(key, str) or not key:
             return CommandResult(command.id, ResultStatus.REJECTED, "campo 'key' ausente")
@@ -146,24 +212,17 @@ def tv_key_handler(
             sequence = latest[key]
 
         def validate() -> None:
-            nonlocal discarded_by_age
             if key == "POWER":
                 return
             if isinstance(command, TimedKeyCommand) and command.is_valid is not None:
                 if not command.is_valid():
                     raise TvSessionError(CHANNEL_CLOSED, "o canal direto fechou antes da tecla")
             timed = command if isinstance(command, TimedKeyCommand) else None
-            waited = monotonic() - (timed.received_at if timed is not None else arrived)
-            sent_age = timed.sent_age if timed is not None else None
-            if (waited if sent_age is None else sent_age + waited) > KEY_MAX_AGE_SECONDS:
-                discarded_by_age += 1
-                # O total evita uma linha por tecla durante a rajada, sem identificar a TV.
-                if discarded_by_age == 1 or discarded_by_age % 10 == 0:
-                    _log.info("teclas descartadas por idade: total=%d", discarded_by_age)
-                # Medida desde o envio, é o "comando velho" de sempre (`expired`, que a tela cala);
-                # sem a referência, segue o código de antes.
-                code = AGENT_TIMEOUT if sent_age is None else EXPIRED
-                raise TvSessionError(code, "a tecla expirou antes de chegar à TV")
+            waited = ages.check(
+                command,
+                timed.received_at if timed is not None else arrived,
+                timed.sent_age if timed is not None else None,
+            )
             if coalesce:
                 if isinstance(command, TimedKeyCommand):
                     superseded = command.is_latest is not None and not command.is_latest()

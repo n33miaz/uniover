@@ -115,6 +115,7 @@ from uniover_agent.core import (
     unsupported_handler,
     user_initiated,
 )
+from uniover_agent.core.loop_progress import LoopProgress
 from uniover_agent.core.tv.adb_permission import AdbPermissionTracker
 from uniover_agent.core.tv.key_timing import KeyTimings
 from uniover_agent.core.tv.livre import CAPABILITY as LIVRE_CAPABILITY
@@ -282,7 +283,9 @@ def build_driver_setup(
     # leitura (`tv.power.off.v1`) só aperta a tecla com a TV lida como ligada e nunca a repete.
     # Os tempos de cada tecla (fila, sessão, envio), resumidos por minuto com uso no registro.
     timings = KeyTimings(version=agent_version(), driver="android-remote")
-    keys = tv_key_handler(manager, timings=timings)
+    # A parada do laço do próprio agente não envelhece a tecla (até o teto da idade inteira).
+    loop_progress = LoopProgress()
+    keys = tv_key_handler(manager, timings=timings, loop_elapsed=loop_progress.elapsed_since)
     text = TextReconciler(
         manager,
         monotonic=clock.monotonic,
@@ -323,7 +326,7 @@ def build_driver_setup(
         ],
         text=text,
         known=known,
-        background=[timings.run],
+        background=[timings.run, loop_progress.run],
         # A janela corrente dos tempos sai no registro ao encerrar (depois do dreno das teclas).
         closers=[timings.aclose],
     )
@@ -490,7 +493,9 @@ def build_samsung_tv(
         disconnect_timeout_seconds=settings.tv_session_disconnect_timeout_seconds,
     )
     timings = KeyTimings(version=agent_version(), driver="samsung")
-    keys = tv_key_handler(manager, timings=timings)
+    # A parada do laço do próprio agente não envelhece a tecla (até o teto da idade inteira).
+    loop_progress = LoopProgress()
+    keys = tv_key_handler(manager, timings=timings, loop_elapsed=loop_progress.elapsed_since)
     apps = SamsungTvApps(manager, remote, transport, envelopes)
     announcer = AppsAnnouncer(
         apps, lambda: manager.snapshot().connection == "hot", monotonic=clock.monotonic
@@ -557,7 +562,7 @@ def build_samsung_tv(
             SAMSUNG_MAINTENANCE_CAPABILITY,
             *key_capabilities(SAMSUNG_OPTIONAL_KEYS),
         ],
-        background=[announcer.run, maintenance_scheduler.run, timings.run],
+        background=[announcer.run, maintenance_scheduler.run, timings.run, loop_progress.run],
         after_hello=[permission.announce, announcer.after_hello],
         # O pedido responde em segundos, mas não pode segurar a recepção enquanto a TV é consultada.
         background_commands={"tv.permission.request.v1"},
