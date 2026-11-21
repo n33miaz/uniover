@@ -280,3 +280,78 @@ def test_the_key_age_discounts_a_stall_of_either_loop() -> None:
     assert first.elapsed_since(100.0) == pytest.approx(2.0)
     assert combined(100.0) == pytest.approx(second.elapsed_since(100.0))
     assert combined(100.0) < 0.5
+
+
+async def test_a_pending_cloud_reply_does_not_hold_the_next_direct_key(lab: Lab) -> None:
+    await lab.process(dump(envelope("tv.key.v2", {"key": "UP"})))
+    submitted: list[float] = []
+
+    def phone() -> None:
+        time.sleep(0.2)
+        submitted.append(lab.submit_direct("DOWN", "d1"))
+
+    sender = threading.Thread(target=phone)
+    sender.start()
+    # O laço principal para logo depois de a tecla da nuvem entrar na fila: ela chega à TV, mas a
+    # resposta dela (que sai por este laço) fica pendente durante toda a parada.
+    time.sleep(BLOCK_SECONDS)  # noqa: ASYNC251
+    unblocked = time.monotonic()
+    sender.join(2)
+    await wait_for(lambda: len(lab.remote.keys) == 2)
+
+    assert lab.remote.keys == ["UP", "DOWN"]
+    by_key = {key: at for key, _thread, at in lab.remote.arrivals}
+    assert by_key["UP"] < unblocked
+    assert by_key["DOWN"] < unblocked
+    assert by_key["DOWN"] - submitted[0] < ON_TIME_SECONDS
+    # A resposta da nuvem sai assim que o laço principal volta.
+    await wait_for(lambda: len(lab.transport.sent) == 1)
+    assert lab.transport.sent[0]["body"] == {"ok": True}
+
+
+async def test_without_the_lane_closing_cancels_queued_keys_before_any_wait() -> None:
+    """Sem a faixa, o encerramento cancela a fila das teclas junto das outras tarefas, antes da
+    primeira espera: uma tecla na fila nunca chega à TV depois de o cancelamento começar."""
+    clock = SystemClock()
+    keys: list[str] = []
+
+    async def press(command: Command) -> CommandResult:
+        keys.append(str(command.body["key"]))
+        return CommandResult(command.id, ResultStatus.OK)
+
+    async def maintenance(command: Command) -> CommandResult:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            # Ceder o laço ao tratar o cancelamento: é aqui que uma tecla na fila rodaria.
+            for _ in range(5):
+                await asyncio.sleep(0)
+            raise
+        return CommandResult(command.id, ResultStatus.OK)
+
+    gate = EnvelopeGate(AGENT_ID)
+    transport = FakeTransport()
+    key = FreshKeyHandler(press)
+    process = ProcessMessage(
+        AGENT_ID,
+        gate,
+        HandleCommand(
+            {"tv.key.v2": key, "tv.apps.refresh.v1": maintenance},
+            clock,
+        ),
+        EnvelopeFactory(AGENT_ID, gate, clock),
+        transport,
+    )
+    await process(dump(envelope("tv.apps.refresh.v1", {})))
+    for _ in range(3):
+        await asyncio.sleep(0)
+    pressed = envelope("tv.key.v2", {"key": "UP"})
+    await process(dump(pressed))
+
+    await process.aclose()
+
+    assert keys == []
+    stopping = [
+        m for m in transport.sent if m["body"].get("error", {}).get("code") == "agent_stopping"
+    ]
+    assert pressed["id"] in {m["correlationId"] for m in stopping}
