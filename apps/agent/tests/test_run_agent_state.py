@@ -38,6 +38,14 @@ FUNCTIONS = (
     "Initialize-AtomicMove",
     "Move-FileOver",
     "Set-UpdateState",
+    "Read-JsonFile",
+    "Resolve-InBase",
+    "Get-RelativeToBase",
+    "ConvertTo-Slot",
+    "Test-SlotReady",
+    "Update-Layout",
+    "Write-Pointer",
+    "Set-UpdateWindow",
     "Test-FreshFlag",
     "Move-Folder",
     "Invoke-Rollback",
@@ -288,6 +296,92 @@ try { Move-FileOver ($p + '.tmp') $p; 'trocou' } catch { 'desistiu' }
     assert done.stdout.split() == ["desistiu"]
     assert path.read_text(encoding="ascii") == '{"v":1,"n":0}'
     assert [p.name for p in pc.runtime.iterdir()] == ["current.json"]
+
+
+@pytest.mark.parametrize("reader", ["launcher", "supervisor"])
+def test_the_active_version_is_read_after_the_pointer_is_replaced_during_contention(
+    pc: Pc, reader: str
+) -> None:
+    slot = pc.base / "app.staging" / BAD
+    (slot / "tools").mkdir(parents=True)
+    (slot / "pyproject.toml").touch()
+    (slot / "tools" / "run-agent.ps1").touch()
+    venv = pc.runtime / f"venv-{BAD}"
+    (venv / "Scripts").mkdir(parents=True)
+    (venv / "Scripts" / "python.exe").touch()
+    pointer = pc.runtime / "current.json"
+    pointer.write_text('{"v":1,"current":null}', encoding="ascii")
+    pointer.with_suffix(".json.tmp").write_text(
+        json.dumps(
+            {
+                "v": 1,
+                "current": {
+                    "app": str(slot.relative_to(pc.base)),
+                    "venv": str(venv.relative_to(pc.base)),
+                    "sha": BAD,
+                },
+            }
+        ),
+        encoding="ascii",
+    )
+    body = r"""
+$path = Join-Path $runtime 'current.json'
+$script:heldPointer = [System.IO.File]::Open($path, 'Open', 'Read', 'None')
+function Start-Sleep([int]$Milliseconds) {
+    # O destino so abre depois que o leitor de verdade tenta de novo. Troca o ponteiro no intervalo.
+    $script:heldPointer.Dispose()
+    Move-FileOver ($path + '.tmp') $path
+}
+"""
+    if reader == "launcher":
+        body += r"""
+$runtimeDir = $runtime
+$launcher = Join-Path (Split-Path $env:UNIOVER_TEST_RUNNER -Parent) 'launcher.ps1'
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($launcher, [ref]$tokens, [ref]$errors)
+foreach ($name in @('Get-CurrentRunner', 'Test-AppFolder')) {
+    $found = $ast.Find({ param($node) ($node -is [System.Management.Automation.Language.FunctionDefinitionAst]) -and ($node.Name -eq $name) }, $true)
+    Invoke-Expression $found.Extent.Text
+}
+Get-CurrentRunner
+"""
+        expected = slot / "tools" / "run-agent.ps1"
+    else:
+        body += "\nUpdate-Layout\n$source\n"
+        expected = slot
+
+    done = pc.run(body)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == str(expected), done.stderr
+    assert not pointer.with_suffix(".json.tmp").exists()
+
+
+@pytest.mark.parametrize(
+    ("file", "write", "expected"),
+    [
+        (STATUS_FILE, "Set-UpdateState @{ outcome = 'updated' }", ""),
+        (
+            "current.json",
+            "Write-Pointer @{ sha = $null; app = $source; venv = (Join-Path $runtime 'venv') } $null",
+            "False",
+        ),
+        ("update-window.json", "Set-UpdateWindow 'handover' 'nova'", ""),
+    ],
+)
+def test_a_failed_supervisor_write_logs_the_file_and_error(
+    pc: Pc, file: str, write: str, expected: str
+) -> None:
+    path = pc.runtime / file
+    path.write_text('{"old":true}', encoding="ascii")
+    with path.open("rb"):
+        done = pc.run(write)
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == expected
+    assert path.read_text(encoding="ascii") == '{"old":true}'
+    assert not path.with_suffix(".json.tmp").exists()
+    lines = (pc.base / "logs" / "supervisor.log").read_text(encoding="utf-8").splitlines()
+    prefix = f"WARNING supervisor: nao consegui gravar {file}: "
+    assert any(prefix in line and line.split(prefix, 1)[1].strip() for line in lines)
 
 
 def test_rolling_back_swaps_the_folders_blocks_the_bad_version_and_says_so(pc: Pc) -> None:

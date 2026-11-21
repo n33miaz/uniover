@@ -1097,7 +1097,7 @@ function Set-UpdateState([hashtable]$Changes) {
         $temp = $path + '.tmp'
         [System.IO.File]::WriteAllText($temp, $serializer.Serialize($state), (New-Object System.Text.UTF8Encoding($false)))
         Move-FileOver $temp $path
-    } catch { }
+    } catch { Write-SupLog 'WARNING' ('nao consegui gravar update-status.json: ' + $_.Exception.Message) }
 }
 
 function Test-FreshFlag([string]$Path) {
@@ -1197,13 +1197,23 @@ $script:agentVenv = Join-Path $runtime 'venv'
 $script:currentSlot = $null
 $script:previousSlot = $null
 
-function Read-JsonFile([string]$Path) {
+function Read-JsonFile([string]$Path, [int]$Attempts = 1) {
     # Um JSON pequeno como hashtable; nulo se faltar, estiver ilegivel ou for grande demais (nao e nosso).
+    # Na leitura do ponteiro, uma falha de acesso durante a troca nao deve mandar o agente para outra versao.
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            if ((Get-Item -LiteralPath $Path -ErrorAction Stop).Length -gt 4096) { return $null }
+            $text = [System.IO.File]::ReadAllText($Path)
+            break
+        } catch {
+            if ($attempt -ge $Attempts) { return $null }
+            Start-Sleep -Milliseconds 100
+        }
+    }
     try {
-        if ((Get-Item -LiteralPath $Path -ErrorAction Stop).Length -gt 4096) { return $null }
         Add-Type -AssemblyName System.Web.Extensions
         $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
-        return $serializer.DeserializeObject([System.IO.File]::ReadAllText($Path))
+        return $serializer.DeserializeObject($text)
     } catch { return $null }
 }
 
@@ -1254,7 +1264,7 @@ function Update-Layout {
     $script:source = $legacySource
     $script:previous = Join-Path $base 'app.previous'
     $script:agentVenv = $legacy.venv
-    $pointer = Read-JsonFile (Join-Path $runtime 'current.json')
+    $pointer = Read-JsonFile (Join-Path $runtime 'current.json') 5
     if ($null -ne $pointer -and $pointer -is [System.Collections.IDictionary]) {
         $current = ConvertTo-Slot $pointer['current']
         $before = ConvertTo-Slot $pointer['previous']
@@ -1294,7 +1304,10 @@ function Write-Pointer($Current, $Previous) {
         [System.IO.File]::WriteAllText($temp, $serializer.Serialize($body), (New-Object System.Text.UTF8Encoding($false)))
         Move-FileOver $temp $path
         return $true
-    } catch { return $false }
+    } catch {
+        Write-SupLog 'WARNING' ('nao consegui gravar current.json: ' + $_.Exception.Message)
+        return $false
+    }
 }
 
 function Get-PreparedSlot {
@@ -1364,7 +1377,7 @@ function Set-UpdateWindow([string]$Mode, [string]$Sha, [string]$Token = '', $New
         $path = Join-Path $runtime 'update-window.json'
         [System.IO.File]::WriteAllText(($path + '.tmp'), $serializer.Serialize($window), (New-Object System.Text.UTF8Encoding($false)))
         Move-FileOver ($path + '.tmp') $path
-    } catch { }
+    } catch { Write-SupLog 'WARNING' ('nao consegui gravar update-window.json: ' + $_.Exception.Message) }
 }
 
 function Complete-UpdateWindow {
