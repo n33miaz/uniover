@@ -90,6 +90,7 @@ from uniover_agent.ports.tv_channel import (
     TvPairingFailed,
     TvPermissionNeeded,
     TvPortClosed,
+    TvSendUncertain,
     TvUnreachable,
 )
 from uniover_agent.ports.tv_cleanup import CleanupDayStore, TvAdbCleanup, WakeSettings
@@ -193,6 +194,7 @@ __all__ = [
     "TvPermissionNeeded",
     "TvPortClosed",
     "TvRemote",
+    "TvSendUncertain",
     "TvUnreachable",
     "UserRequest",
     "VolumeState",

@@ -241,6 +241,12 @@ class TextReconciler:
         self._doubt_counter: int | None = None
         # Contador do campo da edição em curso (o de antes de uma queda zerar `_field_counter`).
         self._edit_counter: int | None = None
+        # Posse do campo: `last_text` é o conteúdo que a TV informou do campo (valor adotado ou que
+        # bateu com a base), mais as edições do próprio agente. Nunca vem só do contador: um relato
+        # recusado (sem bater com a base) deixa um texto desconhecido possível à esquerda.
+        self._owns_field = False
+        # A posse no instante em que a dúvida nasceu: o refazer dela a herda.
+        self._doubt_owns_field = False
         # Durante o refazer o conteúdo antigo do campo é desconhecido: nenhum eco prova as teclas.
         self._resyncing = False
         # Último eco do campo (mesmo contador) que chegou com uma edição nossa em andamento.
@@ -258,6 +264,9 @@ class TextReconciler:
         # Teclas (`DEL` e letras) que saíram pelo socket do Remote v2 no comando em curso: nenhuma
         # tem confirmação de que a TV a aplicou (ver `_type_keys`).
         self._socket_keys = 0
+        # Trecho do `send_text` que caiu já dentro do envio no comando em curso (`may_have_sent`):
+        # pode ter chegado à TV, então entra no esperado da dúvida dos `DEL` (ver `_doubt_deletes`).
+        self._unconfirmed_text = ""
 
     @property
     def last_text(self) -> str:
@@ -313,6 +322,7 @@ class TextReconciler:
         self._field_counter = None
         self._pending_field = None
         self._echo = None
+        self._owns_field = False
 
     def observe_app(self, app: str) -> None:
         """O app em foco mudou? Então o estado do campo era de outro lugar.
@@ -337,12 +347,18 @@ class TextReconciler:
                 # Depois de uma reconexão chegou outro campo: a dúvida era do anterior.
                 self._last = unicodedata.normalize("NFC", field.value)
                 self._last_at = self._monotonic()
+                self._owns_field = True
                 self._clear_doubt()
+                return
+            if self._uncertain is None:
+                # Só registra o contador; a posse vem só se o valor bate com o que foi digitado.
+                self._owns_field = unicodedata.normalize("NFC", field.value) == self._last
                 return
             self._resolve_doubt(field)
             return
         self._last = unicodedata.normalize("NFC", field.value)
         self._last_at = self._monotonic()
+        self._owns_field = True
         self._clear_doubt()  # outro campo, ou o valor real: a dúvida não vale mais
 
     def _check(self) -> None:
@@ -394,6 +410,7 @@ class TextReconciler:
 
     async def _reconcile(self, target: str, trace: _Trace) -> None:
         self._socket_keys = 0
+        self._unconfirmed_text = ""
         now = self._monotonic()
         self._edit_counter = (
             self._field_counter if self._field_counter is not None else self._doubt_counter
@@ -407,6 +424,7 @@ class TextReconciler:
             return
         if self._field_changed(now, target):
             self._last = ""
+            self._owns_field = False
         edit = plan_edit(self._last, target)
         trace.previous, trace.delete, trace.insert = len(self._last), edit.delete, len(edit.insert)
         if edit.delete == 0 and not edit.insert:
@@ -430,6 +448,7 @@ class TextReconciler:
     def _set_doubt(self, expected: str, erase_count: int) -> None:
         self._uncertain = (expected, erase_count)
         self._doubt_counter = self._edit_counter
+        self._doubt_owns_field = self._owns_field
         self._erase_left = None
         if not self._resyncing:
             self._resolve_doubt(self._echo)
@@ -437,6 +456,7 @@ class TextReconciler:
     def _clear_doubt(self) -> None:
         self._uncertain = None
         self._doubt_counter = None
+        self._doubt_owns_field = False
         self._erase_left = None
 
     def _doubt_outlived(self, now: float, target: str, expected: str) -> bool:
@@ -464,6 +484,7 @@ class TextReconciler:
             return False
         self._last = expected
         self._last_at = self._monotonic()
+        self._owns_field = True  # o campo informado bateu com o esperado
         self._clear_doubt()
         self._echo = None
         return True
@@ -497,6 +518,9 @@ class TextReconciler:
         if self._erase_left > 0:
             raise TvSessionError(RESYNC_INCOMPLETE, "o campo da TV é grande demais para refazer")
         self._last = ""
+        # O campo só está vazio de fato se a dúvida tinha a posse: o máximo dela era exato. Sem
+        # ela, pode ter sobrado à esquerda um texto que o agente não conhece.
+        self._owns_field = self._doubt_owns_field
         self._clear_doubt()
         self._last_at = self._monotonic()
         if target:
@@ -575,10 +599,21 @@ class TextReconciler:
 
         O esperado é o que o agente acredita ter feito (ou a dúvida que a digitação já registrou);
         sem eco, o refazer apaga até o maior tamanho possível: o esperado mais os `DEL` enviados.
+
+        Um `send_text` que pode ter chegado à TV entra no esperado: só o eco do campo inteiro prova
+        a edição. No máximo a apagar ele só entra com a posse do campo (`_owns_field`: a base é o
+        conteúdo que a TV informou). Sem ela, um texto que já estava no campo antes do agente pode
+        estar à esquerda: apagar a mais o destruiria, então se apaga de menos (o trecho, se chegou,
+        sobra no campo).
         """
-        expected = self._uncertain[0] if self._uncertain is not None else self._last
+        unconfirmed, self._unconfirmed_text = self._unconfirmed_text, ""
+        if self._uncertain is not None:
+            expected, erase = self._uncertain[0], len(self._uncertain[0])
+        else:
+            expected = self._last + unconfirmed
+            erase = len(expected) if self._owns_field else len(self._last)
         self._last = base
-        self._set_doubt(expected, len(expected) + deleted)
+        self._set_doubt(expected, erase + deleted)
 
     async def _type(self, text: str, trace: _Trace) -> None:
         keys = typing_keys(text) if self._keys else None
@@ -598,7 +633,17 @@ class TextReconciler:
         else:
             trace.channel = CHANNEL_REMOTE
         trace.groups += 1
-        await self._effect().send_text(rest)
+        tv = self._effect()
+        try:
+            await tv.send_text(rest)
+        except TvSessionError as exc:
+            # Só a queda já dentro do envio deixa o trecho incerto; uma falha anterior (sessão que
+            # não abriu, transporte fechando) prova que nada saiu. Quem registrar a dúvida dos
+            # `DEL` conta este trecho. Sem `DEL` neste comando não há dúvida: um lote que tenha
+            # saído seria repetido pelo reenvio.
+            if exc.may_have_sent:
+                self._unconfirmed_text = rest
+            raise
         self._remote_at = self._monotonic()
         self._typed(rest)
 

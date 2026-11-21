@@ -42,6 +42,7 @@ from uniover_agent.ports import (
     TvNotPaired,
     TvPermissionNeeded,
     TvPortClosed,
+    TvSendUncertain,
     TvUnreachable,
 )
 
@@ -122,12 +123,16 @@ class PowerOffResult(StrEnum):
 
 
 class TvSessionError(Exception):
-    """A TV não pôde executar o comando; `code` vai para a API e `message` para o dono."""
+    """A TV não pôde executar o comando; `code` vai para a API e `message` para o dono.
 
-    def __init__(self, code: str, message: str) -> None:
+    `may_have_sent`: alguma tentativa caiu já dentro do envio (`TvSendUncertain`), então o efeito
+    pode ter chegado à TV. Falso: toda tentativa falhou antes de enviar."""
+
+    def __init__(self, code: str, message: str, *, may_have_sent: bool = False) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.may_have_sent = may_have_sent
 
 
 @dataclass(slots=True)
@@ -798,18 +803,25 @@ class TvSessionManager:
             # O canal caiu entre a conferência e o envio: reabre uma vez e repete.
             _log.info("canal da TV caiu durante o comando (%s); reabrindo", exc)
             self._channel_lost()
+            # Se a primeira tentativa pode ter chegado à TV, a falha final diz isso a quem chamou.
+            sent = isinstance(exc, TvSendUncertain)
             try:
-                await self._ensure_hot()
-            except TvSessionError:
-                if validate is not None:
-                    validate()
+                try:
+                    await self._ensure_hot()
+                except TvSessionError:
+                    if validate is not None:
+                        validate()
+                    raise
+                try:
+                    if validate is not None:
+                        validate()
+                    await action(self._remote)
+                except TvChannelError as again:
+                    sent = sent or isinstance(again, TvSendUncertain)
+                    raise TvSessionError(TV_UNREACHABLE, str(again), may_have_sent=sent) from None
+            except TvSessionError as failed:
+                failed.may_have_sent = failed.may_have_sent or sent
                 raise
-            try:
-                if validate is not None:
-                    validate()
-                await action(self._remote)
-            except TvChannelError as again:
-                raise TvSessionError(TV_UNREACHABLE, str(again)) from None
 
     def _is_idle(self) -> bool:
         return self._clock.monotonic() - self._last_activity >= self._hibernate_seconds

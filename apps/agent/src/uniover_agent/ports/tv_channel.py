@@ -17,6 +17,14 @@ class TvUnreachable(TvChannelError):  # noqa: N818 - lê-se como fato, não como
     """
 
 
+class TvSendUncertain(TvUnreachable):
+    """A conexão caiu já dentro do envio: o pacote pode ter saído e chegado à TV.
+
+    As outras falhas de envio (`TvUnreachable` simples) são conferências anteriores a ele: nada
+    saiu.
+    """
+
+
 class TvPortClosed(TvUnreachable):
     """A TV está na rede mas **recusou** a conexão: o serviço do controle remoto morreu.
 
