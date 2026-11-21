@@ -654,7 +654,7 @@ async def _close_within(what: str, step: Awaitable[Any]) -> None:
         _log.exception("falha ao encerrar: %s", what)
 
 
-async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
+async def run(
     settings: Settings,
     open_store: StoreFactory,
     kit: DiagnosticsKit | None = None,
@@ -666,7 +666,28 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
     `handover` (`run --handover`): esta execução é a versão nova de uma passagem sem queda. Ela
     conecta enquanto a antiga ainda serve e deixa para depois de a antiga sair tudo o que é
     compartilhado ou físico (a trava da instalação, o rastro da execução, o diário e a fila de
-    diagnóstico, a TV, o canal direto do PC): nada disso tem dois donos ao mesmo tempo."""
+    diagnóstico, a TV, o canal direto do PC): nada disso tem dois donos ao mesmo tempo.
+
+    A thread da faixa da TV pertence a este escopo: para mesmo se a montagem falhar ou for
+    cancelada antes de o agente começar a servir (no caminho normal ela já parou; parar de novo
+    não faz nada)."""
+    lanes: list[TvLaneHop] = []
+    try:
+        return await _serve(settings, open_store, kit, handover=handover, lanes=lanes)
+    finally:
+        for hop in lanes:
+            await hop.stop()
+
+
+async def _serve(  # noqa: PLR0911, PLR0912, PLR0915 - composição
+    settings: Settings,
+    open_store: StoreFactory,
+    kit: DiagnosticsKit | None,
+    *,
+    handover: bool,
+    lanes: list[TvLaneHop],
+) -> int:
+    """O corpo de `run`; `lanes` recebe a faixa da TV antes de ela subir."""
     agent_id = settings.agent_id
     if not agent_id:
         print(_NOT_PAIRED, file=sys.stderr)
@@ -786,6 +807,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
     if tv is None:
         tv_hop = build_tv_lane(main_loop, enabled=False)
         arrival_progress = None
+    lanes.append(tv_hop)
     tv_hop.start()
     if not handover or tv is None:
         tv_ready.set()

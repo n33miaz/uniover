@@ -560,3 +560,34 @@ async def test_later_deliveries_extend_the_composition_with_one_line_each(
         m["correlationId"]: m["body"] for m in api.received if m["type"] == "command.result.v1"
     }
     assert results[refresh_id] == {"ok": True}
+
+
+async def test_the_tv_lane_stops_when_the_composition_fails_while_starting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A faixa sobe antes do resto da montagem: uma falha logo depois não deixa a thread viva."""
+    pair_fake_tv(monkeypatch, FakeTvRemote())
+
+    def broken_pc(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("falha na montagem do PC")
+
+    monkeypatch.setattr(connection_module, "build_pc", broken_pc)
+    store = FakeSecretStore()
+    store.set(AGENT_ID, TOKEN)
+
+    async def script(connection: ServerConnection) -> None:
+        await connection.close(4403, "revoked")
+
+    async with FakeApi(script) as api:
+        settings = Settings(
+            api_url=api.http_url,
+            agent_id=AGENT_ID,
+            allow_insecure=True,
+            tv_host=TV_HOST,
+            pc_control=False,
+            tv_lane_thread=True,
+        )
+        with pytest.raises(RuntimeError, match="montagem do PC"):
+            await run(settings, lambda: store)
+
+    assert not [t for t in threading.enumerate() if t.name == TV_LANE_THREAD_NAME]
