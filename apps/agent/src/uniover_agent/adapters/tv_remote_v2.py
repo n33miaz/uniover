@@ -43,6 +43,7 @@ from uniover_agent.ports import (
     TvCertificateRefused,
     TvNotPaired,
     TvPortClosed,
+    TvSendUncertain,
     TvUnreachable,
 )
 
@@ -469,7 +470,8 @@ class AndroidTvRemoteV2:
         try:
             _send_ime_batch(protocol, text, cursor, ime_counter, field_counter)
         except ConnectionClosed:
-            raise TvUnreachable("a conexão com a TV fechou") from None
+            # Já dentro do envio da biblioteca: não há como provar que nada saiu.
+            raise TvSendUncertain("a conexão com a TV fechou durante o envio") from None
 
     def _cursor_for(self, text: str) -> int:
         if self._text_cursor == "library":

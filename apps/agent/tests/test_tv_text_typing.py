@@ -20,7 +20,13 @@ from uniover_agent.core import (
     tv_text_handler,
 )
 from uniover_agent.core.tv.text_edit import FIELD_IDLE_SECONDS, TYPING_KEYS, typing_keys
-from uniover_agent.ports import AdbTimeout, AdbUnauthorized, TextFieldStatus, TvUnreachable
+from uniover_agent.ports import (
+    AdbTimeout,
+    AdbUnauthorized,
+    TextFieldStatus,
+    TvSendUncertain,
+    TvUnreachable,
+)
 
 Events = list[tuple[str, str]]
 
@@ -465,6 +471,172 @@ async def test_without_field_reports_a_doubt_ends_with_the_field_idle_pause() ->
 
     assert "DEL" not in remote.keys
     assert remote.field == editor.last_text == "qq"
+
+
+# Como o `send_text` falha: antes de enviar (nada saiu), já dentro do envio sem o trecho chegar,
+# ou já dentro do envio com o trecho no campo (só a confirmação se perdeu).
+BEFORE_SEND = "antes"
+LOST_IN_SEND = "perdido"
+DELIVERED_IN_SEND = "entregue"
+
+
+class TextDropRemote(FieldRemote):
+    """O `send_text` falha do jeito de `fail_text` (`None`: funciona e o texto entra no campo).
+
+    O trecho entregue entra uma vez só, mesmo com a nova tentativa da sessão, que cai de novo. Com
+    `drop_deletes`, todo `DEL` fica no socket que caiu. Com `editor`, a TV ecoa o campo."""
+
+    def __init__(self) -> None:
+        super().__init__(lose=set(), fail_on=None)
+        self.fail_text: str | None = None
+        self.drop_deletes = False
+
+    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+        if self.drop_deletes and key == "DEL":
+            self.lose.add(key)
+        await super().send_key(key, direction)
+
+    async def send_text(self, text: str) -> None:
+        await super().send_text(text)
+        failure = self.fail_text
+        if failure == BEFORE_SEND:
+            raise TvUnreachable("a conexão não está aberta")
+        if failure in {None, DELIVERED_IN_SEND}:
+            self.field += text
+            if self.editor is not None:
+                self.editor.observe_field(TextFieldStatus(self.field, 0, 0, "", counter=1))
+        if failure is not None:
+            if failure == DELIVERED_IN_SEND:
+                self.fail_text = LOST_IN_SEND  # a nova tentativa da sessão não entrega de novo
+            raise TvSendUncertain("caiu no envio")
+
+
+async def typed_abc(remote: TextDropRemote, *, field_reported: bool = True) -> TextReconciler:
+    editor, _ = field_rig(remote)
+    if field_reported:
+        editor.observe_field(TextFieldStatus(remote.field, 0, 0, "", counter=1))
+    await editor.set_text("abc")
+    return editor
+
+
+@pytest.mark.parametrize("failure", [BEFORE_SEND, LOST_IN_SEND, DELIVERED_IN_SEND])
+@pytest.mark.parametrize("delete_applied", [False, True])
+async def test_a_failed_remote_text_counts_in_how_much_the_next_edit_may_erase(
+    delete_applied: bool, failure: str
+) -> None:
+    # "é" não tem tecla nem vai pelo ADB: depois do `DEL` do "c", segue pelo `send_text`, que cai.
+    remote = TextDropRemote()
+    editor = await typed_abc(remote)
+    remote.drop_deletes = not delete_applied
+    remote.fail_text = failure
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("abé")
+    assert caught.value.may_have_sent is (failure != BEFORE_SEND)
+    delivered = "é" if failure == DELIVERED_IN_SEND else ""
+    assert remote.field == ("ab" if delete_applied else "abc") + delivered
+
+    # Sem eco, o refazer apaga o maior campo possível e nem um a mais: com o envio incerto,
+    # "abcé" (o `DEL` perdido e o "é" entregue); com a falha antes do envio, só "abc".
+    remote.drop_deletes, remote.fail_text = False, None
+    remote.keys.clear()
+    await editor.set_text("abé")
+    assert remote.keys.count("DEL") == len("abc" if failure == BEFORE_SEND else "abcé")
+    assert remote.field == editor.last_text == "abé"
+
+
+@pytest.mark.parametrize("failure", [BEFORE_SEND, LOST_IN_SEND])
+async def test_without_field_reports_a_failed_remote_text_never_erases_text_from_before(
+    failure: str,
+) -> None:
+    # O campo já tinha "X", que o agente não conhece (a TV não informa o campo).
+    remote = TextDropRemote()
+    remote.field = "X"
+    editor = await typed_abc(remote, field_reported=False)
+    assert remote.field == "Xabc"
+    remote.drop_deletes, remote.fail_text = True, failure
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abé")
+    assert remote.field == "Xabc"
+
+    remote.drop_deletes, remote.fail_text = False, None
+    remote.keys.clear()
+    await editor.set_text("abé")
+    assert remote.keys.count("DEL") == len("abc")
+    assert remote.field == "Xabé"
+    assert editor.last_text == "abé"
+
+
+async def test_a_field_report_that_does_not_match_the_base_never_widens_the_erase() -> None:
+    # 1) O campo tem "Xabc" e o agente acha que tem "abc"; o `DEL` se perde e o "é" falha antes
+    # de sair: o máximo a apagar fica em três.
+    remote = TextDropRemote()
+    remote.field = "X"
+    editor = await typed_abc(remote, field_reported=False)
+    remote.drop_deletes, remote.fail_text = True, BEFORE_SEND
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abé")
+    assert remote.field == "Xabc"
+
+    # 2) A TV informa "Xabc": registra o contador, mas o valor não bate com a base e é recusado.
+    editor.observe_field(TextFieldStatus("Xabc", 0, 0, "", counter=1))
+    assert editor.last_text == "abc"
+
+    # 3) O refazer apaga três e sobra "X"; 4) redigitar "abé" cai já dentro do envio.
+    remote.drop_deletes, remote.fail_text = False, DELIVERED_IN_SEND
+    remote.keys.clear()
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("abé")
+    assert caught.value.may_have_sent
+    assert remote.keys.count("DEL") == len("abc")
+    assert remote.field == "Xabé"
+
+    # A recuperação apaga só o que o agente pode ter posto: o "X" sobrevive.
+    remote.fail_text = None
+    remote.keys.clear()
+    await editor.set_text("abé")
+    assert remote.keys.count("DEL") == len("abé")
+    assert remote.field == "Xabé"
+    assert editor.last_text == "abé"
+
+
+async def test_the_echo_of_a_remote_text_that_failed_after_going_out_proves_it() -> None:
+    remote = TextDropRemote()
+    editor = await typed_abc(remote, field_reported=False)
+    remote.editor = editor
+    remote.fail_text = DELIVERED_IN_SEND
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abé")
+    assert remote.field == editor.last_text == "abé"
+
+    remote.fail_text = None
+    remote.keys.clear()
+    await editor.set_text("abé")
+    assert remote.keys == []
+    assert remote.field == "abé"
+
+
+async def test_a_failed_remote_text_while_retyping_counts_in_the_next_resync() -> None:
+    remote = TextDropRemote()
+    editor = await typed_abc(remote)
+    remote.drop_deletes, remote.fail_text = True, LOST_IN_SEND
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abé")
+    assert remote.field == "abc"
+
+    # O refazer manda quatro `DEL`, que ficam no socket, e o "abé" redigitado entra antes da queda.
+    remote.fail_text = DELIVERED_IN_SEND
+    remote.keys.clear()
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abé")
+    assert remote.keys.count("DEL") == len("abcé")
+    assert remote.field == "abcabé"
+
+    # O próximo refazer apaga também o trecho que pode ter entrado: os quatro de antes e "abé".
+    remote.drop_deletes, remote.fail_text = False, None
+    remote.keys.clear()
+    await editor.set_text("abé")
+    assert remote.keys.count("DEL") == len("abcé") + len("abé")
+    assert remote.field == editor.last_text == "abé"
 
 
 async def test_the_field_echo_proves_the_keys_and_adb_completes_the_text() -> None:
