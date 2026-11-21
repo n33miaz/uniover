@@ -5,6 +5,7 @@ O controle da TV é o dublê (`FakeTvRemote`); a API é o servidor WebSocket fal
 
 import asyncio
 import logging
+import threading
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from uniover_agent.composition.tv import (
     TvSetup,
     build_tv,
 )
+from uniover_agent.composition.tv_lane import TV_LANE_THREAD_NAME
 from uniover_agent.config import Settings, tv_cert_dir
 from uniover_agent.core import (
     Command,
@@ -477,26 +479,33 @@ async def test_run_without_certificate_declares_no_capability(
     assert not [m for m in api.received if m["type"] == "tv.state.v1"]
 
 
+@pytest.mark.parametrize("tv_lane_thread", [False, True])
 async def test_later_deliveries_extend_the_composition_with_one_line_each(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tv_lane_thread: bool
 ) -> None:
-    """O que os marcadores precisam: handlers, capacidades, tarefa de fundo e envio de eventos."""
+    """O que os marcadores precisam: handlers, capacidades, tarefa de fundo e envio de eventos.
+
+    Com a faixa da TV num laço próprio, o mesmo vale, e tudo da TV roda na thread dela, que não
+    sobra depois do encerramento."""
     remote = FakeTvRemote()
     pair_fake_tv(monkeypatch, remote)
     original = tv_module.build_tv
     ran: list[str] = []
+    threads: set[str] = set()
     refresh_id = "0192f1e4-0000-7000-8000-0000000000b1"
 
-    def extended(*args: Any) -> TvSetup | None:
-        setup = original(*args)
+    def extended(*args: Any, **kwargs: Any) -> TvSetup | None:
+        setup = original(*args, **kwargs)
         assert setup is not None
 
         async def refresh_apps(command: Command) -> CommandResult:
             ran.append("apps")
+            threads.add(threading.current_thread().name)
             return CommandResult(command.id, ResultStatus.OK)
 
         async def loop_forever() -> None:
             ran.append("fundo")
+            threads.add(threading.current_thread().name)
             await asyncio.Event().wait()
 
         async def event_after_hello() -> None:
@@ -526,9 +535,13 @@ async def test_later_deliveries_extend_the_composition_with_one_line_each(
             allow_insecure=True,
             tv_host=TV_HOST,
             pc_control=False,
+            tv_lane_thread=tv_lane_thread,
         )
         assert await run(settings, lambda: store) == EXIT_CREDENTIAL_REJECTED
 
+    lane = {TV_LANE_THREAD_NAME} if tv_lane_thread else {threading.current_thread().name}
+    assert threads == lane
+    assert not [t for t in threading.enumerate() if t.name == TV_LANE_THREAD_NAME]
     assert api.received[0]["body"]["capabilities"] == [
         "transport.keepalive.v1",
         "agent.logs.v1",
