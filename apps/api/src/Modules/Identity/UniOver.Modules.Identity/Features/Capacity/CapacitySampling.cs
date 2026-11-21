@@ -35,7 +35,8 @@ internal static class CapacitySampling
 
         // A trava vale para todas as datas: a limpeza e os avisos abertos são compartilhados entre elas.
         // Se outra instância já estiver amostrando (ou o dono marcando os avisos como vistos), sai antes da consulta de
-        // tamanho do banco. A trava fica com a transação até o commit: não aumente o trabalho aqui dentro.
+        // tamanho do banco e só volta no próximo ciclo da limpeza (24 horas por padrão). A trava fica com a
+        // transação até o commit: não aumente o trabalho aqui dentro.
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var acquired = await db.Database.SqlQuery<bool>(
             $"SELECT pg_try_advisory_xact_lock(hashtextextended({JobName}, 0)) AS \"Value\"")
@@ -119,7 +120,7 @@ internal static class CapacitySampling
 
         // Sem tratar violação única aqui: quem chama segura a trava, então não há outro escritor de avisos ao mesmo tempo.
         // Se o erro viesse, a transação ficaria abortada e engoli-lo transformaria o commit num rollback silencioso; ele
-        // sobe, o serviço registra a falha e tenta de novo no próximo despertar.
+        // sobe, o serviço registra a falha e a sonda só tenta de novo no próximo ciclo (24 horas por padrão).
         await db.SaveChangesAsync(cancellationToken);
     }
 }

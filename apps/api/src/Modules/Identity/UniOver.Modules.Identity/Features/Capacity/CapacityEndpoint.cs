@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Npgsql;
 using UniOver.BuildingBlocks.Persistence;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Identity.Persistence;
@@ -93,13 +94,14 @@ internal sealed class CapacityHandler(
     /// </summary>
     /// <remarks>
     /// Pega a mesma trava da amostra diária (esperando, ao contrário da amostra): as duas escrevem nos avisos abertos e,
-    /// sem ordem entre elas, poderiam travar uma à outra. O clique espera os milissegundos da amostra; se a amostra chegar
-    /// enquanto este UPDATE está no meio, ela pula aquela execução e grava no próximo despertar.
+    /// sem ordem entre elas, poderiam travar uma à outra. O clique espera a trava por até 5 segundos. Se a sonda chegar
+    /// enquanto o clique segura a trava, ela pula a execução e só volta no próximo ciclo da limpeza (24 horas por padrão).
     /// </remarks>
     public async Task MarkSeenAsync(CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '5s'", cancellationToken);
         await db.Database.ExecuteSqlAsync(
             $"SELECT pg_advisory_xact_lock(hashtextextended({CapacitySampling.JobName}, 0))", cancellationToken);
         await db.CapacityAlerts.Where(a => a.SeenAt == null && a.RecoveredAt == null)
@@ -121,11 +123,23 @@ internal static class CapacityEndpoint
 
         group.MapPost("/capacity/alerts/seen", async (CapacityHandler handler, CancellationToken cancellationToken) =>
             {
-                await handler.MarkSeenAsync(cancellationToken);
-                return TypedResults.NoContent();
+                try
+                {
+                    await handler.MarkSeenAsync(cancellationToken);
+                    return Results.NoContent();
+                }
+                catch (PostgresException error) when (error.SqlState == PostgresErrorCodes.LockNotAvailable)
+                {
+                    return Results.Problem(
+                        statusCode: StatusCodes.Status503ServiceUnavailable,
+                        type: ProblemDetailsExtensions.TypeBase + "capacity-alerts-busy",
+                        title: "Não foi possível marcar os avisos como vistos agora. Tente novamente.");
+                }
             })
             .RequireAuthorization(UniOverAuth.OwnerPolicy)
             .RequireRateLimiting(RateLimitPolicies.Commands)
-            .ProducesProblem(401).ProducesProblem(403);
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(401).ProducesProblem(403)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 }

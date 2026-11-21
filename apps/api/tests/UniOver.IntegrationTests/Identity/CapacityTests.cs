@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using UniOver.BuildingBlocks.Persistence;
+using UniOver.BuildingBlocks.Web;
 using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Identity.Domain;
@@ -48,18 +49,23 @@ public sealed class CapacityTests(PostgresFixture postgres)
         return (connection, transaction);
     }
 
-    /// <summary>Espera até alguma sessão deste banco ficar parada na fila de uma trava consultiva.</summary>
+    /// <summary>Espera até alguma sessão deste banco ficar na fila da trava consultiva da sonda.</summary>
     private static async Task WaitForAnAdvisoryWaiterAsync(TestDatabase database)
     {
         await using var connection = new NpgsqlConnection(database.OwnerConnection);
         await connection.OpenAsync(Ct);
         await using var command = new NpgsqlCommand(
             """
-            SELECT count(*) FROM pg_locks
+            WITH probe AS (SELECT hashtextextended(@job, 0) AS key)
+            SELECT count(*) FROM pg_locks CROSS JOIN probe
             WHERE locktype = 'advisory' AND NOT granted
               AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+              AND objsubid = 1
+              AND classid::bigint = ((probe.key >> 32) & 4294967295)
+              AND objid::bigint = (probe.key & 4294967295)
             """,
             connection);
+        command.Parameters.AddWithValue("job", CapacitySampling.JobName);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(30));
         while ((long)(await command.ExecuteScalarAsync(timeout.Token))! == 0)
@@ -444,6 +450,42 @@ public sealed class CapacityTests(PostgresFixture postgres)
 
         using var response = await seen.WaitAsync(TimeSpan.FromSeconds(30), Ct);
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await using var check = app.Db();
+        (await check.CapacityAlerts.AsNoTracking().SingleAsync(Ct)).SeenAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Dismissing_WhenTheLockTimesOut_Returns503_AndCanBeRetried()
+    {
+        await using var app = await IdentityApp.StartAsync(postgres);
+        var owner = await app.LoginAsync();
+        await using (var seed = app.Db())
+        {
+            seed.CapacityAlerts.Add(new CapacityAlert
+            {
+                Id = Guid.NewGuid(), Metric = "database", Percent = 85, DetectedAt = app.Time.GetUtcNow().AddHours(-1),
+            });
+            await seed.SaveChangesAsync(Ct);
+        }
+
+        var (connection, transaction) = await HoldTheLockAsync(app.Database);
+        await using (connection)
+        await using (transaction)
+        {
+            using var response = await app.SendAsync(HttpMethod.Post, Route + "/alerts/seen", bearer: owner.AccessToken)
+                .WaitAsync(TimeSpan.FromSeconds(15), Ct);
+
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            var problem = await IdentityApp.JsonAsync(response);
+            problem.GetProperty("type").GetString().Should().Be(ProblemDetailsExtensions.TypeBase + "capacity-alerts-busy");
+
+            await using var db = app.Db();
+            (await db.CapacityAlerts.AsNoTracking().SingleAsync(Ct)).SeenAt.Should().BeNull();
+            await transaction.RollbackAsync(Ct);
+        }
+
+        using var retry = await app.SendAsync(HttpMethod.Post, Route + "/alerts/seen", bearer: owner.AccessToken);
+        retry.StatusCode.Should().Be(HttpStatusCode.NoContent);
         await using var check = app.Db();
         (await check.CapacityAlerts.AsNoTracking().SingleAsync(Ct)).SeenAt.Should().NotBeNull();
     }
