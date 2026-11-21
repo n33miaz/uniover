@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.78.1](https://github.com/n33miaz/uniover/compare/v0.78.0...v0.78.1) (2026-11-21)
+
+
+### Devices 0.69.1
+
+#### Bug Fixes
+
+* **web:** send pc text during composition
+
+
+### Web 0.73.3
+
+#### Bug Fixes
+
+* **web:** send pc text during composition
+* **web:** drop manifest theme color
+
 ## [0.78.0](https://github.com/n33miaz/uniover/compare/v0.77.1...v0.78.0) (2026-11-21)
 
 
