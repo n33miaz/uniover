@@ -346,8 +346,9 @@ async def test_run_serves_apps_launch_and_typing_through_the_adb(
     assert presence_id not in results
     assert not [m for m in api.received if m.get("correlationId") == presence_id]
     assert adb.launched == [("com.cnvs.apptv", None)]
-    # "ab" pelo ADB; o "ç" não é ASCII e vai pelo controle remoto; "a" apaga os dois (DEL x2).
-    assert adb.typed == ["ab"]
+    # "ab" por teclas; o "ç" vai pelo IME; "a" apaga os dois (DEL x2).
+    assert adb.typed == []
+    assert remote.keys[:2] == ["TYPE_A", "TYPE_B"]
     assert remote.texts == ["ç"]
     assert remote.keys.count("DEL") == 2
     # Ao encerrar, a sessão fecha o canal ADB junto.

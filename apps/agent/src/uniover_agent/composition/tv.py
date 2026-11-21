@@ -300,7 +300,7 @@ def build_driver_setup(
     manager.subscribe(lambda state: text.forget_field() if state.connection != "hot" else None)
     _log.info(
         "digitação na TV: teclas do controle remoto %s",
-        "ligadas" if settings.tv_text_by_keys else "desligadas (padrão)",
+        "ligadas" if settings.tv_text_by_keys else "desligadas",
     )
     setup = TvSetup(
         manager,

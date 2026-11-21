@@ -39,15 +39,15 @@ def test_config_reads_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.allow_insecure is False
 
 
-def test_typing_by_keys_is_off_by_default_and_read_from_env(
+def test_typing_by_keys_is_on_by_default_and_read_from_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = Settings()
-    assert (settings.tv_text_by_keys, settings.tv_text_key_pause_ms) == (False, 0)
-    monkeypatch.setenv("UNIOVER_TV_TEXT_BY_KEYS", "1")
+    assert (settings.tv_text_by_keys, settings.tv_text_key_pause_ms) == (True, 0)
+    monkeypatch.setenv("UNIOVER_TV_TEXT_BY_KEYS", "0")
     monkeypatch.setenv("UNIOVER_TV_TEXT_KEY_PAUSE_MS", "15")
     settings = Settings()
-    assert (settings.tv_text_by_keys, settings.tv_text_key_pause_ms) == (True, 15)
+    assert (settings.tv_text_by_keys, settings.tv_text_key_pause_ms) == (False, 15)
     monkeypatch.setenv("UNIOVER_TV_TEXT_KEY_PAUSE_MS", "-1")
     with pytest.raises(ValueError, match="tv_text_key_pause_ms"):
         Settings()

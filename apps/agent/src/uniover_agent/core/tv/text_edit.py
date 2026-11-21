@@ -8,13 +8,13 @@ Aqui o agente guarda o que ele mesmo digitou (`last_text`) e a cada mensagem:
 2. apaga o excedente com `DEL` (teclas curtas, uma a uma);
 3. digita só o acréscimo.
 
-O acréscimo vai por **um** canal só, para a ordem dos caracteres não depender de dois caminhos com
-latências diferentes. Do mais rápido para o mais lento:
+A digitação escolhe o canal para o acréscimo inteiro. Se uma tecla falhar, o ADB recebe só o
+restante, com uma pausa para as teclas anteriores chegarem. Do mais rápido para o mais lento:
 
 * **teclas do controle remoto** (opcional, `keys=True`): cada caractere é um pacote no mesmo fluxo
   do `DEL`, sem processo novo. Só vale quando **todos** os caracteres do acréscimo têm tecla sem
-  ambiguidade (ver `TYPING_KEYS`); senão o acréscimo inteiro segue pelos canais abaixo, nunca
-  dividido entre canais. Por quê: teclas e `send_text` chegam à TV por caminhos diferentes (o
+  ambiguidade (ver `TYPING_KEYS`); senão o acréscimo inteiro segue pelos canais abaixo. Por quê:
+  teclas e `send_text` chegam à TV por caminhos diferentes (o
   `send_text` usa contadores que a própria TV empurra a cada edição do campo), então um trecho
   enviado logo depois de teclas poderia chegar fora de ordem ou com contadores velhos, e o `await`
   não prova entrega (a biblioteca só enfileira no mesmo socket). Dentro do mesmo fluxo de teclas (o
@@ -93,7 +93,6 @@ DELETE_KEY: Final = "DEL"
 ADB_GROUP_CHARS: Final = 80
 # A partir de tantas teclas seguidas pelo Remote, o ADB espera a acomodação (ver o módulo).
 SETTLE_KEY_RUN: Final = 8
-TEXT_KEY_UNSUPPORTED: Final = "text_key_unsupported"
 RESYNC_INCOMPLETE: Final = "text_resync_incomplete"
 
 # Caractere -> tecla do controle (`KEYCODE_*` do Android, escolhido pelo adaptador). Só entram os
@@ -503,8 +502,9 @@ class TextReconciler:
         keys = typing_keys(text) if self._keys else None
         if keys is not None:
             trace.channel = CHANNEL_KEYS
-            await self._type_keys(text, keys)
-            return
+            text = await self._type_keys(text, keys)
+            if not text:
+                return
         adb = self._adb
         rest = text
         if adb is not None and is_adb_typable(text):
@@ -533,6 +533,7 @@ class TextReconciler:
         for index, group in enumerate(pending):
             self._check()
             await self._settle_after_remote()
+            self._check()
             self._echo = None
             try:
                 await adb.input_text(group)
@@ -560,21 +561,27 @@ class TextReconciler:
         if remaining > 0:
             await self._sleep(remaining)
 
-    async def _type_keys(self, text: str, keys: list[str]) -> None:
+    async def _type_keys(self, text: str, keys: list[str]) -> str:
         """Uma tecla por caractere, na ordem; `last_text` anda tecla a tecla, como no `DEL`."""
         for index, (char, key) in enumerate(zip(text, keys, strict=True)):
             if index and self._key_pause > 0:
                 await self._sleep(self._key_pause)
+            tv = self._effect()
             try:
-                await self._effect().send_key(key)
-            except ValueError:
-                # O adaptador não conhece a tecla (tabelas fora de sincronia). A mensagem dele
-                # cita a tecla, e a tecla é um caractere do texto: nada disso vai para o log.
-                raise TvSessionError(
-                    TEXT_KEY_UNSUPPORTED, "a TV não aceita esta tecla de digitação"
-                ) from None
+                await tv.send_key(key)
+            except (ValueError, TvSessionError) as exc:
+                if self._adb is None:
+                    if isinstance(exc, TvSessionError):
+                        raise
+                    raise TvSessionError(
+                        "text_key_unsupported", "a TV não aceita esta tecla de digitação"
+                    ) from None
+                if index:
+                    self._remote_at = self._monotonic()
+                return text[index:]
             self._typed(char)
         self._mark_key_run(len(keys))
+        return ""
 
     def _typed(self, text: str) -> None:
         self._last += text

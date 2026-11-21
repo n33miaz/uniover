@@ -259,7 +259,7 @@ async def test_the_composed_key_handler_accepts_power_and_blocks_nothing(
     assert [key for key, _ in remote.sent] == ["POWER", "HOME", "MUTE", "VOLUME_DOWN"]
 
 
-async def test_typing_by_keys_is_off_unless_the_settings_turn_it_on(
+async def test_typing_by_keys_is_on_unless_the_settings_turn_it_off(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     remote = FakeTvRemote()
@@ -268,21 +268,21 @@ async def test_typing_by_keys_is_off_unless_the_settings_turn_it_on(
         default = make_tv(Settings(tv_host=TV_HOST))
     assert default is not None
     assert default.text is not None
-    assert default.text.keys_enabled is False
-    assert "desligadas" in caplog.text
+    assert default.text.keys_enabled is True
+    assert "teclas do controle remoto ligadas" in caplog.text
     await default.handlers["tv.text.v1"](Command("1", "tv.text.v1", {"text": "mat"}))
-    assert (remote.keys, remote.texts) == ([], ["mat"])
+    assert (remote.keys, remote.texts) == (["TYPE_M", "TYPE_A", "TYPE_T"], [])
 
     remote.keys.clear()
     remote.texts.clear()
     with caplog.at_level(logging.INFO):
-        wired = make_tv(Settings(tv_host=TV_HOST, tv_text_by_keys=True, tv_text_key_pause_ms=20))
+        wired = make_tv(Settings(tv_host=TV_HOST, tv_text_by_keys=False))
     assert wired is not None
     assert wired.text is not None
-    assert wired.text.keys_enabled is True
-    assert "teclas do controle remoto ligadas" in caplog.text
+    assert wired.text.keys_enabled is False
+    assert "desligadas" in caplog.text
     await wired.handlers["tv.text.v1"](Command("2", "tv.text.v1", {"text": "mat"}))
-    assert (remote.keys, remote.texts) == (["TYPE_M", "TYPE_A", "TYPE_T"], [])
+    assert (remote.keys, remote.texts) == ([], ["mat"])
 
 
 async def test_the_text_field_the_tv_reports_reaches_the_composed_typing(
@@ -294,7 +294,7 @@ async def test_the_text_field_the_tv_reports_reaches_the_composed_typing(
     assert setup is not None
     remote.push_text_field(TextFieldStatus("abc", 3, 3, "Buscar", 1))
     await setup.handlers["tv.text.v1"](Command("1", "tv.text.v1", {"text": "abcd"}))
-    assert (remote.keys, remote.texts) == ([], ["d"])
+    assert (remote.keys, remote.texts) == (["TYPE_D"], [])
 
 
 async def test_the_composed_typing_forgets_the_field_when_the_session_goes_to_sleep(
@@ -314,7 +314,7 @@ async def test_the_composed_typing_forgets_the_field_when_the_session_goes_to_sl
     assert await setup.manager.hibernate_if_idle()
     # Estado de antes de a sessão dormir não vale: volta a pausa de antes, que nunca apaga às cegas.
     await setup.handlers["tv.text.v1"](Command("1", "tv.text.v1", {"text": "xyz"}))
-    assert (remote.keys, remote.texts) == ([], ["xyz"])
+    assert (remote.keys, remote.texts) == (["TYPE_X", "TYPE_Y", "TYPE_Z"], [])
     await setup.manager.aclose()
 
 
@@ -333,12 +333,11 @@ async def test_the_composed_typing_forgets_the_field_when_another_app_takes_focu
     remote.push_app("com.exemplo.video")  # o eco da mesma edição repete o app: nada muda
     clock.advance(60)
     await setup.handlers["tv.text.v1"](Command("1", "tv.text.v1", {"text": "abcd"}))
-    assert remote.texts == ["d"]
+    assert remote.keys == ["TYPE_D"]
     remote.push_app("com.exemplo.musica")
     clock.advance(60)
     await setup.handlers["tv.text.v1"](Command("2", "tv.text.v1", {"text": "xyz"}))
-    assert remote.keys == []
-    assert remote.texts == ["d", "xyz"]
+    assert remote.keys == ["TYPE_D", "TYPE_X", "TYPE_Y", "TYPE_Z"]
     await setup.manager.aclose()
 
 
@@ -435,10 +434,14 @@ async def test_run_declares_the_capability_and_serves_tv_commands(
     assert results[ids["text_invalid"]]["ok"] is False
 
     # As duas teclas chegaram ao controle, na ordem: POWER não é mais recusado pelo agente.
-    assert remote.sent == [("HOME", "SHORT"), ("POWER", "SHORT")]
+    typed = [key for key in remote.keys if key.startswith("TYPE_")]
+    assert [sent for sent in remote.sent if not sent[0].startswith("TYPE_")] == [
+        ("HOME", "SHORT"),
+        ("POWER", "SHORT"),
+    ]
     # Só o acréscimo vai à TV (nada de reenviar o campo inteiro): "mat" e depois "matrix" = "rix".
     # O vazio nem chega ao handler.
-    assert remote.texts == ["mat", "rix"]
+    assert typed == ["TYPE_M", "TYPE_A", "TYPE_T", "TYPE_R", "TYPE_I", "TYPE_X"]
     # Ao encerrar, a sessão com a TV é fechada.
     assert not remote.connected
     assert remote.disconnects >= 1

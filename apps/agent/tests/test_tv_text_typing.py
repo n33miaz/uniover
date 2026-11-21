@@ -19,7 +19,7 @@ from uniover_agent.core import (
     TvSessionManager,
     tv_text_handler,
 )
-from uniover_agent.core.tv.text_edit import TEXT_KEY_UNSUPPORTED, TYPING_KEYS, typing_keys
+from uniover_agent.core.tv.text_edit import TYPING_KEYS, typing_keys
 from uniover_agent.ports import AdbTimeout, AdbUnauthorized, TvUnreachable
 
 Events = list[tuple[str, str]]
@@ -107,7 +107,7 @@ def test_digits_reuse_the_numeric_keys_of_the_contract() -> None:
 # --- por teclas ---------------------------------------------------------------------------------
 
 
-async def test_keys_are_off_by_default_and_the_text_goes_the_old_way() -> None:
+async def test_keys_can_be_disabled() -> None:
     rig = Rig(keys=False)
     assert rig.editor.keys_enabled is False
     await rig.editor.set_text("mat")
@@ -246,18 +246,29 @@ class ForgetsTheKey(FakeTvRemote):
         await super().send_key(key, direction)
 
 
-async def test_a_key_the_adapter_does_not_know_fails_without_repeating_the_character() -> None:
+async def test_unknown_key_falls_back_to_adb() -> None:
     clock = FakeClock()
+    adb = FakeTvAdb()
     editor = TextReconciler(
         TvSessionManager(clock, ForgetsTheKey()), monotonic=clock.monotonic, keys=True
     )
-    with pytest.raises(TvSessionError) as caught:
-        await editor.set_text("x")
-    assert caught.value.code == TEXT_KEY_UNSUPPORTED
-    assert "TYPE_X" not in caught.value.message
-    assert caught.value.__cause__ is None
-    assert caught.value.__suppress_context__ is True
-    assert editor.last_text == ""
+    editor.use_adb(adb)
+    await editor.set_text("x")
+    assert adb.typed == ["x"]
+    assert editor.last_text == "x"
+
+
+async def test_remote_failure_falls_back_to_adb_for_the_unsent_suffix() -> None:
+    clock = FakeClock()
+    remote = DropsAfter(2)
+    adb = FakeTvAdb()
+    session = TvSessionManager(clock, remote, backoff=())
+    editor = TextReconciler(session, monotonic=clock.monotonic, keys=True, sleep=clock.sleep)
+    editor.use_adb(adb)
+    await editor.set_text("abcd")
+    assert remote.keys == ["TYPE_A", "TYPE_B"]
+    assert adb.typed == ["cd"]
+    assert editor.last_text == "abcd"
 
 
 async def test_the_handler_keeps_the_newest_wins_rule_with_keys_on() -> None:

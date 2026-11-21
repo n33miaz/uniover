@@ -73,7 +73,7 @@ Variáveis de ambiente (vencem o arquivo):
 | `UNIOVER_TV_ADB_PORT` | porta do ADB da TV (padrão `5555`) |
 | `UNIOVER_ADB_TIMEOUT_SECONDS` | tempo máximo de cada comando `adb` (padrão `5`) |
 | `UNIOVER_ADB_PULL_TIMEOUT_SECONDS` | tempo máximo para copiar o APK de um app da TV (padrão `120`) |
-| `UNIOVER_TV_TEXT_BY_KEYS` | `1` digita o acréscimo (só letras minúsculas, dígitos, espaço e `. , - /`) pelas **teclas do controle remoto**, sem o processo `adb` de cada trecho (padrão: desligado; ver "Texto" abaixo) |
+| `UNIOVER_TV_TEXT_BY_KEYS` | Por padrão, digita o acréscimo (só letras minúsculas, dígitos, espaço e `. , - /`) pelas **teclas do controle remoto**. Use `0` para desativar (ver "Texto" abaixo) |
 | `UNIOVER_TV_TEXT_KEY_PAUSE_MS` | pausa, em milissegundos, entre as teclas da digitação por teclas (padrão `0`; aumente se a TV perder letras) |
 | `UNIOVER_AAPT_PATH` | caminho do `aapt2` (padrão: o mais novo em `%LOCALAPPDATA%\Android\Sdk\build-tools`, ou em `ANDROID_HOME`, senão `<instalação>\tools\aapt2`; sem nenhum, o agente o baixa sozinho); sem ele a lista de apps segue sem ícones |
 | `UNIOVER_ANDROID_TOOLS_DOWNLOAD` | `0` desliga o download automático do `adb` e do `aapt2` (padrão ligado; a procura no disco continua; ver "Ferramentas do Android") |
@@ -733,15 +733,15 @@ recebe, então o agente guarda o que ele mesmo digitou, apaga o excedente com `D
 digita só o acréscimo. **Texto vazio apaga tudo o que o agente digitou.** Sem campo em foco a TV ignora em
 silêncio. Quando a TV informa o estado do campo em foco (valor e cursor), o agente parte do valor real em
 vez do palpite e a troca de campo vem por esse aviso, não pela pausa de 20 s; sem o aviso, nada muda. O
-acréscimo vai por um canal só (nunca dividido, para a ordem não depender de dois caminhos):
+acréscimo segue esta ordem de preferência:
 
-- **teclas do controle remoto**, se `UNIOVER_TV_TEXT_BY_KEYS=1` e **todos** os caracteres do acréscimo têm tecla
+- **teclas do controle remoto**, por padrão, se **todos** os caracteres do acréscimo têm tecla
   sem ambiguidade: `a`-`z` minúsculas, `0`-`9`, espaço e `. , - /`. Cada caractere é um pacote no mesmo fluxo do
   `DEL`, sem processo novo. Maiúsculas e `_` precisariam de SHIFT (a biblioteca aceita `SHIFT_LEFT` com
   `START_LONG`/`END_LONG`, mas ninguém mediu se a TV aplica o SHIFT à tecla seguinte, então não se inventa);
   `@` e os demais símbolos dependem do mapa de teclas da TV e entram quando a medição provar;
-- **ADB** (`input text`) para ASCII imprimível sem `%`, quando o canal está pronto: um processo `adb` por trecho, e
-  no Android TV o `input text` sobe uma JVM a cada chamada (de ~300 ms a mais de 1 s);
+- **ADB** (`input text`) para ASCII imprimível sem `%`, quando o canal está pronto: um processo `adb` por trecho. Se uma tecla falhar, só o trecho que ainda falta segue pelo ADB.
+  No Android TV o `input text` sobe uma JVM a cada chamada (de ~300 ms a mais de 1 s);
 - **Remote v2** (`send_text`) para o resto (acentos, emoji, `%`) e quando o ADB não está pronto.
 
 Medir: cada comando de texto deixa **uma** linha `INFO` no log (`%LOCALAPPDATA%\UniOver\logs\agent.err.log`), sem o
