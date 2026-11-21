@@ -10,6 +10,7 @@ import sys
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -82,6 +83,7 @@ from uniover_agent.composition.system import (
     describe_os,
 )
 from uniover_agent.composition.tv import TvSetup, build_tv
+from uniover_agent.composition.tv_lane import MainLoopTransport, TvLaneHop, build_tv_lane
 from uniover_agent.config import (
     Settings,
     agent_source_dir,
@@ -150,6 +152,7 @@ from uniover_agent.core.diagnostics import (
     DiagnosticsShipper,
 )
 from uniover_agent.core.disk_alarm import DiskAlarm
+from uniover_agent.core.loop_progress import LoopProgress
 from uniover_agent.core.pc.clock_offset import ClockOffset
 from uniover_agent.core.pc.devices import DeviceApprovals
 from uniover_agent.core.pc.direct import PC_SCREEN_CAPABILITY
@@ -287,18 +290,30 @@ def build_handler(
     tv: TvSetup | None = None,
     care: dict[str, Handler] | None = None,
     pc: PcSetup | None = None,
+    tv_hop: TvLaneHop | None = None,
 ) -> HandleCommand:
     """Comandos que este agente sabe executar. Sem aparelhos habilitados, só os da manutenção
     remota (registro e atualização, que valem sem TV): todo outro comando é recusado e registrado
-    (nada finge que apertou uma tecla)."""
+    (nada finge que apertou uma tecla). Com `tv_hop`, os da TV rodam no laço dela."""
+    tv_handlers = dict(tv.handlers) if tv is not None else {}
+    if tv is not None and tv_hop is not None:
+        tv_handlers = {
+            message_type: tv_hop.handler(handler, silent=message_type in tv.silent_commands)
+            for message_type, handler in tv_handlers.items()
+        }
     return HandleCommand(
         {
-            **(tv.handlers if tv is not None else {}),
+            **tv_handlers,
             **(pc.handlers if pc is not None else {}),
             **(care or {}),
         },
         clock,
     )
+
+
+def _call_with(callback: Callable[..., None], *args: Any) -> None:
+    """Chama `callback(*args)` (a ponte do canal direto entrega assim, no laço de destino)."""
+    callback(*args)
 
 
 def log_file_path(settings: Settings) -> Path:
@@ -750,7 +765,28 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         # A conexão da passagem se apresenta como candidata: a API só a promove com o hello válido.
         handover_candidate=lambda: supervisor.handover_pending,
     )
-    tv = build_tv(settings, clock, transport, envelopes, secrets)
+    # A sessão com a TV e a fila das teclas: no laço principal ou num laço só delas (a faixa da
+    # TV, `tv_lane_thread`). Com a faixa, a TV envia pela conexão com a API levando o envio a este
+    # laço, e a idade das teclas desconta as paradas dos dois laços.
+    main_loop = asyncio.get_running_loop()
+    tv_hop = build_tv_lane(
+        main_loop,
+        enabled=settings.tv_lane_thread and bool(settings.tv_host),
+        exception_handler=loop_exception_handler(kit.recorder),
+    )
+    arrival_progress = LoopProgress() if tv_hop.host is not None else None
+    tv = build_tv(
+        settings,
+        clock,
+        transport if tv_hop.host is None else MainLoopTransport(main_loop, transport),
+        envelopes,
+        secrets,
+        arrival_progress=arrival_progress,
+    )
+    if tv is None:
+        tv_hop = build_tv_lane(main_loop, enabled=False)
+        arrival_progress = None
+    tv_hop.start()
     if not handover or tv is None:
         tv_ready.set()
     pc = build_pc(
@@ -830,12 +866,22 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             )
         if not handover:
             for step in tv.prepare:
-                await step()
+                await tv_hop.call(step)
+    # O agendador da limpeza conta os comandos: ele é da TV, então anota no laço dela.
+    note_tv_message = (
+        tv_hop.to_tv(tv.cleanup_scheduler.note_message)
+        if tv is not None and tv.cleanup_scheduler is not None
+        else None
+    )
     process = ProcessMessage(
         agent_id,
         gate,
         build_handler(
-            clock, tv, build_remote_care(settings, transport, envelopes, secrets, agent_id), pc
+            clock,
+            tv,
+            build_remote_care(settings, transport, envelopes, secrets, agent_id),
+            pc,
+            tv_hop if tv_hop.host is not None else None,
         ),
         envelopes,
         transport,
@@ -856,11 +902,13 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         lane_detached_types=RTC_TYPES if pc is not None and pc.direct is not None else (),
         notices=_power_outcome_notices(pc),
         on_command=(
-            lambda command: (
-                tv.cleanup_scheduler.note_message(command.type)
-                if tv is not None and tv.cleanup_scheduler is not None
-                else None
-            )
+            (lambda command: note_tv_message(command.type)) if note_tv_message is not None else None
+        ),
+        # A fila das teclas da TV: no laço dela, quando a faixa da TV tem um.
+        tv_host=tv_hop.host,
+        tv_sender=MainLoopTransport(main_loop, transport) if tv_hop.host is not None else None,
+        tv_handle_command=(
+            build_handler(clock, tv) if tv is not None and tv_hop.host is not None else None
         ),
     )
     # As teclas e o texto da TV pelo canal direto: só onde há TV, canal direto do PC e a opção
@@ -872,7 +920,12 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         tv is not None
         and pc is not None
         and settings.tv_direct
-        and pc.bind_tv_direct(process.submit_direct_tv)
+        and (
+            pc.bind_tv_direct(process.submit_direct_tv)
+            if tv_hop.host is None
+            # Com a faixa da TV, a tecla vai do laço do canal direto direto ao laço da TV.
+            else pc.bind_tv_direct(process.tv_lane.submit_direct, to_tv=tv_hop.to_tv(_call_with))
+        )
     ):
         tv_direct_capabilities.append(TV_RTC_CAPABILITY)
     publisher: TvStatePublisher | None = None
@@ -889,15 +942,16 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             reports_wake_hints=lambda: features.supports(WAKE_HINTS_FEATURE),
             wake_hints=lambda: tv.wake_check.hints if tv.wake_check else (),
         )
-        tv.manager.subscribe(publisher.publish)
-        tv.manager.subscribe(tray.tv_state)
+        # O estado nasce na sessão (no laço da TV) e é publicado neste laço.
+        tv.manager.subscribe(tv_hop.to_main(publisher.publish))
+        tv.manager.subscribe(tv_hop.to_main(tray.tv_state))
         manager, announcer = tv.manager, publisher
 
         async def announce_tv() -> None:
             # A API recém-conectada não conhece o estado: informa o atual logo depois do `hello`.
             await announcer.announce(manager.snapshot())
 
-        after_hello = [announce_tv, *tv.after_hello]
+        after_hello = [announce_tv, *(tv_hop.awaited(step) for step in tv.after_hello)]
     if pc is not None:
         after_hello = [*after_hello, *pc.after_hello]
 
@@ -954,10 +1008,14 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         features.on_change(lambda: publisher.publish(tv.manager.snapshot()))
         if tv.adb_permission is not None:
             # Cada mudança da permissão do ADB (pedida, aceita, perdida) chega ao celular na hora.
-            tv.adb_permission.on_change(lambda: publisher.publish(tv.manager.snapshot()))
+            tv.adb_permission.on_change(
+                tv_hop.to_main(lambda: publisher.publish(tv.manager.snapshot()))
+            )
         if tv.wake_check is not None:
             # Um ajuste de ligar pela rede desligado (ou a TV que não ligou) chega ao celular.
-            tv.wake_check.on_change(lambda: publisher.publish(tv.manager.snapshot()))
+            tv.wake_check.on_change(
+                tv_hop.to_main(lambda: publisher.publish(tv.manager.snapshot()))
+            )
     if pc is not None and pc.power_outcomes is not None:
         outcomes = pc.power_outcomes
         # A contagem recusada (ou perdida) só sobe a uma API que lista o tipo, e sobe assim que
@@ -1150,10 +1208,12 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             hellos.add(task)
             task.add_done_callback(hellos.discard)
 
-        tv.adb_declared.append(hello_soon)
+        tv.adb_declared.append(tv_hop.to_main(hello_soon))
     # O sinal de vida do agente reflete o laço de conexão: preso, ele deixa de ser dado.
     diary.require_healthy(lambda: not supervisor.is_stalled())
     _log.info("agente %s iniciando (api %s)", agent_id, api_url)
+    # As tarefas de fundo da TV quando ela tem laço próprio (sobem nele, em `start_background`).
+    tv_jobs: list[Callable[[], Coroutine[Any, Any, None]]] = []
     jobs: list[Callable[[], Coroutine[Any, Any, None]]] = [
         UpdateStatusWatcher(update_source, transport, envelopes, clock).run,
         diary.run,
@@ -1179,7 +1239,15 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         marker = TvUseMarker(
             root / "runtime" / TV_USE_MARKER_FILE, tv.manager.seconds_since_use, clock
         )
-        jobs = [*jobs, tv.manager.watch, marker.run, *tv.background]
+        jobs = [*jobs, marker.run]
+        if tv_hop.host is None:
+            jobs = [*jobs, tv.manager.watch, *tv.background]
+        else:
+            # A sessão e as tarefas da TV rodam no laço da faixa; aqui fica só o relógio das
+            # paradas deste laço, que a idade das teclas da nuvem também desconta.
+            tv_jobs = [tv.manager.watch, *tv.background]
+            if arrival_progress is not None:
+                jobs = [*jobs, arrival_progress.run]
     if pc is not None:
         # Uma sessão do touchpad também adia a atualização: reiniciar o agente a cortaria no meio.
         pc_marker = TvUseMarker(
@@ -1218,6 +1286,19 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             )
             for job in jobs
         )
+        if tv_jobs:
+            tv_health = tv_hop.health(health)
+            tv_hop.start_jobs(
+                partial(
+                    keep_running,
+                    job.__qualname__,
+                    job,
+                    clock=clock,
+                    recorder=kit.recorder,
+                    health=tv_health,
+                )
+                for job in tv_jobs
+            )
 
     async def prepare_tv() -> None:
         """Preparo da TV (o ADB) de quem acabou de virar a dona, e o `hello` com o que ele declarou.
@@ -1228,7 +1309,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         assert tv is not None  # noqa: S101 - só é agendada com TV
         try:
             for step in tv.prepare:
-                await step()
+                await tv_hop.call(step)
         except Exception:
             _log.exception("falha no preparo da TV depois da passagem; sigo sem ele")
         # As capacidades do preparo não estavam no `hello` da candidata: sem o reenvio, a API só as
@@ -1318,9 +1399,9 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             clock,
             lambda: tv.manager.snapshot().connection == "hot",
             tv.known,
-            tv.watchdog.request if tv.watchdog is not None else None,
+            tv_hop.to_tv(tv.watchdog.request) if tv.watchdog is not None else None,
             lambda: tv.light_settings.focus_active if tv.light_settings is not None else False,
-            tv.manager.reopen_unattended,
+            tv_hop.awaited(tv.manager.reopen_unattended),
             recorder=kit.recorder,
             start=agent_start(),
         )
@@ -1329,7 +1410,7 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
     )
     if tv is not None and relocator is not None:
         # Alguém pediu a TV pelo app e ela não atendeu: o vigia confere e procura já.
-        tv.manager.on_wanted_unreachable(relocator.nudge)
+        tv.manager.on_wanted_unreachable(tv_hop.to_main(relocator.nudge))
 
     async def watch_exit_request() -> None:
         """A execução em uso sai de forma ordenada quando o supervisor pede (numa passagem sem
@@ -1399,9 +1480,13 @@ async def run(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         if pc is not None:
             await _close_within("a thread da entrada do PC", pc.stop_input())
         if tv is not None:
-            await _close_within("a sessão com a TV", tv.manager.aclose())
+            # No laço da TV: primeiro as tarefas de fundo dela, depois a sessão e os recursos, e só
+            # então a thread da faixa para (nenhuma thread fica órfã).
+            await _close_within("as tarefas de fundo da TV", tv_hop.stop_jobs())
+            await _close_within("a sessão com a TV", tv_hop.call(tv.manager.aclose))
             for close in tv.closers:
-                await _close_within("um recurso da TV", close())
+                await _close_within("um recurso da TV", tv_hop.call(close))
+        await _close_within("a thread da faixa da TV", tv_hop.stop())
         if publisher is not None:
             await _close_within("o publicador do estado da TV", publisher.aclose())
         kit.recorder.flush_pending()

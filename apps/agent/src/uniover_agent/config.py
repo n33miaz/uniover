@@ -244,6 +244,11 @@ class Settings(BaseSettings):
     # eventos próprio, numa thread com prioridade acima do normal: o resto do agente (TV, rede,
     # diagnóstico) não a atrasa. Desligar a devolve ao laço principal (só para isolar um defeito).
     pc_input_thread: bool = True
+    # A sessão com a TV (Remote v2, ADB, Samsung) e a fila ordenada das teclas rodam num laço de
+    # eventos próprio, numa thread: uma parada do laço principal não atrasa as teclas que já
+    # entraram nem as do canal direto (que nem passam por ele). Desligado por padrão até ser medido
+    # na TV real; ligue com `tv_lane_thread = true` ou `UNIOVER_TV_LANE_THREAD=1`.
+    tv_lane_thread: bool = False
     # Diagnóstico das paradas curtas do laço da entrada (0,3 a 4 s, algumas vezes por hora): se o
     # laço fica 0,4 s sem responder, a pilha de todas as threads vai para `logs\stalls.log` (no
     # máximo 1 a cada 10 min, 20 por dia, 2 MB). Só vale com a entrada isolada. Não muda o

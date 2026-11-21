@@ -20,6 +20,7 @@ Decisões aceitas, de propósito:
 """
 
 import asyncio
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
@@ -46,6 +47,9 @@ class PowerIds:
         self._results: dict[str, CommandResult] = {}
         self._dirty = False
         self._saving = asyncio.Lock()
+        # Com a faixa da TV em laço próprio, o leitor (`admit`, no laço principal) e a faixa
+        # (`persist`, `remember_result`) mexem na lista de threads diferentes.
+        self._guard = threading.Lock()
         self.merge(store.load() if store is not None else {})
 
     def admit(self, command_id: str) -> bool:
@@ -53,13 +57,14 @@ class PowerIds:
 
         Só memória: não bloqueia o leitor. A gravação em disco é `persist`.
         """
-        self._prune()
-        if command_id in self._ids:
-            return False
-        self._ids[command_id] = self._wall()
-        self._dirty = True
-        self._prune()
-        return True
+        with self._guard:
+            self._prune()
+            if command_id in self._ids:
+                return False
+            self._ids[command_id] = self._wall()
+            self._dirty = True
+            self._prune()
+            return True
 
     async def persist(self) -> None:
         """Grava a lista em disco sem bloquear o laço; chamada antes de o POWER executar."""
@@ -67,13 +72,15 @@ class PowerIds:
         if store is None:
             return
         async with self._saving:
-            if not self._dirty:
-                return
-            snapshot = dict(self._ids)
-            self._dirty = False
+            with self._guard:
+                if not self._dirty:
+                    return
+                snapshot = dict(self._ids)
+                self._dirty = False
             if not await asyncio.to_thread(store.save, snapshot):
                 # Falha já registrada pelo adaptador; o próximo POWER tenta de novo.
-                self._dirty = True
+                with self._guard:
+                    self._dirty = True
 
     def read_store(self) -> dict[str, float]:
         """Lê o disco (bloqueia: chamar em outra thread). Entrada de `merge`."""
@@ -85,16 +92,17 @@ class PowerIds:
         Na passagem sem queda a execução antiga ainda grava depois que a nova nasce: a nova junta de
         novo o arquivo ao virar dona.
         """
-        for command_id, stamp in stored.items():
-            known = self._ids.get(command_id)
-            if known is None:
-                self._restored.add(command_id)
-            if known is None or stamp > known:
-                self._ids[command_id] = stamp
-        # Do mais antigo para o mais novo: o teto tira sempre os da frente.
-        ordered = sorted(self._ids.items(), key=lambda item: item[1])
-        self._ids = OrderedDict(ordered)
-        self._prune()
+        with self._guard:
+            for command_id, stamp in stored.items():
+                known = self._ids.get(command_id)
+                if known is None:
+                    self._restored.add(command_id)
+                if known is None or stamp > known:
+                    self._ids[command_id] = stamp
+            # Do mais antigo para o mais novo: o teto tira sempre os da frente.
+            ordered = sorted(self._ids.items(), key=lambda item: item[1])
+            self._ids = OrderedDict(ordered)
+            self._prune()
 
     def result_of(self, command_id: str) -> CommandResult | None:
         return self._results.get(command_id)
@@ -104,8 +112,9 @@ class PowerIds:
         return command_id in self._restored
 
     def remember_result(self, command_id: str, result: CommandResult) -> None:
-        if command_id in self._ids:
-            self._results[command_id] = result
+        with self._guard:
+            if command_id in self._ids:
+                self._results[command_id] = result
 
     def _prune(self) -> None:
         now = self._wall()

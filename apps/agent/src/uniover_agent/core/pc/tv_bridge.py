@@ -7,6 +7,9 @@ entrada: o comando vai por `to_main` (`call_soon_threadsafe`, sem espera) e o re
 que passou do teto de `max_pending` é recusado na hora (o app segue pela nuvem) e o que já entrou
 é descartado por idade quando o laço volta, pelo mesmo caminho das teclas da nuvem.
 
+Com a faixa da TV num laço próprio (`tv_lane_thread`), "o laço principal" aqui é o dela: a tecla vai
+do canal direto à faixa da TV sem passar pelo laço principal do agente.
+
 O contador de pendentes só é tocado no laço do canal (entra em `submit`, sai em `_done`, que roda
 lá), então não precisa de trava.
 """
