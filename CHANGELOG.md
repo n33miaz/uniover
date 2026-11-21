@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.78.0](https://github.com/n33miaz/uniover/compare/v0.77.1...v0.78.0) (2026-11-21)
+
+
+### Devices 0.69.0
+
+#### Features
+
+* **devices:** persist power outcome dedupe
+
+#### Bug Fixes
+
+* **web:** warn when old agent may force close
+
+
+### Agent 0.63.3
+
+#### Bug Fixes
+
+* **agent:** count failed tv text in erase bound
+
 ## [0.77.1](https://github.com/n33miaz/uniover/compare/v0.77.0...v0.77.1) (2026-11-21)
 
 
