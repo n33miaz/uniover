@@ -243,6 +243,7 @@ class TvSessionManager:
         # A recuperação em segundo plano já reabriu a sessão e ninguém usou o controle desde então.
         self._reopened_unattended = False
         self._listeners: list[Callable[[TvState], None]] = []
+        self._session_opening: list[Callable[[], None]] = []
         self._session_opened: list[Callable[[float], None]] = []
         self._wake_failed: list[Callable[[], None]] = []
         self._wanted_unreachable: list[Callable[[], None]] = []
@@ -297,6 +298,10 @@ class TvSessionManager:
     def on_session_opened(self, callback: Callable[[float], None]) -> None:
         """Avisa quando a TV acabou de responder e a sessão Remote v2 ficou pronta."""
         self._session_opened.append(callback)
+
+    def on_session_opening(self, callback: Callable[[], None]) -> None:
+        """Avisa antes de abrir os canais, quando os relatos da sessão anterior vencem."""
+        self._session_opening.append(callback)
 
     def on_wanted_unreachable(self, callback: Callable[[], None]) -> None:
         """Avisa quando alguém pediu a TV (tecla, ou o app aberto pedindo para aquecer) e ela não
@@ -376,17 +381,30 @@ class TvSessionManager:
         self._set_connection("hibernating")
 
     async def send_key(
-        self, key: str, direction: str = "SHORT", *, validate: Callable[[], None] | None = None
+        self,
+        key: str,
+        direction: str = "SHORT",
+        *,
+        validate: Callable[[], None] | None = None,
+        retry_uncertain: bool = True,
     ) -> bool:
         """Envia a tecla. `False` só para um `POWER` ignorado por repetir o anterior (ver
-        `_send_power`): nada foi enviado, de propósito."""
+        `_send_power`): nada foi enviado, de propósito.
+
+        `retry_uncertain=False`: se a queda foi já dentro do envio (`TvSendUncertain`), a tecla não
+        é repetida e a incerteza sobe (`may_have_sent`): quem chama decide, porque a repetição de
+        um `DEL` que já chegou apagaria um caractere a mais."""
         if key == POWER_KEY and direction == "SHORT":
             return await self._send_power()
         if key in VOLUME_KEYS and direction in {"SHORT", "START_LONG"}:
             # O nível empurrado ao abrir a sessão não prova que a TV continuará avisando
             # depois das teclas. Faça isso antes do envio: o callback pode vir durante ele.
             self._remote_volume_seen = False
-        await self._run(lambda remote: remote.send_key(key, direction), validate=validate)
+        await self._run(
+            lambda remote: remote.send_key(key, direction),
+            validate=validate,
+            retry_uncertain=retry_uncertain,
+        )
         if key in VOLUME_KEYS and direction in {"SHORT", "END_LONG"}:
             self._schedule_volume_read()
         return True
@@ -642,9 +660,9 @@ class TvSessionManager:
     async def launch_link(self, link: str) -> None:
         await self._run(lambda remote: remote.launch_link(link))
 
-    async def send_text(self, text: str) -> None:
+    async def send_text(self, text: str, *, validate: Callable[[], None] | None = None) -> None:
         """Insere o trecho no campo em foco da TV; não substitui o conteúdo."""
-        await self._run(lambda remote: remote.send_text(text))
+        await self._run(lambda remote: remote.send_text(text), validate=validate)
 
     async def wake(self) -> None:
         """Pré-aquece: abre a sessão (se preciso) e renova o relógio.
@@ -784,6 +802,7 @@ class TvSessionManager:
         action: Callable[[TvDriver], Awaitable[None]],
         *,
         validate: Callable[[], None] | None = None,
+        retry_uncertain: bool = True,
     ) -> None:
         self.touch()
         self._reopened_unattended = False
@@ -800,11 +819,12 @@ class TvSessionManager:
                 validate()
             await action(self._remote)
         except TvChannelError as exc:
-            # O canal caiu entre a conferência e o envio: reabre uma vez e repete.
-            _log.info("canal da TV caiu durante o comando (%s); reabrindo", exc)
             self._channel_lost()
             # Se a primeira tentativa pode ter chegado à TV, a falha final diz isso a quem chamou.
             sent = isinstance(exc, TvSendUncertain)
+            if sent and not retry_uncertain:
+                raise TvSessionError(TV_UNREACHABLE, str(exc), may_have_sent=True) from None
+            _log.info("canal da TV caiu durante o comando (%s); reabrindo", exc)
             try:
                 try:
                     await self._ensure_hot()
@@ -1049,6 +1069,11 @@ class TvSessionManager:
     async def _open_channels(self) -> None:
         self._connection_generation += 1
         self._remote_volume_seen = False
+        for callback in self._session_opening:
+            try:
+                callback()
+            except Exception:
+                _log.exception("falha no aviso de abertura da sessão da TV")
         opened: list[TvChannel] = []
         for reg in self._channels:
             if not reg.connect_on_warm:

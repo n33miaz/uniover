@@ -360,11 +360,11 @@ class AndroidTvRemoteV2:
                 _log.exception("falha ao guardar o que se sabe da TV")
 
     async def disconnect(self) -> None:
+        self._connected = False
         watcher, self._watcher = self._watcher, None
         if watcher is not None:
             watcher.cancel()
             await asyncio.gather(watcher, return_exceptions=True)
-        self._connected = False
         self._forget_text_echo()
         self._reset_protocol_ime_counters()
         if self._client is not None:
@@ -521,8 +521,10 @@ class AndroidTvRemoteV2:
             self._fan_out(self._volume, percent)
 
     def _is_current_protocol(self, protocol: Any) -> bool:
-        return protocol is not None and (
-            getattr(self._client, "_remote_message_protocol", None) is protocol
+        return (
+            self._connected
+            and protocol is not None
+            and (getattr(self._client, "_remote_message_protocol", None) is protocol)
         )
 
     def _on_text_field(self, field: TextFieldStatus, protocol: Any) -> None:

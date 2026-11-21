@@ -1144,7 +1144,7 @@ class AdbTv:
             if not am_start_succeeded(started.text):
                 raise AdbCommandFailed("a TV não conseguiu abrir a tela")
 
-    async def input_text(self, text: str) -> None:
+    async def input_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
         if len(text) > _MAX_TEXT_LENGTH:
             raise ValueError("texto longo demais para o ADB")
         command = input_text_command(text)
@@ -1157,7 +1157,7 @@ class AdbTv:
                 # Conectar ou conferir o aparelho vem antes do shell: nada foi digitado.
                 exc.may_have_executed = False
                 raise
-            output = await self._shell(command)
+            output = await self._shell(command, before_send=before_send)
         if not command_succeeded(output):
             # Pode ter digitado parte do grupo: quem chama não repete às cegas.
             raise AdbCommandFailed("a TV não confirmou a digitação")
@@ -1497,10 +1497,13 @@ class AdbTv:
         command: str,
         *,
         timeout: float | None = None,  # noqa: ASYNC109
+        before_send: Callable[[], None] | None = None,
     ) -> AdbOutput:
         """Um comando fixo no shell da TV. Se o canal caiu, marca e avisa (o próximo reconecta)."""
         try:
-            output = await self._exec("-s", self._serial, "shell", command, timeout=timeout)
+            output = await self._exec(
+                "-s", self._serial, "shell", command, timeout=timeout, before_send=before_send
+            )
         except AdbTimeout:
             self._connected = False
             raise
@@ -1525,10 +1528,17 @@ class AdbTv:
             raise AdbUnavailable("o adb ainda não está disponível neste PC")
         return str(path)
 
-    async def _exec(self, *args: str, timeout: float | None = None) -> AdbOutput:  # noqa: ASYNC109
+    async def _exec(
+        self,
+        *args: str,
+        timeout: float | None = None,  # noqa: ASYNC109
+        before_send: Callable[[], None] | None = None,
+    ) -> AdbOutput:
         adb = self._adb_executable()
         # Antes de qualquer `adb`: se o `adbkey` sumiu, ele gera outro e a TV pergunta de novo.
         self._authorization.prepare()
+        if before_send is not None:
+            before_send()
         try:
             output = await self._run([adb, *args], timeout or self._timeout)
         except TimeoutError:

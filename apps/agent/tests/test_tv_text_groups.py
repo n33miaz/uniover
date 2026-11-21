@@ -5,6 +5,7 @@ entre os canais), e o relógio é o falso, que só anda quando o teste manda.
 """
 
 import asyncio
+from collections.abc import Callable
 
 import pytest
 
@@ -190,11 +191,11 @@ class FailsOnCall(FakeTvAdb):
         self.error = error
         self.calls = 0
 
-    async def input_text(self, text: str) -> None:
+    async def input_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
         self.calls += 1
         if self.calls == self.fail_at:
             raise self.error
-        await super().input_text(text)
+        await super().input_text(text, before_send=before_send)
 
 
 @pytest.mark.parametrize("error", [AdbCommandFailed("x"), AdbTimeout("x")])
@@ -239,12 +240,12 @@ class TypesThenRaises(FakeTvAdb):
         self.on_typed: list[TextFieldStatus] = []
         self.push: object = None
 
-    async def input_text(self, text: str) -> None:
+    async def input_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
         self.calls += 1
         if self.calls != self.fail_at:
-            await super().input_text(text)
+            await super().input_text(text, before_send=before_send)
             return
-        await super().input_text(self.partial)
+        await super().input_text(self.partial, before_send=before_send)
         for echo in self.on_typed:
             self.push(echo)  # type: ignore[operator]
         raise self.error
@@ -273,6 +274,7 @@ async def test_an_ambiguous_failure_without_an_echo_clears_and_retypes_the_text(
     if isinstance(error, AdbUnreachable):
         error.may_have_executed = True  # o adaptador marca assim o que veio depois do shell
     rig, adb = ambiguous_rig(error)
+    rig.editor.observe_field(field("", counter=7))  # a TV confirmou o campo vazio
     with pytest.raises(TvSessionError):
         await rig.editor.set_text("abcdefgh")
     # A TV recebeu "abc" e "def"; o agente só confirmou "abc" e não sabe do resto.
@@ -424,11 +426,11 @@ class GatedAdb(FakeTvAdb):
         self.gate = asyncio.Event()
         self.started = asyncio.Event()
 
-    async def input_text(self, text: str) -> None:
+    async def input_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
         if not self.typed and not self.started.is_set():
             self.started.set()
             await self.gate.wait()
-        await super().input_text(text)
+        await super().input_text(text, before_send=before_send)
 
 
 async def test_typing_fast_during_a_slow_adb_call_is_one_call_for_the_whole_batch() -> None:
