@@ -120,9 +120,9 @@ class Settings(BaseSettings):
     tv_power_off_confirmation_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     # Digitação: o acréscimo feito só de letras minúsculas, dígitos, espaço e `. , - /` vai por
     # teclas do controle remoto (um pacote por caractere, sem o processo `adb` de cada trecho).
-    # Desligado por padrão: foi desenhado sem poder testar na TV real. `tv_text_key_pause_ms` põe
+    # A opção `tv_text_key_pause_ms` põe
     # uma pausa entre as teclas, para o caso de a TV perder letras quando elas chegam coladas.
-    tv_text_by_keys: bool = False
+    tv_text_by_keys: bool = True
     tv_text_key_pause_ms: int = Field(default=0, ge=0, le=500)
     # Digitação pelo ADB: tamanho máximo de um grupo (um `input text`; uma falha custa um grupo) e
     # quanto o primeiro grupo espera depois de um envio pelo Remote v2, que só prova que o pacote
