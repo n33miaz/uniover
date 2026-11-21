@@ -18,9 +18,18 @@ const REQUIRED_FIELDS = [
   'lang',
   'dir',
   'background_color',
-  'theme_color',
   'icons',
 ];
+
+/*
+ * Campos que nenhum manifest pode ter. `theme_color`: no app instalado do Android, sem edge-to-edge, o Chrome pinta a barra
+ * de navegação de baixo com essa cor, fixa no momento da instalação (o manifesto não tem variante escura que o Chrome leia),
+ * e um dos temas sempre destoa. Sem ela vale o fallback: a cor padrão do sistema, que acompanha claro/escuro; a barra de
+ * cima segue as `<meta name="theme-color">` do index.html. Se o Chrome ligar por padrão o edge-to-edge do PWA standalone
+ * (hoje atrás da opção WebAppShortEdgesCutoutMode, desligada), a barra de baixo mostra o fundo da página
+ * (`viewport-fit=cover`), e a ausência do campo continua correta.
+ */
+const FORBIDDEN_FIELDS = ['theme_color'];
 
 // Combinações de ícone que todo manifest precisa declarar (tamanho e finalidade).
 const REQUIRED_ICONS = [
@@ -91,6 +100,9 @@ export function auditManifests({ publicDir, snapshotFile }) {
 
     for (const field of REQUIRED_FIELDS) {
       if (!isPresent(manifest[field])) fail(`campo obrigatório ausente: ${field}`);
+    }
+    for (const field of FORBIDDEN_FIELDS) {
+      if (field in manifest) fail(`campo proibido presente: ${field}`);
     }
     if (typeof manifest.id === 'string' && !manifest.id.startsWith('/')) {
       fail('id deve começar com "/"');

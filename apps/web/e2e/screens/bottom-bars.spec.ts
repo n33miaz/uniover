@@ -452,7 +452,9 @@ test.describe('a cor atrás da barra do sistema é a do fundo da tela', () => {
 
   for (const scope of ['/entrar', '/tv/', '/pc/', '/treino/', '/compras']) {
     for (const scheme of ['light', 'dark'] as const) {
-      test(`${scope} no tema ${scheme}: a meta ativa, o fundo da página e a raiz têm a mesma cor`, async ({
+      // Compara a meta theme-color ativa com o fundo do documento no esquema emulado; as barras nativas do Android não
+      // aparecem no Playwright.
+      test(`${scope} no esquema emulado ${scheme}: a meta ativa tem a cor do fundo de body e da raiz`, async ({
         page,
       }) => {
         await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
