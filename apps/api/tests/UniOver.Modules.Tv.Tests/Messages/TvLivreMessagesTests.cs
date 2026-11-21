@@ -48,6 +48,14 @@ public class TvLivreMessagesTests
     }
 
     [Fact]
+    public void Sleep_CarriesSkipInstallWhenRequested()
+    {
+        var body = TvMessages.TvLivre(Request, TvLivreAction.Sleep, skipInstall: true).Body;
+
+        body.GetProperty("skipInstall").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
     public void Status_CarriesOnlyTheRequestIdAndTheAction()
     {
         var message = TvMessages.TvLivre(Request, TvLivreAction.Status);

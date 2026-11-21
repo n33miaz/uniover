@@ -32,6 +32,15 @@ public class TvLivreResultsTests
     }
 
     [Fact]
+    public void GuestSleepRequiringAnAgentUpdate_Is409WithItsOwnType()
+    {
+        var problem = Problem(TvLivreEndpoint.ToProblem(LivreStep.SleepAgentUpdateRequired));
+
+        problem.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        problem.ProblemDetails.Type.Should().EndWith("/tv-livre-sleep-agent-update-required");
+    }
+
+    [Fact]
     public void AStepWhileAnotherRuns_Is409WithADifferentType()
     {
         var problem = Problem(TvLivreEndpoint.ToProblem(LivreStep.Busy));
