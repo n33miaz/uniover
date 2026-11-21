@@ -230,6 +230,8 @@ export class PcStore {
   });
   readonly canSend = computed(() => this.phase() === 'ready');
   readonly apps = this.availability.apps;
+  /** A última contagem de desligar ou reiniciar que não terminou no pedido (recusada pelo Windows ou perdida), ou `null`. */
+  readonly powerOutcome = this.availability.power;
   /** O que o agente do PC declarou além do básico; vazio com um agente anterior ou antes da primeira leitura. */
   readonly capabilities = this.availability.capabilities;
   /** O agente entende `pc.key.v2` (teclas novas, repetição, segurar modificador). */

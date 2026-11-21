@@ -1,6 +1,11 @@
 import { vi } from 'vitest';
 import { computed, signal } from '@angular/core';
-import type { PcFavorite, PcStatus, PcVolumeLevel } from '../../core/modules/pc-availability';
+import type {
+  PcFavorite,
+  PcPowerOutcome,
+  PcStatus,
+  PcVolumeLevel,
+} from '../../core/modules/pc-availability';
 import {
   PC_CLICK_V2_CAPABILITY,
   PC_CLIPBOARD_CAPABILITY,
@@ -44,11 +49,13 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
   const capabilities = signal<readonly string[]>([]);
   const heldKeys = signal<readonly PcHoldableKey[]>([]);
   const volume = signal<PcVolumeLevel | null>(null);
+  const powerOutcome = signal<PcPowerOutcome | null>(null);
   const store = {
     phase,
     canSend: computed(() => phase() === 'ready'),
     apps,
     capabilities,
+    powerOutcome,
     heldKeys,
     holdKey: vi.fn<(key: PcHoldableKey) => Outcome>(() => Promise.resolve(null)),
     releaseKey: vi.fn<(key: PcHoldableKey, options?: { persistent?: boolean }) => Outcome>(() =>

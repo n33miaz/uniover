@@ -29,7 +29,8 @@ internal sealed record PcStatusResponse(
     IReadOnlyList<string> Capabilities,
     PcVolumeState? Volume = null,
     string? System = null,
-    PcMouseSettings? Mouse = null);
+    PcMouseSettings? Mouse = null,
+    PcPowerNotice? Power = null);
 
 /// <summary>
 /// Os ajustes do mouse do Windows do PC, só lidos pelo agente (capacidade <c>pc.mouse.v1</c>): <c>Acceleration</c> é o "aprimorar a precisão
@@ -453,6 +454,7 @@ internal sealed partial class PcControlHandler(
     PcOriginReader origins,
     PcDeviceStates deviceStates,
     PcPowerCountdowns countdowns,
+    PcPowerNotices powerNotices,
     IOptions<DevicesModuleOptions> options,
     ILogger<PcControlHandler> logger)
 {
@@ -475,7 +477,7 @@ internal sealed partial class PcControlHandler(
         return TypedResults.Ok(target is null
             ? new PcStatusResponse(false, false, [], [])
             : new PcStatusResponse(true, target.Connected, apps.Get(target.Slug), OptionalCapabilities(target), VolumeOf(target), SystemFamily(target.Os),
-                target.Mouse is { } mouse ? new PcMouseSettings(mouse.Acceleration, mouse.Speed) : null));
+                target.Mouse is { } mouse ? new PcMouseSettings(mouse.Acceleration, mouse.Speed) : null, powerNotices.Get(target.Slug)));
     }
 
     /// <summary>
@@ -646,6 +648,8 @@ internal sealed partial class PcControlHandler(
     {
         if (auditEvent == PairingEvents.PcShutdown || auditEvent == PairingEvents.PcRestart)
         {
+            // O desfecho guardado era da contagem anterior.
+            powerNotices.Forget(target.Slug);
             countdowns.Scheduled(
                 target.Slug,
                 new PcPowerCountdown(target.AgentId, userId, client, auditEvent == PairingEvents.PcShutdown ? "SHUTDOWN" : "RESTART"));

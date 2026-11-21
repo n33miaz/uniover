@@ -15779,6 +15779,12 @@ export interface components {
       /** Format: int32 */
       seq?: null | number | string;
     };
+    PcPowerNotice: {
+      action: string;
+      /** Format: date-time */
+      at: string;
+      outcome: string;
+    };
     PcPowerRequest: {
       action: null | string;
       confirm: null | boolean;
@@ -15816,6 +15822,7 @@ export interface components {
       capabilities: string[];
       mouse?: null | components['schemas']['PcMouseSettings'];
       online: boolean;
+      power?: null | components['schemas']['PcPowerNotice'];
       system?: null | string;
       volume?: null | components['schemas']['PcVolumeState'];
     };

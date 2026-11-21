@@ -90,6 +90,47 @@ describe('PowerPage', () => {
     expect(root.querySelector('.cancel')).toBeNull();
   });
 
+  const shutDown = async () => {
+    action('Desligar').click();
+    await settle();
+    sheetButton('Desligar').click();
+    await settle();
+  };
+
+  it.each([
+    ['refused', 'O Windows recusou desligar. O PC segue ligado.'],
+    ['lost', 'O agente do PC reiniciou no meio da contagem. O PC não vai desligar.'],
+  ] as const)(
+    'stops offering the cancel and says why when the countdown was %s',
+    async (outcome, text) => {
+      await shutDown();
+      expect(root.querySelector('.cancel')).not.toBeNull();
+
+      store.powerOutcome.set({ action: 'SHUTDOWN', outcome, at: '2026-11-21T14:00:30Z' });
+      await settle();
+      expect(root.querySelector('.cancel')).toBeNull();
+      expect(root.querySelector('[role="alert"]')?.textContent?.trim()).toBe(text);
+    },
+  );
+
+  it('an outcome that was already there when the countdown began never hides it', async () => {
+    store.powerOutcome.set({ action: 'SHUTDOWN', outcome: 'refused', at: '2026-11-21T13:00:00Z' });
+    await shutDown();
+    expect(root.querySelector('.cancel')).not.toBeNull();
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+
+    // A API apaga o desfecho antigo com a contagem nova: sumir não é desfecho nenhum.
+    store.powerOutcome.set(null);
+    await settle();
+    expect(root.querySelector('.cancel')).not.toBeNull();
+  });
+
+  it('an outcome with no countdown on the page changes nothing', async () => {
+    store.powerOutcome.set({ action: 'SHUTDOWN', outcome: 'lost', at: '2026-11-21T14:00:30Z' });
+    await settle();
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+  });
+
   it('sleep does not offer the countdown cancellation', async () => {
     action('Suspender').click();
     await settle();
@@ -202,6 +243,19 @@ describe('PowerPage', () => {
       await settle();
       expect(store.power).toHaveBeenLastCalledWith('CANCEL_SHUTDOWN', false);
       expect(root.querySelector('.cancel')).toBeNull();
+    });
+
+    it('a restart that Windows refused says so', async () => {
+      action('Reiniciar').click();
+      await settle();
+      sheetButton('Reiniciar').click();
+      await settle();
+      store.powerOutcome.set({ action: 'RESTART', outcome: 'refused', at: '2026-11-21T14:00:30Z' });
+      await settle();
+      expect(root.querySelector('.cancel')).toBeNull();
+      expect(root.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+        'O Windows recusou reiniciar. O PC segue ligado.',
+      );
     });
   });
 

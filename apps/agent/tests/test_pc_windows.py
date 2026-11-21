@@ -277,6 +277,62 @@ def test_a_broken_report_never_breaks_the_countdown(power_timers: list[FakeTimer
     power.cancel_shutdown()  # a recusa liberou: cancelar volta a valer
 
 
+class FakeMarker:
+    def __init__(self, lost: str | None = None) -> None:
+        self.marked: str | None = None
+        self.lost = lost
+        self.calls: list[tuple[object, ...]] = []
+
+    def save(self, action: str) -> None:
+        self.marked = action
+        self.calls.append(("save", action))
+
+    def clear(self) -> None:
+        self.marked = None
+        self.calls.append(("clear",))
+
+    def take(self) -> str | None:
+        lost, self.lost = self.lost, None
+        return lost
+
+
+def test_the_countdown_is_marked_and_unmarked_before_windows_is_asked(
+    power_timers: list[FakeTimer],
+) -> None:
+    marker = FakeMarker()
+    seen: list[str | None] = []
+
+    def run(arguments: list[str]) -> int:
+        seen.append(marker.marked)
+        return 0
+
+    power = WindowsPcPower(run=run, marker=marker)
+    power.restart(30)
+    assert marker.marked == "RESTART"
+    power_timers[0].callback()
+    # A marca saiu antes do pedido: um reinício que deu certo nunca parece perdido depois.
+    assert seen == [None]
+
+
+def test_a_cancelled_or_refused_countdown_leaves_no_mark(power_timers: list[FakeTimer]) -> None:
+    marker = FakeMarker()
+    power = WindowsPcPower(run=exits_with(0), marker=marker)
+    power.shutdown(30)
+    power.cancel_shutdown()
+    assert marker.marked is None
+    power = WindowsPcPower(run=exits_with(5), marker=marker)
+    power.shutdown(30)
+    power_timers[1].callback()
+    assert marker.marked is None
+
+
+def test_the_lost_countdown_of_the_previous_agent_is_read_once() -> None:
+    power = WindowsPcPower(run=exits_with(0), marker=FakeMarker(lost="SHUTDOWN"))
+    assert power.take_lost_countdown() == "SHUTDOWN"
+    assert power.take_lost_countdown() is None
+    assert WindowsPcPower(run=exits_with(0)).take_lost_countdown() is None
+
+
 def test_hibernate_and_log_off_use_the_system_tool_and_report_a_refusal() -> None:
     calls: list[list[str]] = []
     power = WindowsPcPower(run=exits_with(0, calls))

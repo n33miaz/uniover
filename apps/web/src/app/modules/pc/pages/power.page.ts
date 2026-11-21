@@ -3,10 +3,13 @@ import {
   Component,
   DestroyRef,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
+import type { PcPowerOutcome } from '../../../core/modules/pc-availability';
 import { PcConfirmSheet } from '../ui/confirm-sheet';
 import { PcStore } from '../data/pc-store';
 import type { PcPowerAction } from '../data/pc-types';
@@ -42,8 +45,8 @@ interface Sheet {
 
 /**
  * Energia do PC: bloquear e desligar o monitor valem na hora; suspender, hibernar, desligar, reiniciar e encerrar a sessão
- * pedem confirmação numa folha (e a API só aceita com a confirmação). Desligar e reiniciar usam a contagem do próprio
- * Windows, com aviso na tela do PC, e o botão de cancelar fica à vista logo depois, porque essas ações derrubam a conexão e
+ * pedem confirmação numa folha (e a API só aceita com a confirmação). Desligar e reiniciar usam a contagem do agente,
+ * com aviso na tela do PC, e o botão de cancelar fica à vista logo depois, porque essas ações derrubam a conexão e
  * não há como desfazer de outro jeito. Reiniciar, encerrar a sessão, hibernar e desligar o monitor só aparecem para um PC
  * que declarou a capacidade (um agente anterior recusaria o pedido); hibernar, só num PC com a hibernação ligada.
  */
@@ -198,11 +201,40 @@ export class PowerPage {
 
   private readonly sheet = viewChild(PcConfirmSheet);
   private hideTimer: number | null = null;
+  /** O desfecho que o estado já trazia quando a contagem desta tela começou: só um diferente diz respeito a ela. */
+  private seenOutcome: string | null = null;
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
       if (this.hideTimer !== null) window.clearTimeout(this.hideTimer);
     });
+    // A contagem não terminou no pedido (o Windows recusou, ou o agente reiniciou no meio dela): não há mais o que cancelar, e a
+    // tela diz o que houve em vez de seguir oferecendo o botão.
+    effect(() => {
+      const outcome = this.store.powerOutcome();
+      if (outcome === null || this.countdown() === null || outcome.at === this.seenOutcome) return;
+      untracked(() => this.countdownEnded(outcome));
+    });
+  }
+
+  private countdownEnded(outcome: PcPowerOutcome): void {
+    this.seenOutcome = outcome.at;
+    this.countdown.set(null);
+    if (this.hideTimer !== null) window.clearTimeout(this.hideTimer);
+    this.hideTimer = null;
+    this.message.set(this.outcomeText(outcome));
+  }
+
+  private outcomeText(outcome: PcPowerOutcome): string {
+    const restart = outcome.action === 'RESTART';
+    if (outcome.outcome === 'refused') {
+      return restart
+        ? $localize`:@@pc.power.restart-refused:O Windows recusou reiniciar. O PC segue ligado.`
+        : $localize`:@@pc.power.shutdown-refused:O Windows recusou desligar. O PC segue ligado.`;
+    }
+    return restart
+      ? $localize`:@@pc.power.restart-lost:O agente do PC reiniciou no meio da contagem. O PC não vai reiniciar.`
+      : $localize`:@@pc.power.shutdown-lost:O agente do PC reiniciou no meio da contagem. O PC não vai desligar.`;
   }
 
   /** Bloquear e apagar o monitor valem na hora; o resto abre a folha de confirmação. */
@@ -246,6 +278,7 @@ export class PowerPage {
   }
 
   private showCancel(kind: Countdown): void {
+    this.seenOutcome = untracked(() => this.store.powerOutcome())?.at ?? null;
     this.countdown.set(kind);
     if (this.hideTimer !== null) window.clearTimeout(this.hideTimer);
     this.hideTimer = window.setTimeout(() => this.countdown.set(null), CANCEL_WINDOW_MS);

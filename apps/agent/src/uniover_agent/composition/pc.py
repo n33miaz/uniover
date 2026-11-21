@@ -83,7 +83,7 @@ from uniover_agent.core.pc.focus import PC_TARGET_CAPABILITY
 from uniover_agent.core.pc.freshness import MAX_POINTER_AGE_SECONDS
 from uniover_agent.core.pc.handlers import PC_DEVICE_CAPABILITY, PC_OP_CAPABILITY, PC_SILENT_TYPES
 from uniover_agent.core.pc.lane import PcLane, PointerSpread
-from uniover_agent.core.pc.power_outcomes import PowerOutcomes, outcomes_after_hello
+from uniover_agent.core.pc.power_outcomes import OUTCOME_LOST, PowerOutcomes, outcomes_after_hello
 from uniover_agent.core.pc.tv_bridge import Deliver
 from uniover_agent.ports import (
     Clock,
@@ -97,7 +97,7 @@ from uniover_agent.ports import (
     Transport,
     TransportError,
 )
-from uniover_agent.ports.pc import PcUnsupported
+from uniover_agent.ports.pc import PcUnsupported, PowerCountdownMarker
 from uniover_agent.ports.pc_media import PcClipboard, PcMediaSession
 
 _log = logging.getLogger("uniover_agent")
@@ -379,6 +379,7 @@ def build_pc(  # noqa: PLR0913, PLR0915 - portas trocáveis para os testes, toda
     exception_handler: ExceptionHandler | None = None,
     devices: DeviceApprovals | None = None,
     stall_logs: Path | None = None,
+    power_marker: PowerCountdownMarker | None = None,
 ) -> PcSetup | None:
     """O controle do PC só existe quando está ligado neste PC (`pc_control`, ligado por padrão) e o
     sistema é o Windows. Desligado, nenhum comando `pc.*` é aceito e a capacidade não é declarada: a
@@ -452,10 +453,7 @@ def build_pc(  # noqa: PLR0913, PLR0915 - portas trocáveis para os testes, toda
         pc_input,
         # O mesmo adaptador responde, mais abaixo, se a hibernação está ligada.
         # O aviso na tela do PC mostra a contagem de desligar ou reiniciar e deixa cancelar ali.
-        (
-            power_port := power
-            or WindowsPcPower(notice=WindowsPowerNotice(), on_refused=outcomes.refused)
-        ),
+        (power_port := power or _windows_power(outcomes, power_marker)),
         launcher or WindowsPcLauncher(),
         apps,
         shutdown_delay_seconds=settings.pc_shutdown_delay_seconds,
@@ -554,6 +552,23 @@ def build_pc(  # noqa: PLR0913, PLR0915 - portas trocáveis para os testes, toda
         mouse_settings=mouse_settings or read_mouse_settings,
         power_outcomes=outcomes,
     )
+
+
+def _windows_power(outcomes: PowerOutcomes, marker: PowerCountdownMarker | None) -> PcPower:
+    """A energia do Windows: o aviso na tela do PC mostra a contagem e deixa cancelar ali; a recusa
+    do Windows e a contagem perdida num reinício do agente vão à API. A marca da contagem anterior é
+    lida aqui, uma vez, na partida."""
+    power = WindowsPcPower(notice=WindowsPowerNotice(), on_refused=outcomes.refused, marker=marker)
+    lost = power.take_lost_countdown()
+    if lost is not None:
+        verb = "reiniciar" if lost == "RESTART" else "desligar"
+        _log.warning(
+            "o agente reiniciou no meio da contagem para %s: o PC não vai %s; avisando o app",
+            verb,
+            verb,
+        )
+        outcomes.report(lost, OUTCOME_LOST)
+    return power
 
 
 def _power_outcomes(

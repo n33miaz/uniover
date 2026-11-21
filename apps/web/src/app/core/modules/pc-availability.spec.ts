@@ -35,6 +35,23 @@ describe('parsePcStatus', () => {
     expect(read({ level: 40, muted: 'no' })).toBeNull();
   });
 
+  it('reads the countdown that did not end as asked, and nothing malformed counts', () => {
+    const read = (power: unknown) =>
+      parsePcStatus({ available: true, online: true, apps: [], power })?.power;
+    const at = '2026-11-21T14:00:00Z';
+    expect(read({ action: 'RESTART', outcome: 'lost', at })).toEqual({
+      action: 'RESTART',
+      outcome: 'lost',
+      at,
+    });
+    expect(read({ action: 'SHUTDOWN', outcome: 'refused', at })?.outcome).toBe('refused');
+    expect(read(null)).toBeUndefined();
+    expect(read({ action: 'SLEEP', outcome: 'lost', at })).toBeUndefined();
+    expect(read({ action: 'SHUTDOWN', outcome: 'done', at })).toBeUndefined();
+    expect(read({ action: 'SHUTDOWN', outcome: 'lost' })).toBeUndefined();
+    expect(read({ action: 'SHUTDOWN', outcome: 'lost', at: '' })).toBeUndefined();
+  });
+
   it('reads the optional capabilities of the agent, ignoring anything that is not text', () => {
     const status = parsePcStatus({
       available: true,

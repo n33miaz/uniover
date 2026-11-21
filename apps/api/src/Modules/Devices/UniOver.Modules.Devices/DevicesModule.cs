@@ -121,6 +121,7 @@ public static class DevicesModule
         services.AddSingleton<IAgentPresenceListener>(sp => sp.GetRequiredService<PcDeviceStates>());
         services.AddScoped<IAgentMessageHandler, PcAgentMessageHandler>();
         services.AddSingleton<PcPowerCountdowns>();
+        services.AddSingleton<PcPowerNotices>();
         services.AddScoped<PcPowerOutcomeRecorder>();
         services.AddSingleton<PcTargetCache>();
         services.AddSingleton<PcKeyBudget>();

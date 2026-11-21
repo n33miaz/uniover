@@ -172,6 +172,23 @@ class PowerNotice(Protocol):
         ...
 
 
+class PowerCountdownMarker(Protocol):
+    """A marca da contagem em andamento, que sobrevive a um reinício do agente (a contagem em si
+    vive só na memória). Nunca levanta erro."""
+
+    def save(self, action: str) -> None:
+        """Marca que `action` (`SHUTDOWN` ou `RESTART`) está contando."""
+        ...
+
+    def clear(self) -> None:
+        """A contagem acabou (cancelada ou entregue ao Windows)."""
+        ...
+
+    def take(self) -> str | None:
+        """A ação que contava quando o agente anterior parou, ou `None`; a marca sai."""
+        ...
+
+
 class PcLauncher(Protocol):
     """Abre um programa ou endereço."""
 

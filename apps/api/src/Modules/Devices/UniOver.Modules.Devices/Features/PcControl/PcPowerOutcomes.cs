@@ -49,6 +49,49 @@ internal sealed class PcPowerCountdowns(TimeProvider time)
     }
 }
 
+/// <summary>
+/// O último desfecho de contagem que cada agente avisou, para <c>GET /pc/status</c> (<c>power</c>): o app para de oferecer "cancelar" e
+/// diz o que houve. Em memória e da instância, vale por <see cref="Lifetime"/> (depois disso o app já escondeu o botão sozinho). Uma
+/// contagem nova o apaga: o desfecho era da anterior.
+/// </summary>
+internal sealed class PcPowerNotices(TimeProvider time)
+{
+    public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(10);
+
+    private readonly object _gate = new();
+    private readonly Dictionary<string, PcPowerNotice> _notices = new(StringComparer.Ordinal);
+
+    public void Set(string agentSlug, string action, string outcome)
+    {
+        lock (_gate)
+        {
+            _notices[agentSlug] = new PcPowerNotice(action, outcome, time.GetUtcNow());
+        }
+    }
+
+    public void Forget(string agentSlug)
+    {
+        lock (_gate)
+        {
+            _notices.Remove(agentSlug);
+        }
+    }
+
+    public PcPowerNotice? Get(string agentSlug)
+    {
+        lock (_gate)
+        {
+            return _notices.TryGetValue(agentSlug, out var notice) && time.GetUtcNow() - notice.At <= Lifetime ? notice : null;
+        }
+    }
+}
+
+/// <summary>
+/// O desfecho de uma contagem que não terminou no pedido: <c>Action</c> (<c>SHUTDOWN</c> ou <c>RESTART</c>), <c>Outcome</c> (<c>refused</c>:
+/// o Windows recusou; <c>lost</c>: o agente reiniciou no meio) e <c>At</c>, quando a API soube (o app só o compara com o que já viu).
+/// </summary>
+internal sealed record PcPowerNotice(string Action, string Outcome, DateTimeOffset At);
+
 /// <summary>Uma contagem aceita pelo agente: o agente (Guid), quem pediu, de onde, e a ação (<c>SHUTDOWN</c> ou <c>RESTART</c>).</summary>
 internal sealed record PcPowerCountdown(Guid AgentId, Guid UserId, ClientInfo Client, string Action, DateTimeOffset At = default);
 
@@ -56,9 +99,10 @@ internal sealed record PcPowerCountdown(Guid AgentId, Guid UserId, ClientInfo Cl
 /// O desfecho que o agente avisou (<c>pc.power.outcome.v1</c>): a contagem não terminou no pedido (o Windows recusou, ou o agente
 /// reiniciou no meio). Vira a linha de falha da ação na auditoria, com quem pediu quando a instância ainda lembra.
 /// </summary>
-internal sealed class PcPowerOutcomeRecorder(PcPowerCountdowns countdowns, PairingAuditWriter audit, DevicesDbContext db)
+internal sealed class PcPowerOutcomeRecorder(
+    PcPowerCountdowns countdowns, PairingAuditWriter audit, DevicesDbContext db, PcPowerNotices? notices = null)
 {
-    public async Task RecordAsync(string agentSlug, string action, CancellationToken cancellationToken)
+    public async Task RecordAsync(string agentSlug, string action, string outcome, CancellationToken cancellationToken)
     {
         var failedEvent = action switch
         {
@@ -70,6 +114,9 @@ internal sealed class PcPowerOutcomeRecorder(PcPowerCountdowns countdowns, Pairi
         {
             return;
         }
+
+        // O app vê já, na próxima leitura do estado, que não há mais o que cancelar.
+        notices?.Set(agentSlug, action, outcome);
 
         var countdown = countdowns.Take(agentSlug);
         // Sem a lembrança (API reiniciada, contagem velha, ação diferente): a falha fica na trilha do agente, sem a pessoa.
