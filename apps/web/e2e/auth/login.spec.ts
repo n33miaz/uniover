@@ -337,14 +337,20 @@ test.describe('tela de entrada: teclado virtual', () => {
     page,
   }) => {
     await openLogin(page);
-    const width = page.viewportSize()!.width;
-    // Alturas tiradas da própria tela (e não fixas): a fonte e o layout do executor mudam a posição do botão.
+    const { width, height } = page.viewportSize()!;
+    // Alturas tiradas da própria tela (e não fixas): a fonte e o layout do executor mudam a posição do botão. São medidas
+    // já com a janela baixa, sem campo em foco: na janela alta (a do s23-fe tem 800 px) o cartão desce junto com a altura
+    // (`--stage-top` cresce com `100dvh`) e, ao encolher, sobe e cabe inteiro, sem rolagem nenhuma para o teste observar.
+    // Abaixo de 664 px o cartão fica no alto, então a posição medida aqui é a mesma nos dois passos do teclado.
+    await page.setViewportSize({ width, height: 300 });
     const bottomOf = async (locator: Locator) => {
       const box = (await locator.boundingBox())!;
-      return box.y + box.height;
+      return box.y + box.height + (await page.evaluate(() => window.scrollY));
     };
     const submitBottom = await bottomOf(submit(page));
     const fieldBottom = await bottomOf(password(page));
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => window.scrollTo(0, 0));
     await password(page).focus();
     // Primeiro passo: só o botão fica 20 px atrás da margem de baixo, então a moldura rola pouco (campo e botão juntos).
     await page.setViewportSize({ width, height: Math.floor(submitBottom) + 24 - 20 });
