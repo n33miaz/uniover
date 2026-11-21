@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.77.1](https://github.com/n33miaz/uniover/compare/v0.77.0...v0.77.1) (2026-11-21)
+
+
+### Devices 0.68.2
+
+#### Bug Fixes
+
+* **tv:** never install tv livre for a guest
+
+
+### TV 0.54.2
+
+#### Bug Fixes
+
+* **tv:** never install tv livre for a guest
+
+
+### Web 0.73.2
+
+#### Bug Fixes
+
+* **tv:** never install tv livre for a guest
+
+
+### Agent 0.63.2
+
+#### Bug Fixes
+
+* **tv:** never install tv livre for a guest
+* **agent:** keep unconfirmed tv deletes in doubt
+* **agent:** tie tv text doubt to its field
+* **agent:** replace supervisor files atomically
+* **agent:** fall back without atomic replace
+
 ## [0.77.0](https://github.com/n33miaz/uniover/compare/v0.76.0...v0.77.0) (2026-11-21)
 
 
