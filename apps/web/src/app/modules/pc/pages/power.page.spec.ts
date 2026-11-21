@@ -361,6 +361,76 @@ describe('PowerPage', () => {
     });
   });
 
+  describe('sheet text for shutdown and restart', () => {
+    const FORCED = 'Os apps abertos podem fechar sem pedir para salvar.';
+    const sheetTextOf = async (label: string) => {
+      action(label).click();
+      await settle();
+      const text = root.querySelector('dialog')?.textContent ?? '';
+      sheetButton('Cancelar').click();
+      await settle();
+      return text;
+    };
+
+    it('keeps the current text for an agent that asks Windows without forcing', async () => {
+      store.capabilities.set(['pc.power.v2', 'pc.power.cancel.v1']);
+      fixture.detectChanges();
+
+      const shutdown = await sheetTextOf('Desligar');
+      expect(shutdown).toContain('O agente espera alguns segundos antes de pedir ao Windows.');
+      expect(shutdown).not.toContain(FORCED);
+
+      const restart = await sheetTextOf('Reiniciar');
+      expect(restart).toContain('O Windows pode pedir para salvar o trabalho aberto.');
+      expect(restart).not.toContain(FORCED);
+    });
+
+    it('warns that an older agent closes the open apps without asking to save', async () => {
+      store.capabilities.set(['pc.power.v2']);
+      fixture.detectChanges();
+
+      const shutdown = await sheetTextOf('Desligar');
+      expect(shutdown).toContain(FORCED);
+      expect(shutdown).toContain('Dá para cancelar aqui antes do fim.');
+
+      const restart = await sheetTextOf('Reiniciar');
+      expect(restart).toContain(FORCED);
+      expect(restart).not.toContain('pode pedir para salvar');
+      expect(restart).toContain('O controle volta quando o Windows abrir de novo.');
+    });
+
+    it('opens no sheet while the PC is still loading', async () => {
+      store.phase.set('loading');
+      fixture.detectChanges();
+      const shutdown = action('Desligar');
+      expect(shutdown.disabled).toBe(true);
+      shutdown.click();
+      await settle();
+      expect(sheet()).toBeNull();
+    });
+
+    it('warns a connected PC that declared no capabilities at all', async () => {
+      store.capabilities.set([]);
+      fixture.detectChanges();
+      const shutdown = await sheetTextOf('Desligar');
+      expect(shutdown).toContain(FORCED);
+    });
+
+    it('still offers to cancel the countdown of an older agent', async () => {
+      store.capabilities.set([]);
+      fixture.detectChanges();
+      action('Desligar').click();
+      await settle();
+      sheetButton('Desligar').click();
+      await settle();
+
+      root.querySelector<HTMLButtonElement>('.cancel button')!.click();
+      await settle();
+      expect(store.power).toHaveBeenCalledExactlyOnceWith('CANCEL_SHUTDOWN', false);
+      expect(root.querySelector('.cancel')).toBeNull();
+    });
+  });
+
   it('is all disabled while the PC is not connected', () => {
     store.phase.set('offline');
     fixture.detectChanges();

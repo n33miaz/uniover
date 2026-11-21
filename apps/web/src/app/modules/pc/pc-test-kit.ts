@@ -15,6 +15,7 @@ import {
   PC_TARGET_CAPABILITY,
   PC_TEXT_V2_CAPABILITY,
   PC_TEXT_V3_CAPABILITY,
+  PC_POWER_CANCEL_CAPABILITY,
   PC_POWER_V2_CAPABILITY,
   PC_VOLUME_CAPABILITY,
   PC_ZOOM_CAPABILITY,
@@ -78,6 +79,7 @@ export function createFakePcStore(initial: PcPhase = 'ready') {
         capabilities().includes(PC_POWER_V2_CAPABILITY) &&
         capabilities().includes(PC_HIBERNATE_CAPABILITY),
     ),
+    supportsPowerCancel: computed(() => capabilities().includes(PC_POWER_CANCEL_CAPABILITY)),
     supportsNowPlaying: computed(() => capabilities().includes(PC_MEDIA_STATE_CAPABILITY)),
     supportsClipboard: computed(() => capabilities().includes(PC_CLIPBOARD_CAPABILITY)),
     nowPlaying: vi.fn<() => Promise<PcNowPlaying | null>>(() => Promise.resolve(null)),
