@@ -6,12 +6,18 @@ agente descobre sozinho sobre a TV (tipo, endereço e identificador estável).
 
 import json
 import os
+import threading
 import tomllib
 from pathlib import Path
 from typing import Any
 
 # `None` apaga a chave; o resto é gravado como texto, número, booleano ou lista de textos.
 ConfigValue = str | bool | int | float | list[str] | None
+
+# Uma gravação por vez no processo: a faixa da TV (thread própria) e o laço principal (o relocador)
+# gravam o mesmo arquivo, pelo mesmo temporário. Sem a trava, as duas leriam a versão antiga, uma
+# apagaria a mudança da outra e a segunda troca falharia com o temporário já movido.
+_WRITE_LOCK = threading.Lock()
 
 
 def _toml_value(value: Any) -> str | None:
@@ -31,7 +37,14 @@ def update_config(path: Path, values: dict[str, ConfigValue]) -> None:
     Preservar listas e números importa: o agente reescreve este arquivo durante o uso (ao
     reencontrar a TV) e não pode perder, por exemplo, `tv_cleanup_keep`. A gravação é atômica
     (arquivo temporário e troca): uma queda de energia no meio não deixa o arquivo pela metade.
+    Ler, alterar e gravar é uma coisa só (`_WRITE_LOCK`): gravações de threads diferentes não se
+    atropelam.
     """
+    with _WRITE_LOCK:
+        _update_locked(path, values)
+
+
+def _update_locked(path: Path, values: dict[str, ConfigValue]) -> None:
     data: dict[str, Any] = {}
     if path.exists():
         with path.open("rb") as handle:
