@@ -4894,11 +4894,16 @@
             "format": "date-time",
             "type": "string"
           },
+          "countdownId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "outcome": {
             "type": "string"
           }
         },
         "required": [
+          "countdownId",
           "action",
           "outcome",
           "at"

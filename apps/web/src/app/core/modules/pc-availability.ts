@@ -36,27 +36,29 @@ export interface PcStatus {
    */
   readonly mouse?: PcMouseSettings;
   /**
-   * A última contagem de desligar ou reiniciar que não terminou no pedido (o Windows recusou, ou o agente reiniciou no meio
-   * dela). Só vem por alguns minutos depois do aviso do agente, e uma contagem nova a apaga.
+   * A última contagem de desligar ou reiniciar que não terminou no pedido (o Windows recusou, o agente reiniciou no meio dela, ou
+   * quem está no PC cancelou no aviso). Só vem por alguns minutos, só se for da contagem mais recente, e uma contagem nova a apaga.
    */
   readonly power?: PcPowerOutcome;
 }
 
-/** O desfecho de uma contagem que não terminou no pedido; `at` só serve para saber se é um desfecho novo. */
+/** O desfecho de uma contagem que não terminou no pedido; `countdownId` diz de qual contagem, `at` quando aconteceu. */
 export interface PcPowerOutcome {
+  readonly countdownId: string;
   readonly action: 'SHUTDOWN' | 'RESTART';
-  readonly outcome: 'refused' | 'lost';
+  readonly outcome: 'refused' | 'lost' | 'cancelled';
   readonly at: string;
 }
 
 function parsePower(dto: unknown): PcPowerOutcome | null {
   if (!dto || typeof dto !== 'object') return null;
   const body = dto as Record<string, unknown>;
-  const { action, outcome, at } = body;
+  const { countdownId, action, outcome, at } = body;
+  if (typeof countdownId !== 'string' || countdownId.length === 0) return null;
   if (action !== 'SHUTDOWN' && action !== 'RESTART') return null;
-  if (outcome !== 'refused' && outcome !== 'lost') return null;
+  if (outcome !== 'refused' && outcome !== 'lost' && outcome !== 'cancelled') return null;
   if (typeof at !== 'string' || at.length === 0) return null;
-  return { action, outcome, at };
+  return { countdownId, action, outcome, at };
 }
 
 /** Os ajustes do mouse do Windows do PC. */

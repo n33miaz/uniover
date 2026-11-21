@@ -17,12 +17,16 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
 
     /// <summary>
     /// Agente para API: a contagem de desligar ou reiniciar (`pc.power.v1`/`pc.power.v2`) não
-    /// terminou no que o app pediu. `refused`: ao fim da contagem o Windows recusou o pedido
-    /// (política, permissão; `code` é o código de saída do `shutdown.exe`, quando houve);
-    /// `lost`: o agente reiniciou no meio da contagem, que vivia só na memória dele, e o PC não
-    /// vai desligar nem reiniciar. A API grava a falha na auditoria (`pc_shutdown_failed` ou
-    /// `pc_restart_failed`, com quem pediu, se ela ainda lembra) e devolve o último resultado em
-    /// `GET /api/v1/pc/status` (`power`), para o app parar de oferecer o cancelamento. Só vai a
+    /// terminou no que o app pediu. `countdownId` é o identificador opaco da contagem: o `id` do
+    /// comando `pc.power` que a agendou (nada de quem pediu vai ao agente). `refused`: ao fim da
+    /// contagem o Windows recusou o pedido (política, permissão; `code` é o código de saída do
+    /// `shutdown.exe`, quando houve); `lost`: o agente reiniciou no meio da contagem, que vivia
+    /// só na memória dele, e o PC não vai desligar nem reiniciar; `cancelled`: quem está no PC
+    /// cancelou no aviso da tela. `at` é quando aconteceu, no relógio do agente. A API grava na
+    /// auditoria a falha (`pc_shutdown_failed`/`pc_restart_failed`) ou o cancelamento
+    /// (`pc_shutdown_cancelled`), uma vez por contagem, com quem pediu se ela ainda lembra
+    /// daquela contagem, e devolve o desfecho em `GET /api/v1/pc/status` (`power`) só enquanto
+    /// ele for da contagem mais recente, para o app parar de oferecer o cancelamento. Só vai a
     /// uma API que listou `pc.power.outcome.v1` em `features` (uma anterior recusaria o tipo).
     /// Sem resposta.
     /// </summary>
@@ -65,13 +69,16 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("code")]
         public long? Code { get; set; }
 
+        [JsonPropertyName("countdownId")]
+        public Guid CountdownId { get; set; }
+
         [JsonPropertyName("outcome")]
         public PcPowerOutcomeV1BodyOutcome Outcome { get; set; }
     }
 
     public enum PcPowerOutcomeV1BodyAction { Restart, Shutdown };
 
-    public enum PcPowerOutcomeV1BodyOutcome { Lost, Refused };
+    public enum PcPowerOutcomeV1BodyOutcome { Cancelled, Lost, Refused };
 
     public partial class PcPowerOutcomeV1Message
     {
@@ -139,6 +146,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             var value = reader.GetString();
             switch (value)
             {
+                case "cancelled":
+                    return PcPowerOutcomeV1BodyOutcome.Cancelled;
                 case "lost":
                     return PcPowerOutcomeV1BodyOutcome.Lost;
                 case "refused":
@@ -151,6 +160,9 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         {
             switch (value)
             {
+                case PcPowerOutcomeV1BodyOutcome.Cancelled:
+                    JsonSerializer.Serialize(writer, "cancelled", options);
+                    return;
                 case PcPowerOutcomeV1BodyOutcome.Lost:
                     JsonSerializer.Serialize(writer, "lost", options);
                     return;

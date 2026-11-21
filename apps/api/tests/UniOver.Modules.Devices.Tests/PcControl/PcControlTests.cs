@@ -1128,6 +1128,8 @@ public sealed class PcPowerCountdownsTests
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-11-21T14:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
     private static readonly Guid Agent = Guid.Parse("0192f1e4-0000-7000-8000-000000000001");
     private static readonly Guid Owner = Guid.Parse("0192f1e4-0000-7000-8000-000000000002");
+    private static readonly Guid First = Guid.Parse("0192f1e4-0000-7000-8000-0000000000a1");
+    private static readonly Guid Second = Guid.Parse("0192f1e4-0000-7000-8000-0000000000a2");
 
     private static PcPowerCountdown Countdown(string action) =>
         new(Agent, Owner, new Security.ClientInfo("203.0.113.9", "painel/1.0"), action);
@@ -1141,17 +1143,41 @@ public sealed class PcPowerCountdownsTests
     }
 
     [Fact]
-    public void TheCountdown_IsTakenOnce_WithWhoAskedForIt()
+    public void TheCountdown_IsTakenOnce_ByItsId_AndOnlyForItsAgent()
     {
         var countdowns = new PcPowerCountdowns(new FakeTimeProvider(T0));
-        countdowns.Scheduled("pc-casa", Countdown("RESTART"));
+        countdowns.Scheduled("pc-casa", First, Countdown("RESTART"));
 
-        var taken = countdowns.Take("pc-casa");
+        countdowns.Take("outro-pc", First).Should().BeNull();
+        countdowns.Take("pc-casa", Second).Should().BeNull("outra contagem");
+        var taken = countdowns.Take("pc-casa", First);
 
         taken.Should().NotBeNull();
         taken!.UserId.Should().Be(Owner);
         taken.Action.Should().Be("RESTART");
-        countdowns.Take("pc-casa").Should().BeNull("o desfecho só é gravado uma vez");
+        countdowns.Take("pc-casa", First).Should().BeNull("o desfecho só é gravado uma vez");
+    }
+
+    [Fact]
+    public void OnlyTheLatestCountdown_IsCurrent_AndAnUnknownAgentLetsTheOutcomeThrough()
+    {
+        var countdowns = new PcPowerCountdowns(new FakeTimeProvider(T0));
+        countdowns.IsCurrent("pc-casa", First).Should().BeTrue("a instância não conhece nenhuma contagem");
+        countdowns.Scheduled("pc-casa", First, Countdown("SHUTDOWN"));
+        countdowns.Scheduled("pc-casa", Second, Countdown("SHUTDOWN"));
+
+        countdowns.IsCurrent("pc-casa", First).Should().BeFalse();
+        countdowns.IsCurrent("pc-casa", Second).Should().BeTrue();
+        countdowns.Take("pc-casa", First).Should().NotBeNull("a pessoa da contagem antiga continua sendo a dela");
+    }
+
+    [Fact]
+    public void AnOutcome_IsRecordedOnce()
+    {
+        var countdowns = new PcPowerCountdowns(new FakeTimeProvider(T0));
+        countdowns.TryRecord(First).Should().BeTrue();
+        countdowns.TryRecord(First).Should().BeFalse();
+        countdowns.TryRecord(Second).Should().BeTrue();
     }
 
     [Fact]
@@ -1159,35 +1185,37 @@ public sealed class PcPowerCountdownsTests
     {
         var time = new FakeTimeProvider(T0);
         var countdowns = new PcPowerCountdowns(time);
-        countdowns.Scheduled("pc-casa", Countdown("SHUTDOWN"));
+        countdowns.Scheduled("pc-casa", First, Countdown("SHUTDOWN"));
         countdowns.Cancelled("pc-casa");
-        countdowns.Take("pc-casa").Should().BeNull();
+        countdowns.Take("pc-casa", First).Should().BeNull();
 
-        countdowns.Scheduled("pc-casa", Countdown("SHUTDOWN"));
+        countdowns.Scheduled("pc-casa", Second, Countdown("SHUTDOWN"));
         time.Advance(PcPowerCountdowns.Lifetime + TimeSpan.FromSeconds(1));
-        countdowns.Take("pc-casa").Should().BeNull();
+        countdowns.Take("pc-casa", Second).Should().BeNull();
     }
 }
 
 public sealed class PcPowerNoticesTests
 {
     private static readonly DateTimeOffset T0 = DateTimeOffset.Parse("2026-11-21T14:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
+    private static readonly DateTimeOffset Happened = T0.AddSeconds(-40);
 
     [Fact]
-    public void TheLastOutcome_IsShown_UntilItIsForgottenOrOld()
+    public void TheLastOutcome_IsShownWithTheTimeItHappened_UntilItIsForgottenOrOld()
     {
         var time = new FakeTimeProvider(T0);
         var notices = new PcPowerNotices(time);
         notices.Get("pc-casa").Should().BeNull();
 
-        notices.Set("pc-casa", "RESTART", "lost");
-        notices.Get("pc-casa").Should().Be(new PcPowerNotice("RESTART", "lost", T0));
+        var lost = new PcPowerNotice(Guid.CreateVersion7(), "RESTART", "lost", Happened);
+        notices.Set("pc-casa", lost);
+        notices.Get("pc-casa").Should().Be(lost);
         notices.Get("outro-pc").Should().BeNull();
 
         notices.Forget("pc-casa");
         notices.Get("pc-casa").Should().BeNull("uma contagem nova apaga o desfecho da anterior");
 
-        notices.Set("pc-casa", "SHUTDOWN", "refused");
+        notices.Set("pc-casa", lost with { Outcome = "refused" });
         time.Advance(PcPowerNotices.Lifetime + TimeSpan.FromSeconds(1));
         notices.Get("pc-casa").Should().BeNull();
     }

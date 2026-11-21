@@ -59,7 +59,7 @@ def test_cancel_on_the_notice_cancels_the_countdown() -> None:
     box = FakeBox()
     cancelled: list[bool] = []
     notice = WindowsPowerNotice(box, box.close, now=lambda: _NOW)
-    notice.show("RESTART", 30, lambda: cancelled.append(True))
+    notice.show("cid", "RESTART", 30, lambda: cancelled.append(True))
     assert box.opened.wait(5)
     text, title, flags = box.shown[0]
     assert "vai reiniciar às 21:43:10 (em 30 s)" in text
@@ -77,7 +77,7 @@ def test_ok_only_closes_the_notice() -> None:
     box = FakeBox()
     cancelled: list[bool] = []
     notice = WindowsPowerNotice(box, box.close, now=lambda: _NOW)
-    notice.show("SHUTDOWN", 30, lambda: cancelled.append(True))
+    notice.show("cid", "SHUTDOWN", 30, lambda: cancelled.append(True))
     assert box.opened.wait(5)
     box.respond(1)
     _wait_thread("uniover-power-notice")
@@ -94,9 +94,9 @@ def test_closing_from_the_agent_never_counts_as_a_cancel() -> None:
         return True
 
     notice = WindowsPowerNotice(box, close_with_cancel, now=lambda: _NOW)
-    notice.show("SHUTDOWN", 30, lambda: cancelled.append(True))
+    notice.show("cid", "SHUTDOWN", 30, lambda: cancelled.append(True))
     assert box.opened.wait(5)
-    notice.close()
+    notice.close("cid")
     _wait_thread("uniover-power-notice-close")
     _wait_thread("uniover-power-notice")
     assert box.closed_titles == [box.shown[0][1]]
@@ -104,7 +104,7 @@ def test_closing_from_the_agent_never_counts_as_a_cancel() -> None:
 
 
 def test_close_without_a_notice_does_nothing() -> None:
-    WindowsPowerNotice(lambda *args: 1, lambda title: False).close()
+    WindowsPowerNotice(lambda *args: 1, lambda title: False).close("cid")
 
 
 def test_a_broken_box_never_raises_to_the_countdown(caplog: pytest.LogCaptureFixture) -> None:
@@ -112,7 +112,7 @@ def test_a_broken_box_never_raises_to_the_countdown(caplog: pytest.LogCaptureFix
         raise OSError("sem desktop")
 
     notice = WindowsPowerNotice(broken, lambda title: False, now=lambda: _NOW)
-    notice.show("SHUTDOWN", 30, lambda: None)
+    notice.show("cid", "SHUTDOWN", 30, lambda: None)
     _wait_thread("uniover-power-notice")
     assert "não consegui mostrar o aviso da contagem" in caplog.text
 
@@ -128,5 +128,18 @@ def test_the_test_suite_never_opens_a_real_notice(monkeypatch: pytest.MonkeyPatc
 def test_outside_windows_there_is_no_notice(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "platform", "linux")
     cancelled: list[bool] = []
-    WindowsPowerNotice().show("SHUTDOWN", 30, lambda: cancelled.append(True))
+    WindowsPowerNotice().show("cid", "SHUTDOWN", 30, lambda: cancelled.append(True))
     assert cancelled == []
+
+
+def test_closing_another_countdown_leaves_this_notice_open() -> None:
+    box = FakeBox()
+    notice = WindowsPowerNotice(box, box.close, now=lambda: _NOW)
+    notice.show("nova", "SHUTDOWN", 30, lambda: None)
+    assert box.opened.wait(5)
+    notice.close("antiga")
+    assert box.closed_titles == []
+    notice.close("nova")
+    _wait_thread("uniover-power-notice-close")
+    _wait_thread("uniover-power-notice")
+    assert box.closed_titles == [box.shown[0][1]]

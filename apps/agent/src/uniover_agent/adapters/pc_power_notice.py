@@ -73,8 +73,9 @@ def _windows_close(title: str) -> bool:
 
 
 class _Window:
-    def __init__(self, title: str) -> None:
+    def __init__(self, title: str, countdown_id: str) -> None:
         self.title = title
+        self.countdown_id = countdown_id
         self.thread: threading.Thread | None = None
         # O agente mandou fechar: o que a caixa devolver depois disso não é decisão de ninguém.
         self.dismissed = False
@@ -107,12 +108,14 @@ class WindowsPowerNotice:
             return self._close_window
         return _windows_close if sys.platform == "win32" else (lambda title: False)
 
-    def show(self, action: str, seconds: int, cancel: Callable[[], None]) -> None:
+    def show(
+        self, countdown_id: str, action: str, seconds: int, cancel: Callable[[], None]
+    ) -> None:
         box = self._show_box()
         if box is None:
             return
-        self.close()
-        window = _Window(f"{TITLE} ({secrets.token_hex(2)})")
+        self._close_current()
+        window = _Window(f"{TITLE} ({secrets.token_hex(2)})", countdown_id)
         text = notice_text(action, seconds, self._now() + timedelta(seconds=seconds))
 
         def work() -> None:
@@ -127,7 +130,6 @@ class WindowsPowerNotice:
                         self._current = None
             if window.dismissed or answer != _IDCANCEL:
                 return
-            _log.warning("contagem cancelada no aviso da tela do PC")
             try:
                 cancel()
             except Exception:
@@ -138,11 +140,21 @@ class WindowsPowerNotice:
             self._current = window
         window.thread.start()
 
-    def close(self) -> None:
+    def close(self, countdown_id: str) -> None:
+        with self._lock:
+            window = self._current
+            if window is None or window.countdown_id != countdown_id:
+                return  # o aviso aberto é de outra contagem: fica
+            self._current = None
+        self._dismiss_in_background(window)
+
+    def _close_current(self) -> None:
         with self._lock:
             window, self._current = self._current, None
-        if window is None:
-            return
+        if window is not None:
+            self._dismiss_in_background(window)
+
+    def _dismiss_in_background(self, window: _Window) -> None:
         window.dismissed = True
         threading.Thread(
             target=self._dismiss, args=(window,), name="uniover-power-notice-close", daemon=True

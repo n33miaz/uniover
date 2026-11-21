@@ -163,14 +163,28 @@ def test_a_refusal_after_the_countdown_is_logged(
 class FakeNotice:
     def __init__(self) -> None:
         self.calls: list[tuple[object, ...]] = []
-        self.cancel: Callable[[], None] | None = None
+        self.cancels: dict[str, Callable[[], None]] = {}
 
-    def show(self, action: str, seconds: int, cancel: Callable[[], None]) -> None:
-        self.calls.append(("show", action, seconds))
-        self.cancel = cancel
+    def show(
+        self, countdown_id: str, action: str, seconds: int, cancel: Callable[[], None]
+    ) -> None:
+        self.calls.append(("show", countdown_id, action, seconds))
+        self.cancels[countdown_id] = cancel
 
-    def close(self) -> None:
-        self.calls.append(("close",))
+    def close(self, countdown_id: str) -> None:
+        self.calls.append(("close", countdown_id))
+
+
+Outcome = tuple[str, str, str, int | None]
+
+
+def outcome_list() -> tuple[list[Outcome], Callable[[str, str, str, int | None], None]]:
+    seen: list[Outcome] = []
+
+    def report(countdown_id: str, action: str, outcome: str, code: int | None) -> None:
+        seen.append((countdown_id, action, outcome, code))
+
+    return seen, report
 
 
 @pytest.mark.parametrize(("method", "action"), [("shutdown", "SHUTDOWN"), ("restart", "RESTART")])
@@ -179,53 +193,86 @@ def test_the_countdown_shows_on_the_pc_and_closes_when_windows_is_asked(
 ) -> None:
     notice = FakeNotice()
     power = WindowsPcPower(run=exits_with(0), notice=notice)
-    getattr(power, method)(30)
-    assert notice.calls == [("show", action, 30)]
+    getattr(power, method)(30, countdown_id="c1")
+    assert notice.calls == [("show", "c1", action, 30)]
     power_timers[0].callback()
-    assert notice.calls == [("show", action, 30), ("close",)]
+    assert notice.calls == [("show", "c1", action, 30), ("close", "c1")]
 
 
 def test_the_notice_shows_the_real_countdown_never_less_than_ten_seconds(
     power_timers: list[FakeTimer],
 ) -> None:
     notice = FakeNotice()
-    WindowsPcPower(run=exits_with(0), notice=notice).shutdown(0)
-    assert notice.calls == [("show", "SHUTDOWN", 10)]
+    WindowsPcPower(run=exits_with(0), notice=notice).shutdown(0, countdown_id="c1")
+    assert notice.calls == [("show", "c1", "SHUTDOWN", 10)]
 
 
-def test_cancelling_from_the_app_closes_the_notice(power_timers: list[FakeTimer]) -> None:
+def test_a_countdown_without_an_id_gets_one(power_timers: list[FakeTimer]) -> None:
+    notice = FakeNotice()
+    WindowsPcPower(run=exits_with(0), notice=notice).shutdown(30)
+    (_, countdown_id, _, _) = notice.calls[0]
+    assert isinstance(countdown_id, str) and len(countdown_id) == 36
+
+
+def test_cancelling_from_the_app_closes_only_the_notice_of_that_countdown(
+    power_timers: list[FakeTimer],
+) -> None:
     notice = FakeNotice()
     power = WindowsPcPower(run=exits_with(0), notice=notice)
-    power.restart(30)
+    power.restart(30, countdown_id="c1")
     power.cancel_shutdown()
-    assert notice.calls == [("show", "RESTART", 30), ("close",)]
+    assert notice.calls == [("show", "c1", "RESTART", 30), ("close", "c1")]
+    # Uma contagem nova: cancelar de novo (nada correndo) não fecha o aviso dela.
+    power.shutdown(30, countdown_id="c2")
+    power.cancel_shutdown()
+    power.shutdown(30, countdown_id="c3")
+    assert notice.calls[-1] == ("show", "c3", "SHUTDOWN", 30)
+    assert ("close", "c3") not in notice.calls
 
 
-def test_cancel_on_the_notice_stops_the_countdown(
+def test_cancel_on_the_notice_stops_its_countdown_and_tells_the_app(
     power_timers: list[FakeTimer], caplog: pytest.LogCaptureFixture
 ) -> None:
     calls: list[list[str]] = []
+    seen, report = outcome_list()
     notice = FakeNotice()
-    power = WindowsPcPower(run=exits_with(0, calls), notice=notice)
-    power.shutdown(30)
-    assert notice.cancel is not None
-    notice.cancel()
+    power = WindowsPcPower(run=exits_with(0, calls), notice=notice, on_outcome=report)
+    power.shutdown(30, countdown_id="c1")
+    notice.cancels["c1"]()
     assert power_timers[0].cancelled
     power_timers[0].callback()
     assert calls == [["/a"]]
+    assert seen == [("c1", "SHUTDOWN", "cancelled", None)]
     # Tarde demais (o Windows já recebeu o pedido): o clique só vai ao registro, nunca derruba.
-    power.restart(30)
+    power.restart(30, countdown_id="c2")
     power_timers[1].callback()
-    notice.cancel()
+    notice.cancels["c2"]()
     assert "o cancelamento pedido na tela do PC não valeu" in caplog.text
+    assert seen == [("c1", "SHUTDOWN", "cancelled", None)]
+
+
+def test_the_cancel_of_an_old_notice_never_stops_a_newer_countdown(
+    power_timers: list[FakeTimer],
+) -> None:
+    notice = FakeNotice()
+    seen, report = outcome_list()
+    power = WindowsPcPower(run=exits_with(0), notice=notice, on_outcome=report)
+    power.shutdown(30, countdown_id="c1")
+    power.cancel_shutdown()
+    power.shutdown(30, countdown_id="c2")
+    notice.cancels["c1"]()  # o clique atrasado no aviso da contagem que já acabou
+    assert not power_timers[1].cancelled
+    assert seen == []
 
 
 def test_a_broken_notice_never_stops_the_countdown(power_timers: list[FakeTimer]) -> None:
     class Broken:
-        def show(self, action: str, seconds: int, cancel: Callable[[], None]) -> None:
+        def show(
+            self, countdown_id: str, action: str, seconds: int, cancel: Callable[[], None]
+        ) -> None:
             raise OSError("sem desktop")
 
-        def close(self) -> None:
+        def close(self, countdown_id: str) -> None:
             raise OSError("sem desktop")
 
     calls: list[list[str]] = []
@@ -235,63 +282,96 @@ def test_a_broken_notice_never_stops_the_countdown(power_timers: list[FakeTimer]
     assert calls == [["/s", "/t", "0"]]
 
 
-def test_a_refusal_after_the_countdown_is_reported_to_the_api(
+def test_a_refusal_after_the_countdown_is_reported_with_its_id(
     power_timers: list[FakeTimer],
 ) -> None:
-    refused: list[tuple[str, int | None]] = []
-    power = WindowsPcPower(run=exits_with(5), on_refused=lambda *args: refused.append(args))
-    power.restart(30)
+    seen, report = outcome_list()
+    power = WindowsPcPower(run=exits_with(5), on_outcome=report)
+    power.restart(30, countdown_id="c1")
     power_timers[0].callback()
-    assert refused == [("RESTART", 5)]
+    assert seen == [("c1", "RESTART", "refused", 5)]
 
 
 def test_a_runner_that_fails_is_reported_without_a_code(power_timers: list[FakeTimer]) -> None:
     def broken(arguments: list[str]) -> int:
         raise subprocess.TimeoutExpired("shutdown", 10)
 
-    refused: list[tuple[str, int | None]] = []
-    power = WindowsPcPower(run=broken, on_refused=lambda *args: refused.append(args))
-    power.shutdown(30)
+    seen, report = outcome_list()
+    power = WindowsPcPower(run=broken, on_outcome=report)
+    power.shutdown(30, countdown_id="c1")
     power_timers[0].callback()
-    assert refused == [("SHUTDOWN", None)]
+    assert seen == [("c1", "SHUTDOWN", "refused", None)]
 
 
-def test_an_accepted_request_or_a_cancel_reports_nothing(power_timers: list[FakeTimer]) -> None:
-    refused: list[tuple[str, int | None]] = []
-    power = WindowsPcPower(run=exits_with(0), on_refused=lambda *args: refused.append(args))
+def test_an_accepted_request_or_a_cancel_from_the_app_reports_nothing(
+    power_timers: list[FakeTimer],
+) -> None:
+    seen, report = outcome_list()
+    power = WindowsPcPower(run=exits_with(0), on_outcome=report)
     power.shutdown(30)
     power_timers[0].callback()
-    power = WindowsPcPower(run=exits_with(0), on_refused=lambda *args: refused.append(args))
     power.restart(30)
     power.cancel_shutdown()
-    assert refused == []
+    assert seen == []
 
 
 def test_a_broken_report_never_breaks_the_countdown(power_timers: list[FakeTimer]) -> None:
-    def broken(action: str, code: int | None) -> None:
+    def broken(countdown_id: str, action: str, outcome: str, code: int | None) -> None:
         raise RuntimeError("sem laço")
 
-    power = WindowsPcPower(run=exits_with(5), on_refused=broken)
+    power = WindowsPcPower(run=exits_with(5), on_outcome=broken)
     power.shutdown(30)
     power_timers[0].callback()
     power.cancel_shutdown()  # a recusa liberou: cancelar volta a valer
 
 
-class FakeMarker:
-    def __init__(self, lost: str | None = None) -> None:
-        self.marked: str | None = None
-        self.lost = lost
-        self.calls: list[tuple[object, ...]] = []
+def test_a_new_assembly_in_the_same_process_takes_over_the_live_countdown(
+    power_timers: list[FakeTimer],
+) -> None:
+    # O agente recomeça `run` no mesmo processo (a TV mudou de endereço) no meio da contagem.
+    old_calls: list[list[str]] = []
+    new_calls: list[list[str]] = []
+    old_notice, new_notice = FakeNotice(), FakeNotice()
+    old = WindowsPcPower(run=exits_with(0, old_calls), notice=old_notice)
+    old.shutdown(30, countdown_id="c1")
+    _, report = outcome_list()
+    new = WindowsPcPower(run=exits_with(0, new_calls), notice=new_notice, on_outcome=report)
+    with pytest.raises(OSError, match="já há uma ação de energia agendada"):
+        new.restart(30, countdown_id="c2")
+    # O cancelamento do app chega à montagem nova e derruba a contagem viva da anterior.
+    new.cancel_shutdown()
+    assert power_timers[0].cancelled
+    power_timers[0].callback()
+    assert old_calls == []
+    assert new_calls == [["/a"]]
+    # O aviso aberto pela montagem anterior fecha por quem o abriu.
+    assert old_notice.calls[-1] == ("close", "c1")
 
-    def save(self, action: str) -> None:
-        self.marked = action
-        self.calls.append(("save", action))
+
+def test_after_a_new_assembly_the_end_of_the_countdown_is_handled_by_the_new_one(
+    power_timers: list[FakeTimer],
+) -> None:
+    old = WindowsPcPower(run=exits_with(0))
+    old.shutdown(30, countdown_id="c1")
+    seen, report = outcome_list()
+    WindowsPcPower(run=exits_with(5), on_outcome=report)
+    power_timers[0].callback()
+    # Quem pede ao Windows e avisa a API é a montagem viva (a anterior tinha o laço já fechado).
+    assert seen == [("c1", "SHUTDOWN", "refused", 5)]
+
+
+class FakeMarker:
+    def __init__(self, lost: tuple[str, str] | None = None) -> None:
+        self.marked: tuple[str, str] | None = None
+        self.lost = lost
+
+    def save(self, action: str, countdown_id: str) -> None:
+        self.marked = (action, countdown_id)
 
     def clear(self) -> None:
         self.marked = None
-        self.calls.append(("clear",))
 
-    def take(self) -> str | None:
+    def take(self) -> tuple[str, str] | None:
         lost, self.lost = self.lost, None
         return lost
 
@@ -300,15 +380,15 @@ def test_the_countdown_is_marked_and_unmarked_before_windows_is_asked(
     power_timers: list[FakeTimer],
 ) -> None:
     marker = FakeMarker()
-    seen: list[str | None] = []
+    seen: list[tuple[str, str] | None] = []
 
     def run(arguments: list[str]) -> int:
         seen.append(marker.marked)
         return 0
 
     power = WindowsPcPower(run=run, marker=marker)
-    power.restart(30)
-    assert marker.marked == "RESTART"
+    power.restart(30, countdown_id="c1")
+    assert marker.marked == ("RESTART", "c1")
     power_timers[0].callback()
     # A marca saiu antes do pedido: um reinício que deu certo nunca parece perdido depois.
     assert seen == [None]
@@ -327,8 +407,8 @@ def test_a_cancelled_or_refused_countdown_leaves_no_mark(power_timers: list[Fake
 
 
 def test_the_lost_countdown_of_the_previous_agent_is_read_once() -> None:
-    power = WindowsPcPower(run=exits_with(0), marker=FakeMarker(lost="SHUTDOWN"))
-    assert power.take_lost_countdown() == "SHUTDOWN"
+    power = WindowsPcPower(run=exits_with(0), marker=FakeMarker(lost=("SHUTDOWN", "c1")))
+    assert power.take_lost_countdown() == ("SHUTDOWN", "c1")
     assert power.take_lost_countdown() is None
     assert WindowsPcPower(run=exits_with(0)).take_lost_countdown() is None
 

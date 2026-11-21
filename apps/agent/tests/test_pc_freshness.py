@@ -71,13 +71,13 @@ class FakePower:
     def sleep(self) -> None:
         self.calls.append("sleep")
 
-    def shutdown(self, delay_seconds: int) -> None:
+    def shutdown(self, delay_seconds: int, countdown_id: str = "") -> None:
         self.calls.append("shutdown")
 
     def cancel_shutdown(self) -> None:
         self.calls.append("cancel")
 
-    def restart(self, delay_seconds: int) -> None:
+    def restart(self, delay_seconds: int, countdown_id: str = "") -> None:
         self.calls.append("restart")
 
     def hibernation_available(self) -> bool:

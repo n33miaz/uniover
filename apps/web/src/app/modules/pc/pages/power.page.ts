@@ -201,7 +201,7 @@ export class PowerPage {
 
   private readonly sheet = viewChild(PcConfirmSheet);
   private hideTimer: number | null = null;
-  /** O desfecho que o estado já trazia quando a contagem desta tela começou: só um diferente diz respeito a ela. */
+  /** O desfecho (pela contagem) que o estado já trazia quando a contagem desta tela começou: só outro diz respeito a ela. */
   private seenOutcome: string | null = null;
 
   constructor() {
@@ -212,13 +212,14 @@ export class PowerPage {
     // tela diz o que houve em vez de seguir oferecendo o botão.
     effect(() => {
       const outcome = this.store.powerOutcome();
-      if (outcome === null || this.countdown() === null || outcome.at === this.seenOutcome) return;
+      if (outcome === null || this.countdown() === null) return;
+      if (outcome.countdownId === this.seenOutcome) return;
       untracked(() => this.countdownEnded(outcome));
     });
   }
 
   private countdownEnded(outcome: PcPowerOutcome): void {
-    this.seenOutcome = outcome.at;
+    this.seenOutcome = outcome.countdownId;
     this.countdown.set(null);
     if (this.hideTimer !== null) window.clearTimeout(this.hideTimer);
     this.hideTimer = null;
@@ -227,6 +228,11 @@ export class PowerPage {
 
   private outcomeText(outcome: PcPowerOutcome): string {
     const restart = outcome.action === 'RESTART';
+    if (outcome.outcome === 'cancelled') {
+      return restart
+        ? $localize`:@@pc.power.restart-cancelled-on-pc:O reinício foi cancelado na tela do PC.`
+        : $localize`:@@pc.power.shutdown-cancelled-on-pc:O desligamento foi cancelado na tela do PC.`;
+    }
     if (outcome.outcome === 'refused') {
       return restart
         ? $localize`:@@pc.power.restart-refused:O Windows recusou reiniciar. O PC segue ligado.`
@@ -278,7 +284,7 @@ export class PowerPage {
   }
 
   private showCancel(kind: Countdown): void {
-    this.seenOutcome = untracked(() => this.store.powerOutcome())?.at ?? null;
+    this.seenOutcome = untracked(() => this.store.powerOutcome())?.countdownId ?? null;
     this.countdown.set(kind);
     if (this.hideTimer !== null) window.clearTimeout(this.hideTimer);
     this.hideTimer = window.setTimeout(() => this.countdown.set(null), CANCEL_WINDOW_MS);

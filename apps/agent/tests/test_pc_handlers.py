@@ -78,6 +78,7 @@ class FakePower:
         self.slept = asyncio.Event()
         self.done = asyncio.Event()
         self.hibernation = hibernation
+        self.countdowns: list[str] = []
 
     def lock(self) -> None:
         self.calls.append(("lock",))
@@ -86,14 +87,16 @@ class FakePower:
         self.calls.append(("sleep",))
         self.slept.set()
 
-    def shutdown(self, delay_seconds: int) -> None:
+    def shutdown(self, delay_seconds: int, countdown_id: str = "") -> None:
         self.calls.append(("shutdown", delay_seconds))
+        self.countdowns.append(countdown_id)
 
     def cancel_shutdown(self) -> None:
         self.calls.append(("cancel",))
 
-    def restart(self, delay_seconds: int) -> None:
+    def restart(self, delay_seconds: int, countdown_id: str = "") -> None:
         self.calls.append(("restart", delay_seconds))
+        self.countdowns.append(countdown_id)
 
     def hibernation_available(self) -> bool:
         return self.hibernation
@@ -213,6 +216,14 @@ async def test_lock_shutdown_and_cancel() -> None:
     await run(handlers["pc.power.v1"], {"action": "SHUTDOWN"})
     await run(handlers["pc.power.v1"], {"action": "CANCEL_SHUTDOWN"})
     assert power.calls == [("lock",), ("shutdown", 45), ("cancel",)]
+
+
+async def test_the_countdown_is_identified_by_the_command_that_asked_for_it() -> None:
+    power = FakePower()
+    handler = pc_power_handler(power, shutdown_delay_seconds=30)
+    await handler(Command("cmd-1", "pc.power.v1", {"action": "SHUTDOWN"}))
+    await handler(Command("cmd-2", "pc.power.v2", {"action": "RESTART"}))
+    assert power.countdowns == ["cmd-1", "cmd-2"]
 
 
 async def test_sleep_answers_first_and_suspends_afterwards() -> None:

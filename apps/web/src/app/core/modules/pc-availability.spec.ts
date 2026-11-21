@@ -39,17 +39,25 @@ describe('parsePcStatus', () => {
     const read = (power: unknown) =>
       parsePcStatus({ available: true, online: true, apps: [], power })?.power;
     const at = '2026-11-21T14:00:00Z';
-    expect(read({ action: 'RESTART', outcome: 'lost', at })).toEqual({
+    const countdownId = '0192f1e4-0000-7000-8000-0000000000a1';
+    expect(read({ countdownId, action: 'RESTART', outcome: 'lost', at })).toEqual({
+      countdownId,
       action: 'RESTART',
       outcome: 'lost',
       at,
     });
-    expect(read({ action: 'SHUTDOWN', outcome: 'refused', at })?.outcome).toBe('refused');
+    expect(read({ countdownId, action: 'SHUTDOWN', outcome: 'refused', at })?.outcome).toBe(
+      'refused',
+    );
+    expect(read({ countdownId, action: 'SHUTDOWN', outcome: 'cancelled', at })?.outcome).toBe(
+      'cancelled',
+    );
     expect(read(null)).toBeUndefined();
-    expect(read({ action: 'SLEEP', outcome: 'lost', at })).toBeUndefined();
-    expect(read({ action: 'SHUTDOWN', outcome: 'done', at })).toBeUndefined();
-    expect(read({ action: 'SHUTDOWN', outcome: 'lost' })).toBeUndefined();
-    expect(read({ action: 'SHUTDOWN', outcome: 'lost', at: '' })).toBeUndefined();
+    expect(read({ action: 'SHUTDOWN', outcome: 'lost', at })).toBeUndefined();
+    expect(read({ countdownId, action: 'SLEEP', outcome: 'lost', at })).toBeUndefined();
+    expect(read({ countdownId, action: 'SHUTDOWN', outcome: 'done', at })).toBeUndefined();
+    expect(read({ countdownId, action: 'SHUTDOWN', outcome: 'lost' })).toBeUndefined();
+    expect(read({ countdownId, action: 'SHUTDOWN', outcome: 'lost', at: '' })).toBeUndefined();
   });
 
   it('reads the optional capabilities of the agent, ignoring anything that is not text', () => {

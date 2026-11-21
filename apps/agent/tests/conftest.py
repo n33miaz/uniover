@@ -68,6 +68,8 @@ def no_real_power_actions(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Uma contagem real sobreviveria ao fim do teste e, já sem esta guarda, chegaria ao Windows.
     monkeypatch.setattr(pc_windows, "_start_power_timer", refuse_countdown)
+    # A contagem é uma por processo: cada teste começa com a sua, sem herdar a do anterior.
+    monkeypatch.setattr(pc_windows, "_PROCESS_COUNTDOWN", pc_windows.PowerCountdown())
     # Nem o aviso da contagem na tela: uma janela de verdade apareceria no desktop de quem roda.
     from uniover_agent.adapters import pc_power_notice  # noqa: PLC0415
 

@@ -16,9 +16,10 @@ class PcPowerOutcomeV1BodyAction(RootModel[Literal['SHUTDOWN', 'RESTART']]):
     ]
 
 
-class PcPowerOutcomeV1BodyOutcome(RootModel[Literal['refused', 'lost']]):
+class PcPowerOutcomeV1BodyOutcome(RootModel[Literal['refused', 'lost', 'cancelled']]):
     root: Annotated[
-        Literal['refused', 'lost'], Field(title='PcPowerOutcomeV1BodyOutcome')
+        Literal['refused', 'lost', 'cancelled'],
+        Field(title='PcPowerOutcomeV1BodyOutcome'),
     ]
 
 
@@ -26,6 +27,7 @@ class PcPowerOutcomeV1Body(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    countdownId: UUID
     action: Annotated[
         PcPowerOutcomeV1BodyAction, Field(title='PcPowerOutcomeV1BodyAction')
     ]

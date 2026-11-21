@@ -15783,6 +15783,8 @@ export interface components {
       action: string;
       /** Format: date-time */
       at: string;
+      /** Format: uuid */
+      countdownId: string;
       outcome: string;
     };
     PcPowerRequest: {

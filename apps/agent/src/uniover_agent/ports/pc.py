@@ -124,16 +124,17 @@ class PcPower(Protocol):
         """Suspende. Só volta quando o PC acorda."""
         ...
 
-    def shutdown(self, delay_seconds: int) -> None:
+    def shutdown(self, delay_seconds: int, countdown_id: str = "") -> None:
         """Agenda o desligamento com uma contagem cancelável no agente; ao fim, pede ao Windows sem
-        forçar o fechamento dos programas."""
+        forçar o fechamento dos programas. `countdown_id` é o identificador opaco da contagem (o id
+        do comando que a pediu): volta à API no desfecho, para ela saber de qual se trata."""
         ...
 
     def cancel_shutdown(self) -> None:
         """Cancela a contagem (de desligar ou reiniciar); sem contagem em andamento não é erro."""
         ...
 
-    def restart(self, delay_seconds: int) -> None:
+    def restart(self, delay_seconds: int, countdown_id: str = "") -> None:
         """Agenda o reinício com uma contagem cancelável no agente (`cancel_shutdown`); ao fim, pede
         ao Windows sem forçar o fechamento dos programas."""
         ...
@@ -161,14 +162,17 @@ class PowerNotice(Protocol):
     """O aviso na tela do PC durante a contagem de desligar ou reiniciar: quem está na frente do PC
     vê quanto falta e pode cancelar ali mesmo. Nada vai a disco."""
 
-    def show(self, action: str, seconds: int, cancel: Callable[[], None]) -> None:
-        """Abre o aviso (`action`: `SHUTDOWN` ou `RESTART`) sem esperar por ele. `cancel` é chamado
-        se a pessoa pedir o cancelamento no próprio aviso. Um aviso anterior ainda aberto fecha."""
+    def show(
+        self, countdown_id: str, action: str, seconds: int, cancel: Callable[[], None]
+    ) -> None:
+        """Abre o aviso da contagem `countdown_id` (`action`: `SHUTDOWN` ou `RESTART`) sem esperar
+        por ele. `cancel` é chamado se a pessoa pedir o cancelamento no próprio aviso. Um aviso
+        anterior ainda aberto fecha."""
         ...
 
-    def close(self) -> None:
-        """Fecha o aviso aberto (a contagem acabou ou foi cancelada pelo app), sem esperar. Sem
-        aviso aberto, não faz nada."""
+    def close(self, countdown_id: str) -> None:
+        """Fecha o aviso da contagem `countdown_id` (ela acabou ou foi cancelada pelo app), sem
+        esperar. O aviso de outra contagem fica; sem aviso aberto, não faz nada."""
         ...
 
 
@@ -176,16 +180,17 @@ class PowerCountdownMarker(Protocol):
     """A marca da contagem em andamento, que sobrevive a um reinício do agente (a contagem em si
     vive só na memória). Nunca levanta erro."""
 
-    def save(self, action: str) -> None:
-        """Marca que `action` (`SHUTDOWN` ou `RESTART`) está contando."""
+    def save(self, action: str, countdown_id: str) -> None:
+        """Marca que a contagem `countdown_id` de `action` (`SHUTDOWN` ou `RESTART`) corre."""
         ...
 
     def clear(self) -> None:
         """A contagem acabou (cancelada ou entregue ao Windows)."""
         ...
 
-    def take(self) -> str | None:
-        """A ação que contava quando o agente anterior parou, ou `None`; a marca sai."""
+    def take(self) -> tuple[str, str] | None:
+        """A ação e o id da contagem que corria quando o agente anterior parou, ou `None`; a marca
+        sai."""
         ...
 
 
