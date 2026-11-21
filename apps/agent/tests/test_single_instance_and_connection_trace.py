@@ -56,6 +56,18 @@ def stop(child: subprocess.Popen[str]) -> None:
     kill_tree(child)
 
 
+def free_soon(base: Path, seconds: float = 30.0) -> bool:
+    """A trava fica livre depois que o dono morre? `kill_tree` espera só o lançador do venv: o
+    interpretador de verdade (o dono do mutex) ainda pode estar terminando, e o Windows só destrói
+    o mutex quando o último handle fecha. Tenta de novo até o prazo, sem dar por livre antes."""
+    deadline = time.monotonic() + seconds
+    while not acquire(base):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.01)
+    return True
+
+
 # --- instância única --------------------------------------------------------------------------
 
 
@@ -67,7 +79,8 @@ def test_a_second_process_cannot_take_the_lock_until_the_first_one_is_gone(tmp_p
     finally:
         stop(holder)
 
-    assert acquire(base) is True
+    assert holder.poll() is not None
+    assert free_soon(base) is True
     # Quem já a tem não é barrado por ela mesma (o `run` recomeça quando a TV muda de endereço).
     assert acquire(base) is True
 
