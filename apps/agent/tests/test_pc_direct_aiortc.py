@@ -11,6 +11,7 @@ import importlib
 import json
 import sys
 import time
+from threading import Event
 from typing import Any
 
 import pytest
@@ -20,6 +21,7 @@ from uniover_agent.adapters.pc_direct_aiortc import (
     aiortc_installed,
     build_peer,
     prepare_offer,
+    warm_up_aiortc,
 )
 from uniover_agent.core.pc import lan
 from uniover_agent.ports.pc_direct import PeerCallbacks
@@ -34,6 +36,49 @@ OFFER = (
     "a=fingerprint:sha-256 AA:BB\r\na=candidate:1 1 udp 1 abc-123.local 5000 typ host\r\n"
     "a=candidate:2 1 udp 1 192.168.1.9 5000 typ host\r\na=sctp-port:5000\r\n"
 )
+
+
+async def test_warmup_loads_in_background_and_reuses_the_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started, release = Event(), Event()
+    module = object()
+    calls = 0
+
+    def load() -> object:
+        nonlocal calls
+        calls += 1
+        started.set()
+        release.wait(5)
+        return module
+
+    monkeypatch.setattr(pc_direct_aiortc, "_loaded", {})
+    monkeypatch.setattr(pc_direct_aiortc, "aiortc_installed", lambda: True)
+    monkeypatch.setattr(pc_direct_aiortc, "_import_aiortc", load)
+    task = asyncio.create_task(warm_up_aiortc())
+    try:
+        assert await asyncio.to_thread(started.wait, 5)
+        assert not task.done()
+        offer = asyncio.create_task(pc_direct_aiortc._load())
+    finally:
+        release.set()
+        await task
+    assert await offer is module
+    assert calls == 1
+
+
+async def test_failed_warmup_leaves_import_for_first_offer(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = object()
+    monkeypatch.setattr(pc_direct_aiortc, "_loaded", {})
+    monkeypatch.setattr(pc_direct_aiortc, "aiortc_installed", lambda: True)
+
+    def fail() -> object:
+        raise ImportError("falha de importação")
+
+    monkeypatch.setattr(pc_direct_aiortc, "_import_aiortc", fail)
+    await warm_up_aiortc()
+    monkeypatch.setattr(pc_direct_aiortc, "_import_aiortc", lambda: module)
+    assert await pc_direct_aiortc._load() is module
 
 
 def test_the_offer_loses_its_local_names_and_keeps_the_rest() -> None:
