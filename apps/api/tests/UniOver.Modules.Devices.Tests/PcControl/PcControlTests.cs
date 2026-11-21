@@ -1,11 +1,16 @@
 using System.Text.Json;
 using AwesomeAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using UniOver.BuildingBlocks.AgentProtocol;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.Modules.Devices.Contracts.Agents;
 using UniOver.Modules.Devices.Features.Agents;
 using UniOver.Modules.Devices.Features.GetModuleInfo;
 using UniOver.Modules.Devices.Features.PcControl;
+using UniOver.Modules.Devices.Domain;
+using UniOver.Modules.Devices.Persistence;
+using UniOver.BuildingBlocks.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 
@@ -1185,32 +1190,6 @@ public sealed class PcPowerCountdownsTests
     }
 
     [Fact]
-    public void AnOutcome_IsRecordedOnce_ByItsCountdownAndOutcome()
-    {
-        var countdowns = new PcPowerCountdowns(new FakeTimeProvider(T0));
-        countdowns.Claim(First, "refused").Should().Be(PcPowerOutcomeClaim.Mine);
-        countdowns.Claim(First, "refused").Should().Be(PcPowerOutcomeClaim.Busy, "outro envio está gravando");
-        countdowns.Recorded(First, "refused");
-        countdowns.Claim(First, "refused").Should().Be(PcPowerOutcomeClaim.Recorded, "o agente reenviou");
-        countdowns.Claim(Second, "refused").Should().Be(PcPowerOutcomeClaim.Mine);
-        countdowns.Claim(First, "cancelled").Should().Be(PcPowerOutcomeClaim.Mine);
-    }
-
-    [Fact]
-    public void ARecordedOutcome_IsRememberedForLongerThanTheAgentKeepsResending()
-    {
-        var time = new FakeTimeProvider(T0);
-        var countdowns = new PcPowerCountdowns(time);
-        countdowns.Claim(First, "lost").Should().Be(PcPowerOutcomeClaim.Mine);
-        countdowns.Recorded(First, "lost");
-
-        time.Advance(TimeSpan.FromHours(24));
-        countdowns.Claim(First, "lost").Should().Be(PcPowerOutcomeClaim.Recorded, "o agente reenvia por até um dia");
-        time.Advance(PcPowerCountdowns.RecordedLifetime);
-        countdowns.Claim(First, "lost").Should().Be(PcPowerOutcomeClaim.Mine);
-    }
-
-    [Fact]
     public void OnlyTheLatestRememberedCountdown_IsLive()
     {
         var time = new FakeTimeProvider(T0);
@@ -1230,16 +1209,13 @@ public sealed class PcPowerCountdownsTests
     }
 
     [Fact]
-    public void AnOutcomeWhoseRecordingFailed_CanBeRecordedByTheResend()
+    public void PeekingAtTheCountdown_KeepsIt_AndOnlyForItsAgent()
     {
         var countdowns = new PcPowerCountdowns(new FakeTimeProvider(T0));
         countdowns.Scheduled("pc-casa", First, Countdown("SHUTDOWN"));
-        countdowns.Claim(First, "refused").Should().Be(PcPowerOutcomeClaim.Mine);
         countdowns.Peek("pc-casa", First).Should().NotBeNull();
-        countdowns.Release(First, "refused");
 
-        countdowns.Claim(First, "refused").Should().Be(PcPowerOutcomeClaim.Mine);
-        countdowns.Peek("pc-casa", First)!.UserId.Should().Be(Owner, "a pessoa não foi consumida pela gravação que falhou");
+        countdowns.Peek("pc-casa", First)!.UserId.Should().Be(Owner, "olhar não tira a contagem");
         countdowns.Peek("outro-pc", First).Should().BeNull();
     }
 
@@ -1269,6 +1245,40 @@ public sealed class PcPowerCountdownsTests
         countdowns.Scheduled("pc-casa", Second, Countdown("SHUTDOWN"));
         time.Advance(PcPowerCountdowns.Lifetime + TimeSpan.FromSeconds(1));
         countdowns.Take("pc-casa", Second).Should().BeNull();
+    }
+}
+
+public sealed class PcPowerOutcomeReceiptTests
+{
+    [Fact]
+    public void TheReceipt_OutlivesTheDayTheAgentKeepsResending()
+    {
+        PcPowerOutcomeReceipt.Retention.Should().BeGreaterThan(TimeSpan.FromHours(24), "o agente reenvia por até um dia");
+        PcPowerOutcomeReceipt.Retention.Should().BeLessThanOrEqualTo(TimeSpan.FromHours(25), "o banco gratuito tem pouco espaço");
+    }
+
+    [Fact]
+    public void TheReceipt_IsUniqueByAgentCountdownAndOutcome_InTheDevicesSchema()
+    {
+        // Só monta o modelo: nenhuma conexão é aberta.
+        using var db = new DevicesDbContext(new DbContextOptionsBuilder<DevicesDbContext>()
+            .UseNpgsql("Host=modelo.invalid;Database=modelo").Options);
+        var entity = db.Model.FindEntityType(typeof(PcPowerOutcomeReceipt))!;
+
+        entity.GetSchema().Should().Be(DevicesDbContext.SchemaName);
+        entity.GetTableName().Should().Be("pc_power_outcome_receipts");
+        entity.FindPrimaryKey()!.Properties.Select(p => p.Name).Should()
+            .Equal(nameof(PcPowerOutcomeReceipt.AgentId), nameof(PcPowerOutcomeReceipt.CountdownId), nameof(PcPowerOutcomeReceipt.Outcome));
+        entity.GetIndexes().Should().Contain(i => i.Properties.Single().Name == nameof(PcPowerOutcomeReceipt.RecordedAt));
+        entity.GetForeignKeys().Should().OnlyContain(f => f.PrincipalEntityType.ClrType == typeof(UniOver.Modules.Devices.Domain.Agent), "nada fora do schema");
+    }
+
+    [Fact]
+    public void TheExpiredReceipts_AreCleanedByTheDailyRetentionService()
+    {
+        var jobs = new ServiceCollection().AddPcPowerOutcomeRetention().BuildServiceProvider().GetServices<AuditPurgeJob>();
+
+        jobs.Should().ContainSingle(j => j.Name == PcPowerOutcomeRetention.JobName);
     }
 }
 

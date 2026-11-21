@@ -786,11 +786,10 @@ internal sealed class PcAgentMessageHandler(
                     message.Body.GetProperty("action").GetString()!,
                     message.Body.GetProperty("outcome").GetString()!,
                     message.Body.GetProperty("at").GetDateTimeOffset());
-                // Falha ao gravar sobe sem confirmação: o agente guarda o desfecho e o reenvia.
-                if (await powerOutcomes.RecordAsync(message.AgentId, outcome, cancellationToken))
-                {
-                    await AckPowerOutcomeAsync(message.AgentId, outcome, cancellationToken);
-                }
+                // Falha ao gravar sobe sem confirmação: o agente guarda o desfecho e o reenvia. O reenvio do que já foi gravado também é
+                // confirmado (sem outra linha), senão o agente o reenviaria até desistir.
+                await powerOutcomes.RecordAsync(message.AgentId, outcome, cancellationToken);
+                await AckPowerOutcomeAsync(message.AgentId, outcome, cancellationToken);
             }
 
             return;

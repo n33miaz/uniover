@@ -28,6 +28,8 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
 
     public DbSet<ClientEvent> ClientEvents => Set<ClientEvent>();
 
+    public DbSet<PcPowerOutcomeReceipt> PcPowerOutcomeReceipts => Set<PcPowerOutcomeReceipt>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -161,6 +163,19 @@ public sealed class DevicesDbContext(DbContextOptions<DevicesDbContext> options)
             e.Property(x => x.Os).HasMaxLength(AgentBeacon.OsMax);
             e.Property(x => x.LastRejectReason).HasMaxLength(AgentBeacon.ReasonMax);
             e.HasOne<Agent>().WithOne().HasForeignKey<AgentBeacon>(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PcPowerOutcomeReceipt>(e =>
+        {
+            e.ToTable("pc_power_outcome_receipts");
+
+            // O mesmo desfecho da mesma contagem do mesmo agente entra uma vez só: a inclusão usa ON CONFLICT DO NOTHING nesta chave.
+            e.HasKey(x => new { x.AgentId, x.CountdownId, x.Outcome });
+            e.Property(x => x.Outcome).HasMaxLength(PcPowerOutcomeReceipt.OutcomeMax);
+
+            // A limpeza diária apaga pelo tempo.
+            e.HasIndex(x => x.RecordedAt);
+            e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<PairingAuditEntry>(e =>
