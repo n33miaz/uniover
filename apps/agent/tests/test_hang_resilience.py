@@ -32,7 +32,7 @@ from uniover_agent.core.diagnostics import DiagnosticsRecorder
 from uniover_agent.core.self_care import Check, CheckResult, SelfCare
 from uniover_agent.ports import TransportError
 
-from .support import AGENT_ID
+from .support import AGENT_ID, read_pid
 
 NEW = "b" * 40
 OLD = "a" * 40
@@ -698,12 +698,10 @@ def test_the_real_kill_takes_the_supervisor_and_its_children_and_leaves_the_othe
     target = spawn_fake_supervisor(runner, marker)
     decoy = spawn_fake_supervisor(decoy_runner, decoy_marker)
     try:
-        end = time.monotonic() + 60
-        while not (marker.exists() and decoy_marker.exists()) and time.monotonic() < end:
-            time.sleep(0.2)
-        assert marker.exists() and decoy_marker.exists(), "os falsos supervisores não subiram"
-        child = int(marker.read_text(encoding="ascii").strip())
-        decoy_child = int(decoy_marker.read_text(encoding="ascii").strip())
+        # O filho grava o PID enquanto o teste espera: lê só quando o arquivo abre e está completo.
+        child = read_pid(marker)
+        decoy_child = read_pid(decoy_marker)
+        assert child is not None and decoy_child is not None, "os falsos supervisores não subiram"
         assert kill_wedged_supervisor(runner) is True
         assert target.wait(timeout=20) is not None
         end = time.monotonic() + 20
@@ -717,7 +715,8 @@ def test_the_real_kill_takes_the_supervisor_and_its_children_and_leaves_the_othe
             if proc.poll() is None:
                 proc.kill()
         for marker_file in (marker, decoy_marker):
-            if marker_file.exists():
+            leftover = read_pid(marker_file, 5) if marker_file.exists() else None
+            if leftover is not None:
                 import subprocess  # noqa: PLC0415
 
                 subprocess.run(  # noqa: S603 - taskkill do sistema; só o que o teste abriu
@@ -726,7 +725,7 @@ def test_the_real_kill_takes_the_supervisor_and_its_children_and_leaves_the_othe
                             os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe"
                         ),
                         "/PID",
-                        marker_file.read_text(encoding="ascii").strip(),
+                        str(leftover),
                         "/F",
                     ],
                     capture_output=True,
@@ -841,16 +840,12 @@ def test_only_the_supervisors_seen_silent_are_killed_not_a_newer_one(tmp_path: P
     old = spawn_fake_supervisor(runner, old_marker)
     newer = None
     try:
-        end = time.monotonic() + 60
-        while not old_marker.exists() and time.monotonic() < end:
-            time.sleep(0.2)
+        assert read_pid(old_marker) is not None, "o falso supervisor não subiu"
         seen = supervisor_pids(runner)
         assert old.pid in seen
         # O lançador, pedido logo depois, sobe um supervisor novo antes de a morte chegar.
         newer = spawn_fake_supervisor(runner, new_marker)
-        end = time.monotonic() + 60
-        while not new_marker.exists() and time.monotonic() < end:
-            time.sleep(0.2)
+        assert read_pid(new_marker) is not None, "o supervisor novo não subiu"
         assert kill_wedged_supervisor(runner, only=seen) is True
         assert old.wait(timeout=20) is not None
         assert newer.poll() is None, "o supervisor novo morreu junto"
@@ -859,7 +854,8 @@ def test_only_the_supervisors_seen_silent_are_killed_not_a_newer_one(tmp_path: P
             if proc is not None and proc.poll() is None:
                 proc.kill()
         for marker_file in (old_marker, new_marker):
-            if marker_file.exists():
+            leftover = read_pid(marker_file, 5) if marker_file.exists() else None
+            if leftover is not None:
                 import subprocess  # noqa: PLC0415
 
                 subprocess.run(  # noqa: S603 - taskkill do sistema; só o que o teste abriu
@@ -868,7 +864,7 @@ def test_only_the_supervisors_seen_silent_are_killed_not_a_newer_one(tmp_path: P
                             os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe"
                         ),
                         "/PID",
-                        marker_file.read_text(encoding="ascii").strip(),
+                        str(leftover),
                         "/F",
                     ],
                     capture_output=True,
@@ -926,7 +922,9 @@ def test_an_ancestor_supervisor_takes_its_other_children_with_it(tmp_path: Path)
         assert result.exists() and result.read_text() == "True", "o reparo não terminou"
         assert survived.exists(), "quem mata morreu junto"
         assert supervisor.wait(timeout=30) is not None
-        pid = int(sibling.read_text(encoding="ascii").strip())
+        sibling_pid = read_pid(sibling, 10)
+        assert sibling_pid is not None, "o supervisor não gravou o PID do outro filho"
+        pid = sibling_pid
         end = time.monotonic() + 20
         while alive_pid(pid) and time.monotonic() < end:
             time.sleep(0.3)
@@ -934,14 +932,15 @@ def test_an_ancestor_supervisor_takes_its_other_children_with_it(tmp_path: Path)
     finally:
         if supervisor.poll() is None:
             supervisor.kill()
-        if sibling.exists():
+        leftover = read_pid(sibling, 5) if sibling.exists() else None
+        if leftover is not None:
             subprocess.run(  # noqa: S603 - taskkill do sistema; só o que o teste abriu
                 [
                     os.path.join(
                         os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe"
                     ),
                     "/PID",
-                    sibling.read_text(encoding="ascii").strip(),
+                    str(leftover),
                     "/F",
                 ],
                 capture_output=True,
@@ -956,25 +955,16 @@ def test_an_empty_only_list_is_refused_in_python_and_kills_nobody(tmp_path: Path
     marker = tmp_path / "child.pid"
     supervisor = spawn_fake_supervisor(runner, marker)
     try:
-        end = time.monotonic() + 60
-        while not marker.exists() and time.monotonic() < end:
-            time.sleep(0.2)
+        assert read_pid(marker) is not None, "o falso supervisor não subiu"
         # Lista vazia é "ninguém", não "todos" (uma variável de ambiente vazia some no Windows).
         assert kill_wedged_supervisor(runner, only=[]) is False
         assert supervisor.poll() is None
     finally:
         if supervisor.poll() is None:
             supervisor.kill()
-        # O filho pode ainda estar gravando o arquivo do PID (o Windows recusa a leitura nesse
-        # instante): tenta por alguns segundos em vez de falhar na limpeza.
-        child_pid = ""
-        end = time.monotonic() + 5
-        while marker.exists() and not child_pid and time.monotonic() < end:
-            try:
-                child_pid = marker.read_text(encoding="ascii").strip()
-            except PermissionError:
-                time.sleep(0.2)
-        if child_pid:
+        # O filho pode ainda estar gravando o arquivo do PID: `read_pid` espera abrir e completar.
+        leftover = read_pid(marker, 5) if marker.exists() else None
+        if leftover is not None:
             import subprocess  # noqa: PLC0415
 
             subprocess.run(  # noqa: S603 - taskkill do sistema; só o que o teste abriu
@@ -983,7 +973,7 @@ def test_an_empty_only_list_is_refused_in_python_and_kills_nobody(tmp_path: Path
                         os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe"
                     ),
                     "/PID",
-                    child_pid,
+                    str(leftover),
                     "/F",
                 ],
                 capture_output=True,
@@ -1046,7 +1036,9 @@ def test_an_ancestor_supervisor_named_in_only_dies_with_its_other_children_and_t
         assert result.exists() and result.read_text() == "True", "o reparo não terminou"
         assert survived.exists(), "quem mata morreu junto"
         assert supervisor.wait(timeout=30) is not None
-        pid = int(sibling.read_text(encoding="ascii").strip())
+        sibling_pid = read_pid(sibling, 10)
+        assert sibling_pid is not None, "o supervisor não gravou o PID do outro filho"
+        pid = sibling_pid
         end = time.monotonic() + 20
         while alive_pid(pid) and time.monotonic() < end:
             time.sleep(0.3)
@@ -1054,14 +1046,15 @@ def test_an_ancestor_supervisor_named_in_only_dies_with_its_other_children_and_t
     finally:
         if supervisor.poll() is None:
             supervisor.kill()
-        if sibling.exists():
+        leftover = read_pid(sibling, 5) if sibling.exists() else None
+        if leftover is not None:
             subprocess.run(  # noqa: S603 - taskkill do sistema; só o que o teste abriu
                 [
                     os.path.join(
                         os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe"
                     ),
                     "/PID",
-                    sibling.read_text(encoding="ascii").strip(),
+                    str(leftover),
                     "/F",
                 ],
                 capture_output=True,
