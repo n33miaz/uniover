@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.77.0](https://github.com/n33miaz/uniover/compare/v0.76.0...v0.77.0) (2026-11-21)
+
+
+### Devices 0.68.1
+
+#### Bug Fixes
+
+* **pc:** cancel only the countdown on screen
+* **agent:** keep power outcomes until acked
+* **pc:** refuse blind cancels and dedupe audit
+
+
+### Training 0.46.3
+
+#### Bug Fixes
+
+* **training:** rearm midnight in the current zone
+
+
+### Web 0.73.1
+
+#### Bug Fixes
+
+* **pc:** cancel only the countdown on screen
+* **agent:** keep power outcomes until acked
+* **pc:** refuse blind cancels and dedupe audit
+
+
+### Agent 0.63.1
+
+#### Bug Fixes
+
+* **pc:** cancel only the countdown on screen
+* **agent:** keep power outcomes until acked
+* **pc:** refuse blind cancels and dedupe audit
+* **agent:** serialize agent.toml writes
+* **agent:** stop the tv lane if startup fails
+* **agent:** tv replies and close keep key order
+
+#### Performance Improvements
+
+* **agent:** run tv keys on their own lane
+* **agent:** direct tv keys age by the tv lane
+
 ## [0.76.0](https://github.com/n33miaz/uniover/compare/v0.75.1...v0.76.0) (2026-11-21)
 
 
