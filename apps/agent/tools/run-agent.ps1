@@ -121,26 +121,52 @@ function Test-UvVersion([string]$Uv) {
     } catch { }
 }
 
+$script:atomicMove = $null
+function Initialize-AtomicMove {
+    # Prepara a troca atomica (MoveFileEx, compilado com Add-Type) uma vez por processo e devolve se ela esta disponivel.
+    # Se a compilacao falhar (compilador bloqueado, politica da maquina), fica registrado e o supervisor segue no modo
+    # antigo (Move-Item), sem tentar compilar de novo a cada gravacao: gravar com uma janela curta e melhor que nao gravar
+    # o ponteiro e travar a volta atras. UNIOVER_SUPERVISOR_TEST_NO_ATOMIC_MOVE=1 simula a falha nos testes.
+    if ($null -ne $script:atomicMove) { return $script:atomicMove }
+    $script:atomicMove = $false
+    try {
+        if ($env:UNIOVER_SUPERVISOR_TEST_NO_ATOMIC_MOVE -eq '1') { throw 'compilacao desligada pelo teste' }
+        if (-not ('UniOver.NativeFile' -as [type])) {
+            Add-Type -Namespace UniOver -Name NativeFile -ErrorAction Stop -MemberDefinition '[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern bool MoveFileEx(string from, string to, int flags);'
+        }
+        $script:atomicMove = [bool]('UniOver.NativeFile' -as [type])
+    } catch { }
+    if (-not $script:atomicMove) {
+        try { Write-SupLog 'WARNING' 'a troca atomica de arquivos nao esta disponivel; gravo no modo antigo (Move-Item)' } catch { }
+    }
+    return $script:atomicMove
+}
+
 function Move-FileOver([string]$From, [string]$To) {
     # Poe o temporario $From no lugar de $To sem que $To falte nem por um instante. O `Move-Item -Force` do PowerShell 5.1
     # apaga o destino e so depois renomeia: quem lia no meio (o agente, o lancador, o proprio laco) nao achava o arquivo e
     # caia no layout de sempre, e com o destino aberto por um leitor a renomeacao falhava e o arquivo sumia de vez. O
     # `File.Replace` tambem deixa o nome vago por um instante. `MoveFileEx` com REPLACE_EXISTING troca numa operacao so (o
-    # mesmo que o `os.replace` do agente); cria o arquivo se ainda nao existe. Um leitor com o destino aberto faz a troca
-    # falhar sem estragar nada: tenta de novo por ate 2 s e, se nao der, apaga o temporario e levanta o erro.
-    if (-not ('UniOver.NativeFile' -as [type])) {
-        Add-Type -Namespace UniOver -Name NativeFile -MemberDefinition '[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern bool MoveFileEx(string from, string to, int flags);'
-    }
-    $fromFull = [System.IO.Path]::GetFullPath($From)
-    $toFull = [System.IO.Path]::GetFullPath($To)
-    for ($try = 1; ; $try++) {
-        if ([UniOver.NativeFile]::MoveFileEx($fromFull, $toFull, 1)) { return }
-        $code = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-        if ($try -ge 10) {
-            Remove-Item -LiteralPath $From -Force -ErrorAction SilentlyContinue
-            throw (New-Object System.ComponentModel.Win32Exception($code))
+    # mesmo que o `os.replace` do agente); cria o arquivo se ainda nao existe. Sem ele (ver Initialize-AtomicMove), usa o
+    # Move-Item de antes. Um leitor com o destino aberto faz a troca falhar sem estragar nada: tenta de novo por ate 2 s.
+    # Em qualquer falha final apaga o temporario e levanta o erro para quem chamou.
+    try {
+        $atomic = Initialize-AtomicMove
+        for ($try = 1; ; $try++) {
+            if ($atomic) {
+                if ([UniOver.NativeFile]::MoveFileEx([System.IO.Path]::GetFullPath($From), [System.IO.Path]::GetFullPath($To), 1)) { return }
+                $failure = New-Object System.ComponentModel.Win32Exception([System.Runtime.InteropServices.Marshal]::GetLastWin32Error())
+            }
+            else {
+                try { Move-Item -LiteralPath $From -Destination $To -Force -ErrorAction Stop; return }
+                catch { $failure = $_.Exception }
+            }
+            if ($try -ge 10) { throw $failure }
+            Start-Sleep -Milliseconds 200
         }
-        Start-Sleep -Milliseconds 200
+    } catch {
+        Remove-Item -LiteralPath $From -Force -ErrorAction SilentlyContinue
+        throw
     }
 }
 
@@ -1764,6 +1790,8 @@ $startupNames = Get-WindowsStartupNames
 Remove-Item -LiteralPath (Join-Path $runtime 'handover-sha.txt') -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath (Join-Path $runtime 'handover-exit') -Force -ErrorAction SilentlyContinue
 Write-SupLog 'INFO' 'supervisor iniciado'
+# A troca atomica e preparada ja na subida: o custo da compilacao fica aqui e, se ela faltar, o log diz desde o inicio.
+$null = Initialize-AtomicMove
 Touch-Alive
 Remove-StaleChildOutputs
 Update-AnchorLauncher
