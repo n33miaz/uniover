@@ -1864,6 +1864,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
         await using var app = await TransportApp.StartAsync(postgres);
         await using var agent = await ConnectPcAsync(app);
 
+        await ConfirmPcPowerAsync(app, "SHUTDOWN");
         var http = PostAsync(app, "power", new { action = "SHUTDOWN", confirm = true });
         await Within(agent.ReceiveAsync());
         await AdvanceUntilDoneAsync(app, http);
@@ -1900,6 +1901,7 @@ public sealed class PcControlTests(PostgresFixture postgres)
         await agent.DisposeAsync();
         await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda registrada");
 
+        await ConfirmPcPowerAsync(app, "SHUTDOWN");
         using var response = await PostAsync(app, "power", new { action = "SHUTDOWN", confirm = true });
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);

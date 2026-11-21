@@ -116,8 +116,8 @@ const DIRECT_LOST = $localize`:@@pc.screenProbe.directLost:O canal direto do pon
     }
     @if (result()) {
       <p i18n="@@pc.screenProbe.touchHelp">
-        O marcador identifica o quadro pedido pelo toque. A resposta visual do PC ao comando
-        precisa de uma medição própria.
+        O marcador identifica o quadro pedido pelo toque. A resposta visual do PC ao comando precisa
+        de uma medição própria.
       </p>
       <button type="button" (click)="copy()" i18n="@@pc.screenProbe.copy">Copiar resultados</button>
       @if (showTable()) {

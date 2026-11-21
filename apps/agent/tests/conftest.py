@@ -60,6 +60,14 @@ def no_real_power_actions(monkeypatch: pytest.MonkeyPatch) -> None:
 
     for name in ("run_hidden", "_lock_workstation", "_suspend", "_monitor_off"):
         monkeypatch.setattr(pc_windows, name, refuse)
+
+    def refuse_countdown(*args: object, **kwargs: object) -> object:
+        raise AssertionError(
+            "um teste abriu uma contagem de energia de verdade (use `power_timers`)"
+        )
+
+    # Uma contagem real sobreviveria ao fim do teste e, já sem esta guarda, chegaria ao Windows.
+    monkeypatch.setattr(pc_windows, "_start_power_timer", refuse_countdown)
     # Só leitura, mas também fora dos testes: a resposta vem sempre de quem monta o cenário.
     monkeypatch.setattr(pc_windows, "_hibernation_enabled", refuse)
     # Os ajustes do mouse do Windows (só leitura): fixos nos testes, iguais em qualquer máquina.

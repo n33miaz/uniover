@@ -177,11 +177,11 @@ describe('PowerPage', () => {
       expect(sheet()).toBeNull();
     });
 
-    it('warns that logging off loses what was not saved and that the control needs a new sign in', async () => {
+    it('warns that logging off lets Windows ask to save and that the control needs a new sign in', async () => {
       action('Encerrar Sessão').click();
       await settle();
       const text = root.querySelector('dialog')?.textContent ?? '';
-      expect(text).toContain('não foi salvo pode ser perdido');
+      expect(text).toContain('O Windows pode pedir para salvar o trabalho aberto.');
       expect(text).toContain('alguém entrar no Windows de novo');
     });
 

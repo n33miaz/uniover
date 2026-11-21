@@ -158,8 +158,12 @@ describe('Medição da tela do PC', () => {
     expect(copyButton).toBeDefined();
     copyButton?.click();
     expect(copy).toHaveBeenCalledWith(expect.stringContaining('| Duração | 60 s | 60 s |'));
-    expect(copy).toHaveBeenCalledWith(expect.stringContaining('| Toque até o quadro marcado, p50 |'));
-    expect(copy).toHaveBeenCalledWith(expect.stringContaining('| Toque até o quadro marcado, p95 |'));
+    expect(copy).toHaveBeenCalledWith(
+      expect.stringContaining('| Toque até o quadro marcado, p50 |'),
+    );
+    expect(copy).toHaveBeenCalledWith(
+      expect.stringContaining('| Toque até o quadro marcado, p95 |'),
+    );
     expect(copy).toHaveBeenCalledWith(
       expect.stringContaining('| RTT do ponteiro, p95 | 10 ms (n=60) |'),
     );
