@@ -11863,6 +11863,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "503": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "tags": [
