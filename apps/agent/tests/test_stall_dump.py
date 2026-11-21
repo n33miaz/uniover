@@ -240,6 +240,18 @@ async def test_run_ticks_until_cancelled_and_disarms(tmp_path: Path) -> None:
     assert harness.disarms == 1
 
 
+def _wait_for_text(path: Path, marker: str, timeout: float) -> str:
+    """Lê o arquivo até o marcador aparecer ou o prazo vencer; devolve a última leitura."""
+    import time  # noqa: PLC0415
+
+    deadline = time.monotonic() + timeout
+    text = path.read_text(encoding="utf-8")
+    while marker not in text and time.monotonic() < deadline:
+        time.sleep(0.05)
+        text = path.read_text(encoding="utf-8")
+    return text
+
+
 def test_the_real_faulthandler_writes_every_thread_into_the_file(tmp_path: Path) -> None:
     """Sem trocar nada: o cão do `faulthandler` dispara de verdade se o laço para."""
     import faulthandler  # noqa: PLC0415
@@ -249,8 +261,11 @@ def test_the_real_faulthandler_writes_every_thread_into_the_file(tmp_path: Path)
     try:
         dumper.tick()
         time.sleep(0.5)  # o laço parado, e o GIL preso por esta thread
-        assert (tmp_path / STALL_FILE).stat().st_size > 0
-        assert "test_the_real_faulthandler" in (tmp_path / STALL_FILE).read_text(encoding="utf-8")
+        # A thread de C do cão grava o despejo aos pedaços, thread por thread, sem aviso de fim:
+        # sob carga (CI no Windows com -n 4) ela pode ainda estar no meio quando o sono acaba. Por
+        # isso espera, com prazo, a pilha desta thread aparecer em vez de ler uma vez só.
+        text = _wait_for_text(tmp_path / STALL_FILE, "test_the_real_faulthandler", timeout=10.0)
+        assert "test_the_real_faulthandler" in text
     finally:
         dumper.close()
         faulthandler.cancel_dump_traceback_later()
