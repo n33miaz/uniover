@@ -271,7 +271,7 @@ async def test_direct_and_cloud_keys_share_one_ordered_chain(lab: TvLab) -> None
     await settle()
 
     assert lab.tv.keys == [("RIGHT", "SHORT"), ("OK", "SHORT")]
-    assert lab.process._tv_path == "nuvem"
+    assert lab.process.tv_lane.path == "nuvem"
 
 
 async def test_a_key_older_than_the_limit_is_discarded_by_the_same_rule_as_the_cloud(
@@ -847,7 +847,7 @@ async def test_a_key_already_in_the_tv_queue_is_dropped_when_the_channel_is_revo
     await settle()
 
     assert lab.tv.keys == []  # nenhuma das três chegou à TV depois da revogação
-    assert lab.process._key_tasks == set() or all(t.done() for t in lab.process._key_tasks)
+    assert all(t.done() for t in lab.process.tv_lane.tasks)
 
 
 async def test_a_text_waiting_behind_a_key_is_dropped_when_the_channel_is_revoked(

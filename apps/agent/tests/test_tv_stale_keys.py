@@ -112,7 +112,8 @@ def message(message_type: str, body: dict[str, Any], clock: AdvancingClock) -> d
 
 async def finish_keys(process: ProcessMessage) -> None:
     # Espera só as tarefas de tecla criadas pelo recebimento, sem rede ou TV reais.
-    await asyncio.wait_for(asyncio.gather(*tuple(process._tasks)), timeout=1)
+    pending = (*process._tasks, *process.tv_lane.tasks)
+    await asyncio.wait_for(asyncio.gather(*pending), timeout=1)
 
 
 async def test_key_sent_when_session_opens_within_age_limit() -> None:

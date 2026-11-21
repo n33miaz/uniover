@@ -4,11 +4,16 @@ import asyncio
 import logging
 import time
 from collections import OrderedDict
-from collections.abc import Awaitable, Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from functools import partial
 from typing import Final
 
+from uniover_agent.core.command_runner import (
+    CommandRunner,
+    Reply,
+    is_power,
+)
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.envelope_gate import Accepted, EnvelopeGate, Rejected
 from uniover_agent.core.envelopes import INVALID_MESSAGE, EnvelopeFactory
@@ -20,9 +25,9 @@ from uniover_agent.core.pc.lane import (
     PcLane,
 )
 from uniover_agent.core.power_ids import PowerIds
-from uniover_agent.core.tv.handlers import POWER_IGNORED, TimedKeyCommand, ValidatedCommand
-from uniover_agent.core.tv.session import TV_UNREACHABLE
-from uniover_agent.ports import LaneHost, PowerIdStore, Transport, TransportError
+from uniover_agent.core.tv.handlers import POWER_IGNORED
+from uniover_agent.core.tv.lane import PATH_CLOUD, TvLane
+from uniover_agent.ports import LaneHost, PowerIdStore, Sender, Transport, TransportError
 
 _log = logging.getLogger(__name__)
 
@@ -34,14 +39,8 @@ _PC_PREFIX = "pc."
 # O canal direto (`pc.rtc.*`) é sinalização, não comando de entrada: a oferta espera a biblioteca
 # carregar e não pode ficar atrás do mouse da nuvem (nem segurá-lo).
 _RTC_PREFIX = "pc.rtc."
-# Quanto esperar a faixa do PC (em outro laço) encerrar.
+# Quanto esperar a faixa do PC ou a da TV (em outro laço) encerrar.
 _LANE_CLOSE_SECONDS: Final = 5.0
-# Os caminhos por onde uma tecla da TV chega; a mudança de um para o outro vai ao registro (uma
-# linha por mudança, nunca por tecla).
-PATH_CLOUD: Final = "nuvem"
-PATH_DIRECT: Final = "canal direto"
-# O código com que o caminho direto recusa o que a nuvem trataria de outro jeito.
-NOT_ALLOWED: Final = "not_allowed"
 # Entrada da pessoa na TV: entra na cadeia das teclas (a mesma ordem de chegada), sem prender o
 # leitor. As teclas (inclusive POWER) também entram nela.
 ORDERED_TYPES: Final = frozenset(
@@ -64,13 +63,6 @@ MAINTENANCE_TYPES: Final = frozenset(
         "agent.maintenance.v1",
     }
 )
-# Resposta de quem foi aceito e não terminou quando o agente fecha (encerramento ou passagem para a
-# versão nova, depois do prazo do `drain`): todo comando aceito recebe uma resposta só.
-AGENT_STOPPING: Final = "agent_stopping"
-_STOPPING_MESSAGE: Final = (
-    "o agente está encerrando ou trocando de versão; o comando pode não ter terminado, "
-    "tente de novo em instantes"
-)
 _TV_KEY_PREFIX = "tv.key."
 _TEXT_TYPE = "tv.text.v1"
 # Os ids que já chegaram, só em memória (~60 KB no máximo): o mesmo id não executa duas vezes.
@@ -79,10 +71,6 @@ RECENT_COMMAND_CAPACITY: Final = 512
 # Respostas de comandos repetidos aguardando o envio (fora do leitor): passado o teto, a resposta
 # repetida é descartada (o primeiro envio já foi feito; a API reenvia o pedido se ainda precisar).
 MAX_PENDING_REPEAT_REPLIES: Final = 64
-
-# Como o resultado de um comando volta a quem o pediu: pela nuvem (o transporte) ou, no canal
-# direto, pela resposta do próprio canal.
-Reply = Callable[[Command, CommandResult], Awaitable[None]]
 
 
 @dataclass(slots=True)
@@ -93,16 +81,13 @@ class _RecentCommand:
     result: CommandResult | None = None
 
 
-def _is_power(command: Command) -> bool:
-    """`POWER` pelo caminho das teclas da TV: interruptor, nunca pode executar duas vezes."""
-    return command.type.startswith(_TV_KEY_PREFIX) and command.body.get("key") == "POWER"
-
-
 class ProcessMessage:
     """Valida a mensagem, executa o comando e responde.
 
     O leitor nunca espera a TV. Teclas, texto, POWER e os outros comandos de entrada
-    (`ordered_types`) entram numa cadeia só, em tarefas encadeadas na ordem de chegada. A manutenção
+    (`ordered_types`) entram numa cadeia só, em tarefas encadeadas na ordem de chegada: a faixa da
+    TV (`TvLane`). Com `tv_host` ela vive no laço próprio da sessão com a TV (uma thread, como a
+    entrada do PC) e recebe tudo por `post`, na ordem de chegada; sem ele, aqui mesmo. A manutenção
     (`maintenance_types`: lista de apps, rebind, diagnóstico) corre noutra cadeia, um comando por
     vez, cada um com o teto `command_timeout_seconds` contado quando chega a vez dele. Comandos em
     `background_types` rodam em tarefa própria, soltos. O resto (presença, pedaço de foto) é rápido
@@ -138,6 +123,9 @@ class ProcessMessage:
         on_release_queued: Callable[[], None] | None = None,
         pc_lane: PcLane | None = None,
         pc_host: LaneHost | None = None,
+        tv_host: LaneHost | None = None,
+        tv_sender: Sender | None = None,
+        tv_handle_command: HandleCommand | None = None,
         lane_detached_types: Collection[str] = (),
         direct_active: Callable[[], bool] | None = None,
         ordered_types: Collection[str] = ORDERED_TYPES,
@@ -151,7 +139,6 @@ class ProcessMessage:
         # Avisos da API que não são comando: atendidos no próprio leitor, sem resposta, sem fila
         # (nem a do PC, que exige o aparelho aprovado) e sem contar como uso.
         self._notices: Mapping[str, Callable[[Command], None]] = notices or {}
-        self._clock_ns = clock_ns
         self._gate = gate
         self._handle_command = handle_command
         self._envelopes = envelopes
@@ -160,10 +147,6 @@ class ProcessMessage:
         self._silent_types = frozenset(silent_types)
         self._monotonic = monotonic
         self._on_command = on_command
-        # Teto de um comando em tarefa própria: uma tecla presa não pode segurar para sempre o
-        # texto e o POWER que esperam por ela. Os tipos longos por natureza ficam de fora.
-        self._command_timeout = command_timeout_seconds
-        self._uncapped_types = frozenset(uncapped_types)
         # Recebe o `ts` de cada batimento da API (`api.keepalive.v1`): só ele, que a API nunca
         # segura, serve para estimar a diferença entre o relógio dela e o monotônico deste agente.
         # Um comando `pc.*` não entra aí: se tivesse chegado atrasado, ensinaria a estimativa a
@@ -188,8 +171,6 @@ class ProcessMessage:
         self._pc_host: LaneHost | None = pc_host if pc_lane is not None else None
         # Os comandos `pc.*` que a faixa executa fora da fila (a sinalização do canal direto).
         self._lane_detached_types = frozenset(lane_detached_types)
-        self._key_tasks: set[asyncio.Task[None]] = set()
-        self._last_key_task: asyncio.Task[None] | None = None
         self._ordered_types = frozenset(ordered_types)
         self._maintenance_types = frozenset(maintenance_types)
         # A faixa da manutenção: a última tarefa dela (a próxima espera esta terminar).
@@ -197,14 +178,41 @@ class ProcessMessage:
         # Os comandos aceitos em tarefa que ainda não terminaram (e quem os responde): ao fechar,
         # os que foram cancelados sem resposta recebem `agent_stopping`.
         self._unanswered: dict[asyncio.Task[None], tuple[Command, Reply | None]] = {}
-        self._latest_key: dict[str, int] = {}
-        # Por qual caminho a última tecla da TV chegou, e quantas vieram por ele desde a mudança.
-        self._tv_path: str | None = None
-        self._tv_path_count = 0
         self._recent: OrderedDict[str, _RecentCommand] = OrderedDict()
         # `POWER` alterna a TV: os ids dele vão a disco, valem pela hora de parede e sobrevivem a
         # reinício e hibernação (ver `PowerIds`).
         self._power = PowerIds(power_store, wall_clock)
+        # Teto de um comando em tarefa própria: uma tecla presa não pode segurar para sempre o
+        # texto e o POWER que esperam por ela. Os tipos longos por natureza ficam de fora.
+        self._runner = CommandRunner(
+            handle_command,
+            envelopes,
+            transport,
+            self._power,
+            self._remember_result,
+            silent_types=silent_types,
+            command_timeout_seconds=command_timeout_seconds,
+            uncapped_types=uncapped_types,
+        )
+        # A faixa da TV executa com os handlers de lá (no laço dela) e responde pelo `tv_sender`,
+        # que leva o envio ao laço do transporte quando ela vive noutra thread.
+        self._tv_host = tv_host
+        self._tv = TvLane(
+            CommandRunner(
+                tv_handle_command or handle_command,
+                envelopes,
+                tv_sender or transport,
+                self._power,
+                self._remember_result,
+                silent_types=silent_types,
+                command_timeout_seconds=command_timeout_seconds,
+                uncapped_types=uncapped_types,
+            ),
+            tv_handle_command or handle_command,
+            monotonic=monotonic,
+            clock_ns=clock_ns,
+            on_command=on_command,
+        )
         # As respostas repetidas saem numa cadeia própria, fora do leitor, na ordem de chegada.
         self._last_repeat_reply: asyncio.Task[None] | None = None
         self._pending_repeat_replies = 0
@@ -237,7 +245,14 @@ class ProcessMessage:
         ):
             # A recepção continua durante a abertura lenta da sessão. Só o relógio monotônico
             # deste agente mede a espera; o horário da API pode diferir do relógio deste PC.
-            self._start_key(command, self._monotonic(), None, PATH_CLOUD)
+            # Pela nuvem, a idade desde o envio é lida AGORA, na chegada (no laço do leitor), antes
+            # de a tecla ir à faixa da TV.
+            sent_age = (
+                self._timestamp_age(command.sent_at) if self._timestamp_age is not None else None
+            )
+            self._to_tv(
+                partial(self._tv.accept_key, command, self._monotonic(), sent_age, path=PATH_CLOUD)
+            )
             return
         if command.type.startswith(_PC_PREFIX) and not command.type.startswith(_RTC_PREFIX):
             self._to_lane(partial(self._lane.accept, command))
@@ -269,7 +284,7 @@ class ProcessMessage:
             command.type.startswith(_PC_PREFIX) and not command.type.startswith(_PC_TEXT_PREFIX)
         ):
             return False
-        if _is_power(command):
+        if is_power(command):
             return self._is_power_repeat(command)
         now = self._monotonic()
         recent = self._recent
@@ -293,7 +308,7 @@ class ProcessMessage:
         """`POWER` já aceito (neste processo ou em outro, até 30 dias atrás): nunca executa de novo.
 
         O id novo entra na memória na hora; a gravação em disco é feita fora do leitor, logo antes
-        de a tecla executar (`_execute`).
+        de a tecla executar (`CommandRunner.execute`).
         """
         if self._power.admit(command.id):
             return False
@@ -333,7 +348,7 @@ class ProcessMessage:
         try:
             if previous is not None:
                 await asyncio.wait([previous])
-            await self._reply_result(command, result)
+            await self._runner.reply_result(command, result)
         except TransportError as exc:
             _log.debug("resposta repetida de %s não enviada (%s)", command.type, exc)
         except Exception:
@@ -342,49 +357,22 @@ class ProcessMessage:
             self._pending_repeat_replies -= 1
 
     def _remember_result(self, command: Command, result: CommandResult) -> None:
-        if _is_power(command):
+        if is_power(command):
             self._power.remember_result(command.id, result)
             return
         entry = self._recent.get(command.id)
         if entry is not None:
             entry.result = result
 
-    async def _reply_result(
-        self, command: Command, result: CommandResult, reply: Reply | None = None
-    ) -> None:
-        """Pelo canal direto o resultado volta pelo próprio canal; pela nuvem, pelo transporte."""
-        if reply is not None:
-            await reply(command, result)
-            return
-        if command.type in self._silent_types:
-            # Fluxo de alta taxa (o movimento do mouse): a API o manda sem esperar resposta, e uma
-            # resposta por movimento só encheria o canal e o registro dela.
-            return
-        # A API manda o comando com `correlationId` nulo e espera o resultado apontando o `id` dele.
-        await self._transport.send(
-            self._envelopes.result(
-                command.id,
-                ok=result.status.value == "ok",
-                code=result.code or result.status.value,
-                message=result.detail,
-            )
-        )
-
     def _start_off_reader(self, command: Command) -> bool:
-        """Põe o comando numa tarefa (solta, na cadeia das teclas ou na faixa da manutenção) e diz
-        se pôs. O leitor nunca espera por elas."""
+        """Põe o comando numa tarefa (solta, na faixa da TV ou na da manutenção) e diz se pôs. O
+        leitor nunca espera por elas."""
         if command.type in self._background_types:
-            self._track(asyncio.create_task(self._execute_detached(command)), command, None)
+            self._track(asyncio.create_task(self._runner.execute_detached(command)), command, None)
         elif command.type == _TEXT_TYPE:
-            # O texto espera as teclas anteriores e não tem o teto delas (o editor confere o seu).
-            task = asyncio.create_task(self._execute_text(command, self._last_key_task, None))
-            self._chain(task, command, None)
+            self._to_tv(partial(self._tv.accept_text, command))
         elif command.type.startswith(_TV_KEY_PREFIX) or command.type in self._ordered_types:
-            # POWER, abrir app, ligar e desligar: na cadeia das teclas, com o teto dos comandos.
-            # Aqui nada é juntado nem descartado por idade; a sessão é quem ignora um POWER que
-            # repete o anterior em poucos segundos (o toque duplo religaria a TV).
-            task = asyncio.create_task(self._execute_after(command, self._last_key_task))
-            self._chain(task, command, None)
+            self._to_tv(partial(self._tv.accept_ordered, command))
         elif command.type in self._maintenance_types:
             # Um por vez, na ordem de chegada; o teto conta a partir da vez de cada um.
             task = asyncio.create_task(self._execute_after(command, self._last_maintenance_task))
@@ -398,56 +386,7 @@ class ProcessMessage:
         """Espera a vez na cadeia e executa com o teto; um anterior que falhou não a trava."""
         if previous is not None:
             await asyncio.wait([previous])
-        await self._execute_detached(command)
-
-    def _start_key(
-        self,
-        command: Command,
-        received_at: float,
-        reply: Reply | None,
-        path: str,
-        is_valid: Callable[[], bool] | None = None,
-    ) -> None:
-        """Põe uma tecla da TV na fila das teclas: a MESMA para a nuvem e para o canal direto, de
-        modo que a ordem, o descarte por idade e a junção de repetições valem para as duas. Só a
-        resposta muda (`reply`; sem ela, o transporte)."""
-        self._note_tv_path(path)
-        # Pela nuvem, a idade desde o envio é lida AGORA, na chegada: batimentos atrasados que
-        # vêm logo atrás desta tecla (o agente voltando de uma parada) não a fazem parecer nova.
-        sent_age = (
-            self._timestamp_age(command.sent_at)
-            if path == PATH_CLOUD and self._timestamp_age is not None
-            else None
-        )
-        key = command.body["key"]
-        direction = command.body.get("direction") or "SHORT"
-        is_latest = self._newest_press(key) if direction == "SHORT" else None
-        timed = TimedKeyCommand(
-            command.id,
-            command.type,
-            command.body,
-            command.correlation_id,
-            command.sent_at,
-            received_at=received_at,
-            is_latest=is_latest,
-            is_valid=is_valid,
-            sent_age=sent_age,
-            path=path,
-            # Só para medir os trechos da tecla (fila, sessão, envio) no registro do agente. Pelo
-            # canal direto a tecla chegou antes (`received_at`): a pausa do laço principal até aqui
-            # conta como fila (ela não tem a idade da API para mostrá-la).
-            received_ns=self._clock_ns()
-            - max(0, round((self._monotonic() - received_at) * 1_000_000_000)),
-        )
-        task = asyncio.create_task(self._execute_key(timed, self._last_key_task, reply))
-        self._chain(task, command, reply)
-
-    def _chain(self, task: asyncio.Task[None], command: Command, reply: Reply | None) -> None:
-        """Entra na cadeia das teclas (a ordem de chegada vale para quem vem depois)."""
-        self._last_key_task = task
-        self._key_tasks.add(task)
-        task.add_done_callback(self._key_tasks.discard)
-        self._track(task, command, reply)
+        await self._runner.execute_detached(command)
 
     def _track(self, task: asyncio.Task[None], command: Command, reply: Reply | None) -> None:
         """Guarda a tarefa de um comando aceito até ela terminar (ver `aclose`)."""
@@ -464,22 +403,17 @@ class ProcessMessage:
         if not task.cancelled():
             self._unanswered.pop(task, None)
 
-    def _note_tv_path(self, path: str) -> None:
-        """Conta as teclas por caminho e deixa uma linha no registro quando o caminho muda."""
-        if path == self._tv_path:
-            self._tv_path_count += 1
-            return
-        if self._tv_path is not None:
-            _log.info(
-                "teclas da TV: %d pelo caminho %s; agora pelo caminho %s",
-                self._tv_path_count,
-                self._tv_path,
-                path,
-            )
+    def _to_tv(self, callback: Callable[[], None]) -> None:
+        """Entrega à faixa da TV: no laço dela (thread própria) ou, sem ele, agora mesmo."""
+        if self._tv_host is None:
+            callback()
         else:
-            _log.info("teclas da TV: primeira pelo caminho %s", path)
-        self._tv_path = path
-        self._tv_path_count = 1
+            self._tv_host.post(callback)
+
+    @property
+    def tv_lane(self) -> TvLane:
+        """A faixa das teclas da TV (para quem a liga ao canal direto no laço dela)."""
+        return self._tv
 
     def submit_direct_tv(
         self,
@@ -488,84 +422,10 @@ class ProcessMessage:
         on_result: Callable[[CommandResult], None],
         is_valid: Callable[[], bool] | None = None,
     ) -> None:
-        """Uma tecla ou um texto da TV que chegou pelo canal direto (já validado pelo esquema).
-
-        `is_valid` diz se a sessão do canal ainda vale: conferida aqui, antes da fila, e de
-        novo antes de a tecla ir à TV (a revogação não deixa passar uma tecla já enfileirada).
-
-        Roda no laço principal (a sessão da TV vive nele) e entra no MESMO caminho da nuvem: o mesmo
-        `on_command` (o agendador de limpeza), a mesma fila de teclas, o mesmo descarte por idade e
-        a mesma junção. `received_at` é o instante em que o canal recebeu o comando (relógio
-        monotônico do processo): uma pausa do laço principal conta como espera. Só tecla (menos
-        `POWER`) e texto; qualquer outra coisa é recusada sem tocar na TV. O resultado volta por
-        `on_result`, que quem ligou a ponte leva de volta ao laço do canal."""
-        if self._on_command is not None:
-            self._on_command(command)
-        is_key = command.type.startswith("tv.key.")
-        is_text = command.type == "tv.text.v1"
-        refused = CommandResult(command.id, ResultStatus.REJECTED, "não permitido", NOT_ALLOWED)
-        if not (is_key or is_text) or (is_key and command.body.get("key") == "POWER"):
-            on_result(refused)
-            return
-        if is_valid is not None and not is_valid():
-            on_result(
-                CommandResult(command.id, ResultStatus.REJECTED, "canal fechado", "channel_closed")
-            )
-            return
-
-        async def reply(done: Command, result: CommandResult) -> None:
-            on_result(result)
-
-        if is_key and self._handle_command.handles_fresh_keys(command.type):
-            self._start_key(command, received_at, reply, PATH_DIRECT, is_valid)
-        elif is_text:
-            self._note_tv_path(PATH_DIRECT)
-            # O texto espera as teclas que vieram antes (a mesma regra da nuvem) e, como lá, não tem
-            # o teto das teclas: o editor de texto confere o próprio.
-            self._chain(
-                asyncio.create_task(
-                    self._execute_text(command, self._last_key_task, reply, is_valid)
-                ),
-                command,
-                reply,
-            )
-        else:
-            on_result(refused)
-
-    async def _execute_text(
-        self,
-        command: Command,
-        previous: asyncio.Task[None] | None,
-        reply: Reply | None,
-        is_valid: Callable[[], bool] | None = None,
-    ) -> None:
-        if previous is not None:
-            await asyncio.wait([previous])
-        if is_valid is not None and not is_valid() and reply is not None:
-            await reply(
-                command,
-                CommandResult(command.id, ResultStatus.REJECTED, "canal fechado", "channel_closed"),
-            )
-            return
-        try:
-            # O texto leva a validade ao handler: conferida ao obter a vez e antes de cada efeito.
-            checked = (
-                command
-                if is_valid is None
-                else ValidatedCommand(
-                    command.id,
-                    command.type,
-                    command.body,
-                    command.correlation_id,
-                    command.sent_at,
-                    is_valid=is_valid,
-                )
-            )
-            await self._execute(checked, reply)
-        except TransportError as exc:
-            _log.debug("resultado de %s não enviado (%s)", command.type, exc)
-        except Exception:
-            _log.exception("falha ao responder %s (id=%s)", command.type, command.id)
+        """Uma tecla ou um texto da TV que chegou pelo canal direto: vai à faixa da TV (ver
+        `TvLane.submit_direct`), no laço dela. Seguro de qualquer laço com `tv_host`; sem ele,
+        chame no laço principal."""
+        self._to_tv(partial(self._tv.submit_direct, command, received_at, on_result, is_valid))
 
     def _to_lane(self, callback: Callable[[], None]) -> None:
         """Entrega à faixa do PC: no laço dela (thread própria) ou, sem ele, agora mesmo."""
@@ -592,27 +452,6 @@ class ProcessMessage:
     def direct_lost(self) -> None:
         self._lane.direct_lost()
 
-    def _newest_press(self, key: str) -> Callable[[], bool]:
-        self._latest_key[key] = self._latest_key.get(key, 0) + 1
-        sequence = self._latest_key[key]
-
-        def is_latest() -> bool:
-            return self._latest_key[key] == sequence
-
-        return is_latest
-
-    async def _execute_key(
-        self,
-        command: TimedKeyCommand,
-        previous: asyncio.Task[None] | None,
-        reply: Reply | None = None,
-    ) -> None:
-        # O envio de RIGHT seguido de OK não pode ser invertido por duas tarefas que aquecem
-        # ou reabrem o mesmo canal ao mesmo tempo. A recepção segue livre enquanto elas esperam.
-        if previous is not None:
-            await previous
-        await self._execute_detached(command, reply)
-
     async def drain(self, grace: float) -> None:
         """Dá até `grace` segundos para o que está em curso terminar sozinho, sem cancelar.
 
@@ -635,7 +474,17 @@ class ProcessMessage:
             except TimeoutError, RuntimeError:
                 _log.warning("a faixa do PC não terminou o que tinha em curso a tempo")
 
-        await asyncio.gather(own(), lane())
+        async def tv() -> None:
+            # A faixa da TV também: no laço dela, quando tem um.
+            if self._tv_host is None:
+                await self._tv.drain(grace)
+                return
+            try:
+                await self._tv_host.call(partial(self._tv.drain, grace), wait_seconds=grace + 1.0)
+            except TimeoutError, RuntimeError:
+                _log.warning("a faixa da TV não terminou o que tinha em curso a tempo")
+
+        await asyncio.gather(own(), lane(), tv())
 
     async def aclose(self) -> None:
         """Ao encerrar o agente: cancela o que ainda roda em tarefa (e espera terminar).
@@ -650,8 +499,11 @@ class ProcessMessage:
             task.cancel()
         try:
             await asyncio.gather(*pending, return_exceptions=True)
-            await self._answer_stopping()
+            unanswered = list(self._unanswered.values())
+            self._unanswered.clear()
+            await self._runner.answer_stopping(unanswered)
         finally:
+            await self._close_tv()
             if self._pc_host is None:
                 await self._lane.aclose()
             else:
@@ -660,28 +512,15 @@ class ProcessMessage:
                 except TimeoutError, RuntimeError:
                     _log.warning("a faixa do PC não encerrou a tempo")
 
-    async def _answer_stopping(self) -> None:
-        unanswered = list(self._unanswered.values())
-        self._unanswered.clear()
-        for command, reply in unanswered:
-            try:
-                if reply is not None:
-                    await reply(
-                        command,
-                        CommandResult(
-                            command.id, ResultStatus.FAILED, _STOPPING_MESSAGE, AGENT_STOPPING
-                        ),
-                    )
-                else:
-                    await self._transport.send(
-                        self._envelopes.result(
-                            command.id, ok=False, code=AGENT_STOPPING, message=_STOPPING_MESSAGE
-                        )
-                    )
-            except TransportError as exc:
-                _log.debug("resposta de encerramento de %s não enviada (%s)", command.type, exc)
-            except Exception:
-                _log.exception("falha ao responder %s ao encerrar", command.type)
+    async def _close_tv(self) -> None:
+        """A faixa da TV fecha no laço dela (cancela a fila e responde quem ficou sem resposta)."""
+        if self._tv_host is None:
+            await self._tv.aclose()
+            return
+        try:
+            await self._tv_host.call(self._tv.aclose, wait_seconds=_LANE_CLOSE_SECONDS)
+        except TimeoutError, RuntimeError:
+            _log.warning("a faixa da TV não encerrou a tempo")
 
     def connection_lost(self) -> None:
         """A conexão com a API caiu: o que esperava na faixa do PC é descartado (seria executado
@@ -694,48 +533,7 @@ class ProcessMessage:
         self._power.merge(await asyncio.to_thread(self._power.read_store))
 
     async def _execute(self, command: Command, reply: Reply | None = None) -> None:
-        if _is_power(command):
-            # O id já está na memória (o leitor reconhece o repetido); vai a disco aqui, fora do
-            # leitor, antes de a tecla ir à TV.
-            await self._power.persist()
-        result = await self._handle_command(command)
-        self._remember_result(command, result)
-        await self._reply_result(command, result, reply)
-
-    async def _execute_detached(self, command: Command, reply: Reply | None = None) -> None:
-        # Ninguém espera esta tarefa: o que der errado no envio só pode ir para o registro.
-        try:
-            if (
-                self._command_timeout is None
-                or command.type in self._uncapped_types
-                or command.type.startswith(_PC_PREFIX)  # o teto é das teclas da TV
-            ):
-                await self._execute(command, reply)
-            else:
-                await self._execute_capped(command, self._command_timeout, reply)
-        except TransportError as exc:
-            _log.debug("resultado de %s não enviado (%s)", command.type, exc)
-        except Exception:
-            _log.exception("falha ao responder %s (id=%s)", command.type, command.id)
-
-    async def _execute_capped(
-        self, command: Command, limit: float, reply: Reply | None = None
-    ) -> None:
-        # O corte só vale se foi o prazo que o causou: um `TimeoutError` do próprio comando passa.
-        try:
-            async with asyncio.timeout(limit) as deadline:
-                await self._execute(command, reply)
-        except TimeoutError:
-            if not deadline.expired():
-                raise
-        else:
-            return
-        _log.warning("comando %s passou do tempo máximo (id=%s)", command.type, command.id)
-        result = CommandResult(
-            command.id, ResultStatus.FAILED, "a TV demorou demais para responder", TV_UNREACHABLE
-        )
-        self._remember_result(command, result)
-        await self._reply_result(command, result, reply)
+        await self._runner.execute(command, reply)
 
     async def _reject(self, rejected: Rejected) -> None:
         # Nunca o corpo recebido: só quem enviou o quê (tipo) e por quê.
