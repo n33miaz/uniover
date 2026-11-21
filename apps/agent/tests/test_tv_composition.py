@@ -31,9 +31,10 @@ from uniover_agent.core import (
     EnvelopeFactory,
     EnvelopeGate,
     ResultStatus,
+    TvSessionError,
     TvState,
 )
-from uniover_agent.ports import TextFieldStatus
+from uniover_agent.ports import TextFieldStatus, TvUnreachable
 
 from .support import AGENT_ID, ANDROID_KEYS, TOKEN, FakeApi, dump, envelope
 from .support_tv import write_certificate
@@ -318,6 +319,53 @@ async def test_the_composed_typing_forgets_the_field_when_the_session_goes_to_sl
     await setup.handlers["tv.text.v1"](Command("1", "tv.text.v1", {"text": "xyz"}))
     assert (remote.keys, remote.texts) == (["TYPE_X", "TYPE_Y", "TYPE_Z"], [])
     await setup.manager.aclose()
+
+
+@pytest.mark.parametrize("fresh", [True, False])
+async def test_only_a_fresh_field_report_during_opening_limits_the_resumed_erase(
+    monkeypatch: pytest.MonkeyPatch,
+    fresh: bool,
+) -> None:
+    class DropOnKey(FakeTvRemote):
+        fail: str | None = None
+
+        async def send_key(self, key: str, direction: str = "SHORT") -> None:
+            if key == self.fail:
+                raise TvUnreachable("controle indisponível")
+            await super().send_key(key, direction)
+
+    remote = DropOnKey()
+    pair_fake_tv(monkeypatch, remote)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None and setup.text is not None
+    await setup.manager.wake()
+    remote.push_text_field(TextFieldStatus("x" * 202, 202, 202, "Buscar", 1, 10))
+    try:
+        remote.fail = "TYPE_Y"
+        with pytest.raises(TvSessionError):
+            await setup.text.set_text("x" * 201 + "y")
+        remote.fail = None
+        with pytest.raises(TvSessionError, match="grande demais"):
+            await setup.text.set_text("xyz")
+        await remote.disconnect()
+        remote.on_connect = lambda: remote.push_text_field(
+            TextFieldStatus("xx", 2, 2, "Buscar", 1, 11 if fresh else 10)
+        )
+        remote.keys.clear()
+
+        if fresh:
+            await setup.text.set_text("xyz")
+            assert remote.keys == ["DEL", "DEL", "TYPE_X", "TYPE_Y", "TYPE_Z"]
+        else:
+            with pytest.raises(TvSessionError) as caught:
+                await setup.text.set_text("xyz")
+            assert caught.value.code == "text_resync_abandoned"
+            assert remote.keys == []
+            with pytest.raises(TvSessionError, match="grande demais"):
+                await setup.text.set_text("xyz")
+            assert remote.keys == ["DEL"] * 200
+    finally:
+        await setup.manager.aclose()
 
 
 async def test_the_composed_typing_forgets_the_field_when_another_app_takes_focus(

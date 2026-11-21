@@ -33,12 +33,13 @@ para o mais lento:
   marcada como duvidosa. Só um eco do campo (mesmo contador) **igual ao confirmado mais o
   grupo inteiro** resolve a dúvida: ele prova o grupo digitado. Um eco intermediário (a TV ecoa
   cada tecla, e ecos velhos chegam atrasados) não prova nada e é ignorado. Sem esse eco, o campo
-  é tratado como desconhecido e o próximo texto **apaga** o confirmado mais o tamanho do grupo
-  (`DEL`, contados um a um, então uma falha no meio não faz o reenvio apagar a mais) e redigita
-  tudo. O custo, só nesse caso raro: se havia na TV um texto anterior ao que o agente digitou e
-  que ele não conhecia, pode perder até o tamanho de um grupo dele. Trocar de campo ou de app
-  desfaz a dúvida. Limite conhecido: matar o processo `adb` no PC não garante que o `input` da TV
-  parou, e teclas que chegam depois de um `DEL` do refazer ainda podem embaralhar o campo.
+  é tratado como desconhecido. O próximo texto apaga (`DEL`) e redigita tudo. Com posse do
+  campo, a limpeza inclui o tamanho do grupo incerto. Sem posse, usa o limite de caracteres que
+  sabemos que sobraram do agente, para preservar o texto anterior. O `await` de um `DEL` não prova
+  que ele chegou: se a limpeza cai no meio, a retomada confere um relato novo do campo e só
+  recomeça a limpeza inteira com a posse do campo (ver `_resync`). Trocar de campo ou de app
+  desfaz a dúvida. Matar o processo `adb` no PC não garante que o `input` da TV parou, e teclas
+  que chegam depois de um `DEL` do refazer ainda podem embaralhar o campo.
   Nunca se insere em cima de uma base velha;
 * **Remote v2** (`send_text`) para o resto (acentos, emoji, controle, e quando o ADB não está
   pronto). Um texto com um caractere só do Remote vai **inteiro** por ele, nunca dividido entre
@@ -97,6 +98,7 @@ ADB_GROUP_CHARS: Final = 80
 # A partir de tantas teclas seguidas pelo Remote, o ADB espera a acomodação (ver o módulo).
 SETTLE_KEY_RUN: Final = 8
 RESYNC_INCOMPLETE: Final = "text_resync_incomplete"
+RESYNC_ABANDONED: Final = "text_resync_abandoned"
 
 # Caractere -> tecla do controle (`KEYCODE_*` do Android, escolhido pelo adaptador). Só entram os
 # caracteres que a tecla **sozinha** (sem SHIFT) produz em qualquer mapa de teclas do Android:
@@ -126,9 +128,16 @@ CHANNEL_REMOTE: Final = "remote"
 class TextControl(Protocol):
     """O que a digitação pede à sessão da TV (o `TvSessionManager` implementa)."""
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> object: ...
+    async def send_key(
+        self,
+        key: str,
+        direction: str = "SHORT",
+        *,
+        validate: Callable[[], None] | None = None,
+        retry_uncertain: bool = True,
+    ) -> object: ...
 
-    async def send_text(self, text: str) -> None: ...
+    async def send_text(self, text: str, *, validate: Callable[[], None] | None = None) -> None: ...
 
     async def wake(self) -> None: ...
 
@@ -140,7 +149,9 @@ class AdbTyping(Protocol):
     trava do ADB, que os comandos de apps compartilham), o valor entra no resumo do log.
     """
 
-    async def input_text(self, text: str) -> None: ...
+    async def input_text(
+        self, text: str, *, before_send: Callable[[], None] | None = None
+    ) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +183,32 @@ def typing_keys(text: str) -> list[str] | None:
             return None
         keys.append(key)
     return keys
+
+
+@dataclass(slots=True)
+class _ErasePlan:
+    """A limpeza do refazer: a faixa do texto do agente que ainda pode estar no campo.
+
+    `floor` é o saldo da limpeza iniciado no mínimo seguro sem posse, ou no máximo com posse.
+    Dele se desconta todo `DEL` que pode ter saído (à esquerda pode haver texto do dono).
+    `ceiling` só desconta o que foi provado (um relato fresco do campo): é o máximo que ainda pode
+    faltar, e com a posse é o que a retomada apaga (`DEL` a mais caem no campo vazio).
+
+    `link` é a conexão em que os `DEL` descontados de `floor` seguem em ordem no socket: na mesma
+    conexão, sem interrupção, a limpeza continua do `floor`. `None` depois de uma queda, de um
+    cancelamento ou de uma reconexão: o desconto deixa de valer e a retomada segue a posse.
+    """
+
+    floor: int
+    ceiling: int
+    link: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class _TextDoubt:
+    expected: str
+    floor: int
+    ceiling: int
 
 
 @dataclass(slots=True)
@@ -232,10 +269,20 @@ class TextReconciler:
         self._remote_settle = remote_settle_seconds
         self._adb_group_chars = adb_group_chars
         self._remote_at: float | None = None
-        # Valor esperado pelo eco e tamanho máximo do campo após uma edição incerta.
-        self._uncertain: tuple[str, int] | None = None
-        # Quantos `DEL` ainda faltam para esvaziar o campo duvidoso (só enquanto refaz).
-        self._erase_left: int | None = None
+        # Valor esperado pelo eco, mínimo seguro e máximo possível depois da edição incerta.
+        self._uncertain: _TextDoubt | None = None
+        # A limpeza do refazer em curso ou interrompida (ver `_ErasePlan`): o único registro do
+        # quanto ainda apagar, carregado da limpeza para a redigitação e para a retomada.
+        self._erase: _ErasePlan | None = None
+        # Relato do campo da dúvida chegado depois da interrupção, inclusive durante a abertura
+        # da sessão nova: o retrato fresco que a retomada confere (ver `_resume_erase`).
+        self._erase_report: TextFieldStatus | None = None
+        # Muda quando uma queda, sessão nova ou troca de app invalida a limpeza em curso.
+        self._link = 0
+        self._focus_generation = 0
+        # Maior sequência observada do campo e seu valor no instante da interrupção.
+        self._field_sequence: tuple[int, int] | None = None
+        self._erase_sequence: int | None = None
         # Contador do campo em que a dúvida nasceu (`None`: a TV não informou o campo). Outro campo
         # descarta a dúvida: o refazer nunca apaga o texto de um campo que o agente não editou.
         self._doubt_counter: int | None = None
@@ -264,8 +311,9 @@ class TextReconciler:
         # Teclas (`DEL` e letras) que saíram pelo socket do Remote v2 no comando em curso: nenhuma
         # tem confirmação de que a TV a aplicou (ver `_type_keys`).
         self._socket_keys = 0
-        # Trecho do `send_text` que caiu já dentro do envio no comando em curso (`may_have_sent`):
-        # pode ter chegado à TV, então entra no esperado da dúvida dos `DEL` (ver `_doubt_deletes`).
+        # Caracteres que o ADB confirmou neste comando: as únicas inserções provadas no campo.
+        self._adb_confirmed = 0
+        # Trecho enviado sem confirmação pelo ADB ou pelo Remote que pode ter chegado à TV.
         self._unconfirmed_text = ""
 
     @property
@@ -301,6 +349,23 @@ class TextReconciler:
         perde: fica guardado e entra assim que ela termina. Descartá-lo deixaria o contador antigo
         valendo para o campo novo, e o comando seguinte apagaria o texto do campo anterior.
         """
+        sequence = field.ime_counter
+        previous = self._sequence_for(field.counter)
+        if sequence is not None and (previous is None or sequence > previous):
+            if self._doubt_counter is None or field.counter == self._doubt_counter:
+                self._field_sequence = (field.counter, sequence)
+        if (
+            self._erase is not None
+            and self._erase.link is None
+            and self._doubt_counter is not None
+            and field.counter == self._doubt_counter
+            and self._erase_sequence is not None
+            and sequence is not None
+            and sequence > self._erase_sequence
+            and (previous is None or sequence > previous)
+        ):
+            # A sequência precisa avançar: um eco velho também pode chegar depois da queda.
+            self._erase_report = field
         if self._lock.locked():
             if field.counter != self._field_counter:
                 self._pending_field = field
@@ -312,17 +377,28 @@ class TextReconciler:
             return
         self._accept(field)
 
+    def _sequence_for(self, counter: int | None) -> int | None:
+        sequence = self._field_sequence
+        return sequence[1] if sequence is not None and sequence[0] == counter else None
+
     def forget_field(self) -> None:
         """Esquece o estado do campo: nova sessão com a TV ou outro app em foco.
 
         Sem estado fresco do campo atual volta o comportamento conservador de antes: a base é o
         que o agente digitou e a pausa de `field_idle_seconds` decide se o campo é outro. Nunca se
-        apaga com base em estado velho.
+        apaga com base em estado velho. A abertura invalida o campo antes de o novo canal poder
+        emitir seus próprios relatos.
         """
         self._field_counter = None
         self._pending_field = None
         self._echo = None
         self._owns_field = False
+        plan = self._erase
+        if plan is not None and plan.link is not None:
+            # Os `DEL` descontados estavam no socket antigo e podem ter se perdido: é interrupção.
+            self._interrupt_erase(plan, plan.floor)
+        self._erase_report = None  # de antes da sessão nova: não é mais fresco
+        self._link += 1
 
     def observe_app(self, app: str) -> None:
         """O app em foco mudou? Então o estado do campo era de outro lugar.
@@ -330,8 +406,15 @@ class TextReconciler:
         A TV repete o app a cada eco de edição; só a troca de verdade esquece o estado.
         """
         previous, self._app = self._app, app
-        if previous is not None and previous != app:
+        recovering = self._uncertain is not None or self._resyncing
+        if previous != app and (previous is not None or (recovering and self._lock.locked())):
+            self._focus_generation += 1
+            if recovering:
+                # A base do refazer também era do app anterior.
+                self._last = ""
+                self._last_at = None
             self.forget_field()
+            self._field_sequence = None
             self._clear_doubt()
 
     def _accept(self, field: TextFieldStatus) -> None:
@@ -410,17 +493,18 @@ class TextReconciler:
 
     async def _reconcile(self, target: str, trace: _Trace) -> None:
         self._socket_keys = 0
+        self._adb_confirmed = 0
         self._unconfirmed_text = ""
         now = self._monotonic()
         self._edit_counter = (
             self._field_counter if self._field_counter is not None else self._doubt_counter
         )
         uncertain = self._uncertain
-        if uncertain is not None and self._doubt_outlived(now, target, uncertain[0]):
+        if uncertain is not None and self._doubt_outlived(now, target, uncertain.expected):
             self._clear_doubt()
             uncertain = None
         if uncertain is not None and not self._resolve_doubt(self._echo):
-            await self._resync(target, uncertain[1], trace)
+            await self._resync(target, uncertain, trace)
             return
         if self._field_changed(now, target):
             self._last = ""
@@ -443,13 +527,15 @@ class TextReconciler:
         Se a TV já ecoou o campo durante o comando (com eco coerente), a dúvida se resolve na hora.
         """
         expected = self._last + group
-        self._set_doubt(expected, len(expected))
+        self._set_doubt(expected, floor=len(self._last), ceiling=len(expected))
 
-    def _set_doubt(self, expected: str, erase_count: int) -> None:
-        self._uncertain = (expected, erase_count)
+    def _set_doubt(
+        self, expected: str, *, floor: int, ceiling: int, owned: bool | None = None
+    ) -> None:
+        self._uncertain = _TextDoubt(expected, floor, ceiling)
         self._doubt_counter = self._edit_counter
-        self._doubt_owns_field = self._owns_field
-        self._erase_left = None
+        self._doubt_owns_field = self._owns_field if owned is None else owned
+        self._reset_erase()
         if not self._resyncing:
             self._resolve_doubt(self._echo)
 
@@ -457,7 +543,12 @@ class TextReconciler:
         self._uncertain = None
         self._doubt_counter = None
         self._doubt_owns_field = False
-        self._erase_left = None
+        self._reset_erase()
+
+    def _reset_erase(self) -> None:
+        self._erase = None
+        self._erase_report = None
+        self._erase_sequence = None
 
     def _doubt_outlived(self, now: float, target: str, expected: str) -> bool:
         """Sem o campo informado pela TV, a dúvida vale só para o mesmo campo, como a base.
@@ -473,13 +564,13 @@ class TextReconciler:
         """Só o eco com o valor esperado prova a edição e vira o `last_text`.
 
         Ecos intermediários (`abcd` de `abc` + `def`) ou atrasados (o estado do grupo anterior) não
-        provam nada. Com o refazer em andamento (`_erase_left`) o campo já está mudando: nada vale.
+        provam nada. Com a limpeza do refazer registrada (`_erase`) o campo está mudando: nada vale.
         """
         if self._uncertain is None:
             return True
-        if field is None or self._erase_left is not None:
+        if field is None or self._erase is not None:
             return False
-        expected, _ = self._uncertain
+        expected = self._uncertain.expected
         if unicodedata.normalize("NFC", field.value) != expected:
             return False
         self._last = expected
@@ -489,56 +580,185 @@ class TextReconciler:
         self._echo = None
         return True
 
-    async def _resync(self, target: str, erase_count: int, trace: _Trace) -> None:
-        """Sem eco que prove o campo: apaga até o maior tamanho possível e redigita tudo.
+    async def _resync(self, target: str, doubt: _TextDoubt, trace: _Trace) -> None:
+        """Sem eco que prove o campo: usa o limite seguro para a posse e redigita tudo.
 
         `last_text` só é zerado quando todos os `DEL` saíram: no meio, o que sai primeiro é o trecho
         desconhecido, então o confirmado não encurta passo a passo como num apagar comum. Em vez
-        disso `_erase_left` conta os `DEL` que ainda faltam e anda a cada um que saiu: uma falha no
-        meio, ou o teto de `MAX_DELETIONS` por mensagem, continua do ponto onde parou na próxima.
+        disso o registro da limpeza (`_ErasePlan`) conta os `DEL` que ainda faltam e anda a cada um
+        que saiu. O teto de `MAX_DELETIONS` por mensagem continua do ponto onde parou na próxima,
+        se a conexão é a mesma.
+
+        Uma queda ou uma reconexão é diferente: o `await` só prova que o `DEL` entrou no socket, e
+        os que ficaram nele se perdem. O que falta é a faixa do registro, e a retomada
+        (`_resume_erase`) não segue o saldo descontado: confere um relato fresco do campo, ou
+        recomeça a limpeza inteira se a dúvida tinha a posse; sem posse, apaga no máximo o mínimo
+        que pode faltar (sobrar texto é melhor que apagar o do dono). O mesmo registro segue para a
+        redigitação: se ela cai, os `DEL` desta limpeza continuam sem confirmação.
         """
-        if self._erase_left is None:
-            self._erase_left = erase_count
+        link, counter, generation = self._link, self._edit_counter, self._focus_generation
+        upstream = self._validate
+        owned = self._doubt_owns_field
+
+        def focus_moved() -> bool:
+            pending = self._pending_field
+            return self._focus_generation != generation or (
+                pending is not None and pending.counter != counter
+            )
+
+        def validate_focus() -> None:
+            if focus_moved() or self._link != link:
+                raise TvSessionError(RESYNC_ABANDONED, "o campo da TV mudou no refazer")
+            if upstream is not None:
+                upstream()
+
+        def validate_erase() -> None:
+            if self._uncertain is None:
+                raise TvSessionError(RESYNC_ABANDONED, "o campo da TV mudou no refazer")
+            validate_focus()
+
         self._echo = None  # um eco de antes do refazer não prova nada do que vem agora
-        trace.previous, trace.delete, trace.insert = len(self._last), self._erase_left, len(target)
         started = self._monotonic()
         await self._effect().wake()
         trace.wake = self._monotonic() - started
+        # Um relato fresco do mesmo campo identifica onde a limpeza interrompida pode continuar.
+        if self._erase_report is not None:
+            link = self._link
+        validate_erase()
+        plan = self._erase
+        if plan is None:
+            plan = _ErasePlan(doubt.ceiling if owned else doubt.floor, doubt.ceiling, self._link)
+        elif plan.link != self._link:
+            plan = self._resume_erase(plan)
+        self._erase = plan
+        trace.previous, trace.delete, trace.insert = len(self._last), plan.floor, len(target)
         started = self._monotonic()
-        sent = 0
         try:
-            while self._erase_left > 0 and sent < MAX_DELETIONS:
-                await self._effect().send_key(DELETE_KEY)
-                self._socket_keys += 1
-                self._erase_left -= 1
-                sent += 1
+            await self._erase_resync(plan, validate_erase)
         finally:
             trace.erase = self._monotonic() - started
-        self._mark_key_run(sent)
-        if self._erase_left > 0:
+        if plan.floor > 0:
             raise TvSessionError(RESYNC_INCOMPLETE, "o campo da TV é grande demais para refazer")
         self._last = ""
         # O campo só está vazio de fato se a dúvida tinha a posse: o máximo dela era exato. Sem
         # ela, pode ter sobrado à esquerda um texto que o agente não conhece.
-        self._owns_field = self._doubt_owns_field
+        self._owns_field = owned
         self._clear_doubt()
         self._last_at = self._monotonic()
         if target:
-            started = self._monotonic()
-            # Ecos dos `DEL` (ou atrasados) podem igualar o prefixo redigitado sem provar nada.
-            self._echo = None
-            self._resyncing = True
-            try:
-                await self._type(target, trace)
-            except TvSessionError, asyncio.CancelledError:
-                # Os `DEL` do refazer também não têm confirmação: o campo ainda pode ter o antigo.
-                self._doubt_deletes("", erase_count)
-                raise
-            finally:
-                self._resyncing = False
-                self._echo = None  # um eco do refazer não resolve a dúvida dele
-                trace.typing = self._monotonic() - started
+            await self._retype_resync(
+                target,
+                trace,
+                plan=plan,
+                owned=owned,
+                validate=validate_focus,
+                focus_moved=focus_moved,
+            )
         self._last_at = self._monotonic()
+
+    async def _retype_resync(  # noqa: PLR0913 - a limpeza e as verificações do campo que a originou
+        self,
+        target: str,
+        trace: _Trace,
+        *,
+        plan: _ErasePlan,
+        owned: bool,
+        validate: Callable[[], None],
+        focus_moved: Callable[[], bool],
+    ) -> None:
+        started = self._monotonic()
+        upstream, self._validate = self._validate, validate
+        # Ecos dos DEL (ou atrasados) podem igualar o prefixo redigitado sem provar nada.
+        self._echo = None
+        self._resyncing = True
+        try:
+            await self._type(target, trace)
+            validate()
+        except TvSessionError, asyncio.CancelledError:
+            if focus_moved():
+                raise  # outro app ou outro campo: a recuperação era do campo antigo
+            self._doubt_retype(plan.ceiling, owned=owned)
+            raise
+        finally:
+            self._validate = upstream
+            self._resyncing = False
+            self._echo = None
+            trace.typing = self._monotonic() - started
+
+    def _doubt_retype(self, ceiling: int, *, owned: bool) -> None:
+        """A redigitação do refazer caiu: vira uma limpeza interrompida, com a mesma faixa.
+
+        Nenhum `DEL` da limpeza nem tecla redigitada tem confirmação. O máximo é o esperado mais o
+        `ceiling` da limpeza (o que ela ainda podia ter a apagar, sem repetir o que um piso já
+        descontou). O mínimo é só o que o ADB confirmou: o resto pode não ter chegado, e sem a
+        posse do campo apagar além disso alcançaria o texto do dono à esquerda.
+        """
+        unconfirmed, self._unconfirmed_text = self._unconfirmed_text, ""
+        if self._uncertain is not None:
+            expected = self._uncertain.expected  # a digitação já registrou a dúvida do trecho
+        else:
+            expected = self._last + unconfirmed
+        floor = min(self._adb_confirmed, len(self._last))
+        self._last = ""
+        most = len(expected) + ceiling
+        self._set_doubt(expected, floor=floor, ceiling=most, owned=owned)
+        self._erase = _ErasePlan(floor, most, None)
+        self._erase_sequence = self._sequence_for(self._doubt_counter)
+
+    async def _erase_resync(self, plan: _ErasePlan, validate: Callable[[], None]) -> None:
+        """Manda até MAX_DELETIONS teclas do refazer; `plan.floor` anda a cada uma que saiu."""
+        sent = 0
+        while plan.floor > 0 and sent < MAX_DELETIONS:
+            try:
+                await self._tv.send_key(DELETE_KEY, validate=validate, retry_uncertain=False)
+                self._socket_keys += 1
+                plan.floor -= 1
+                sent += 1
+                validate()
+            except TvSessionError as exc:
+                # O envio que falhou também conta se pode ter saído.
+                self._interrupt_erase(plan, plan.floor - int(exc.may_have_sent), sent)
+                raise
+            except asyncio.CancelledError:
+                self._interrupt_erase(plan, plan.floor - 1, sent)
+                raise
+        self._mark_key_run(sent)
+
+    def _interrupt_erase(self, plan: _ErasePlan, floor: int, sent: int | None = None) -> None:
+        """A limpeza do refazer caiu no meio, ou a conexão dela mudou: o saldo vira um mínimo.
+
+        `floor` já desconta todo `DEL` que pode ter saído. Um relato de antes da queda não vale.
+        """
+        plan.floor = max(floor, 0)
+        if plan.link is None:
+            return  # uma reconexão já invalidou o relato antigo; pode haver um relato novo
+        plan.link = None
+        if self._erase is not plan:
+            return  # a dúvida já se desfez (outro app, outro campo)
+        if sent is not None:
+            _log.info("limpeza do refazer interrompida depois de %s DEL", sent)
+        self._erase_report = None
+        self._erase_sequence = self._sequence_for(self._doubt_counter)
+
+    def _resume_erase(self, plan: _ErasePlan) -> _ErasePlan:
+        """Quantos `DEL` a limpeza interrompida manda agora (o saldo descontado não vale mais).
+
+        * relato fresco do campo e posse: o tamanho informado (nunca acima do máximo da faixa);
+        * relato sem posse: o menor entre ele e o mínimo que pode faltar, porque o relato não diz
+          onde começa um texto do dono à esquerda;
+        * sem relato e com posse: a limpeza inteira de novo (`DEL` a mais caem no campo vazio);
+        * sem relato e sem posse: só o mínimo que pode faltar. Pode sobrar texto do agente, mas
+          nunca se apaga além do que ele pode ter escrito.
+        """
+        # A retomada consome a interrupção: o que sair daqui em diante é contado de novo.
+        report, self._erase_report = self._erase_report, None
+        self._erase_sequence = None
+        ceiling, floor = plan.ceiling, plan.floor
+        if report is not None:
+            ceiling = min(ceiling, len(unicodedata.normalize("NFC", report.value)))
+            floor = min(floor, ceiling)
+        send = ceiling if self._doubt_owns_field else floor
+        return _ErasePlan(send, ceiling, self._link)
 
     def _mark_key_run(self, count: int) -> None:
         """Depois de uma sequência longa de teclas, o ADB espera a TV acomodá-las (ver o módulo)."""
@@ -565,16 +785,25 @@ class TextReconciler:
 
     async def _apply(self, edit: TextEdit, trace: _Trace) -> None:
         previous = self._last
+        owned, generation = self._owns_field, self._focus_generation
         deleted = 0
-        sending = False
+        attempted = False
+        maybe_deleted = False
         self._echo = None  # só o eco desta edição prova alguma coisa
         try:
             started = self._monotonic()
             try:
                 for _ in range(min(edit.delete, MAX_DELETIONS)):
                     tv = self._effect()
-                    sending = True  # daqui em diante o `DEL` pode ter saído
-                    await tv.send_key(DELETE_KEY)
+                    attempted = True
+                    try:
+                        await tv.send_key(DELETE_KEY, retry_uncertain=False)
+                    except TvSessionError as exc:
+                        maybe_deleted = exc.may_have_sent
+                        raise
+                    except asyncio.CancelledError:
+                        maybe_deleted = True
+                        raise
                     deleted += 1
                     self._socket_keys += 1
                     self._last = self._last[:-1]
@@ -589,31 +818,28 @@ class TextReconciler:
                 finally:
                     trace.typing = self._monotonic() - started
         except TvSessionError, asyncio.CancelledError:
-            if sending:
+            if attempted and generation == self._focus_generation:
                 # O socket pode ter perdido os `DEL` enviados, inclusive o envio que falhou.
-                self._doubt_deletes(previous, deleted)
+                floor = len(previous) - deleted - int(maybe_deleted) + self._adb_confirmed
+                self._doubt_deletes(previous, deleted, floor=max(0, floor), owned=owned)
             raise
 
-    def _doubt_deletes(self, base: str, deleted: int) -> None:
+    def _doubt_deletes(self, base: str, deleted: int, *, floor: int, owned: bool) -> None:
         """`DEL` sem confirmação: a base volta a `base` até um eco provar o valor esperado.
 
         O esperado é o que o agente acredita ter feito (ou a dúvida que a digitação já registrou);
         sem eco, o refazer apaga até o maior tamanho possível: o esperado mais os `DEL` enviados.
 
-        Um `send_text` que pode ter chegado à TV entra no esperado: só o eco do campo inteiro prova
-        a edição. No máximo a apagar ele só entra com a posse do campo (`_owns_field`: a base é o
-        conteúdo que a TV informou). Sem ela, um texto que já estava no campo antes do agente pode
-        estar à esquerda: apagar a mais o destruiria, então se apaga de menos (o trecho, se chegou,
-        sobra no campo).
+        O trecho incerto entra no máximo. O mínimo desconta todo `DEL` que pode ter chegado e só
+        conta inserções confirmadas. Sem posse, o mínimo protege o texto do dono à esquerda.
         """
         unconfirmed, self._unconfirmed_text = self._unconfirmed_text, ""
         if self._uncertain is not None:
-            expected, erase = self._uncertain[0], len(self._uncertain[0])
+            expected = self._uncertain.expected
         else:
             expected = self._last + unconfirmed
-            erase = len(expected) if self._owns_field else len(self._last)
         self._last = base
-        self._set_doubt(expected, erase + deleted)
+        self._set_doubt(expected, floor=floor, ceiling=len(expected) + deleted, owned=owned)
 
     async def _type(self, text: str, trace: _Trace) -> None:
         keys = typing_keys(text) if self._keys else None
@@ -635,7 +861,7 @@ class TextReconciler:
         trace.groups += 1
         tv = self._effect()
         try:
-            await tv.send_text(rest)
+            await tv.send_text(rest, validate=self._validate if self._resyncing else None)
         except TvSessionError as exc:
             # Só a queda já dentro do envio deixa o trecho incerto; uma falha anterior (sessão que
             # não abriu, transporte fechando) prova que nada saiu. Quem registrar a dúvida dos
@@ -657,27 +883,41 @@ class TextReconciler:
         a base duvidosa (`_doubt`) e o erro sobe: nada é repetido às cegas.
         """
         pending = adb_text_groups(text, self._adb_group_chars)
+        dispatched = False
+
+        def before_send() -> None:
+            nonlocal dispatched
+            self._check()
+            dispatched = True
+
         for index, group in enumerate(pending):
             self._check()
             await self._settle_after_remote()
             self._check()
             self._echo = None
+            dispatched = False
             try:
-                await adb.input_text(group)
-            except AdbNotReady as exc:
-                if not exc.may_have_executed:
+                await adb.input_text(group, before_send=before_send)
+                self._check()
+            except TvSessionError, asyncio.CancelledError:
+                if dispatched:
+                    self._unconfirmed_text = group
+                raise
+            except AdbError as exc:
+                if isinstance(exc, AdbNotReady) and not exc.may_have_executed:
                     trace.adb_unavailable = exc.code
                     return "".join(pending[index:])
-                self._doubt(group)
-                raise TvSessionError(exc.code, exc.message) from None
-            except AdbError as exc:
                 if exc.may_have_executed:
-                    self._doubt(group)
+                    if self._resyncing:
+                        self._unconfirmed_text = group
+                    else:
+                        self._doubt(group)
                 raise TvSessionError(exc.code, exc.message) from None
             finally:
                 trace.adb_wait = getattr(adb, "last_input_wait_seconds", None)
             trace.groups += 1
             self._typed(group)
+            self._adb_confirmed += len(group)
         return ""
 
     async def _settle_after_remote(self) -> None:
@@ -704,7 +944,7 @@ class TextReconciler:
                 await self._sleep(self._key_pause)
             tv = self._effect()
             try:
-                await tv.send_key(key)
+                await tv.send_key(key, validate=self._validate if self._resyncing else None)
             except (ValueError, TvSessionError) as exc:
                 if self._adb is None:
                     if isinstance(exc, TvSessionError):

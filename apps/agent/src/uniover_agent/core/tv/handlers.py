@@ -12,7 +12,7 @@ from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.handle_command import FreshKeyHandler, Handler
 from uniover_agent.core.tv.key_timing import OUTCOME_OK, KeyTimings
 from uniover_agent.core.tv.session import PowerOffResult, TvSessionError
-from uniover_agent.core.tv.text_edit import TextReconciler
+from uniover_agent.core.tv.text_edit import TextControl, TextReconciler
 
 _log = logging.getLogger(__name__)
 
@@ -335,7 +335,7 @@ def _timed_keys(
 
 
 def tv_text_handler(
-    tv: TvControl,
+    tv: TextControl,
     *,
     reconciler: TextReconciler | None = None,
     monotonic: Callable[[], float] = time.monotonic,

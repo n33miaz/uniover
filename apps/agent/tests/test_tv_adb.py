@@ -6,13 +6,16 @@ de processos, que roda o próprio Python para provar tempo esgotado e saída sem
 
 import asyncio
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from uniover_agent.adapters.fakes import FakeClock, FakeTvRemote
 from uniover_agent.adapters.tv_adb import AdbTv, locate_adb, run_process
 from uniover_agent.adapters.tv_adb_parsing import AdbOutput
+from uniover_agent.core import TextReconciler, TvSessionError, TvSessionManager
 from uniover_agent.ports import (
     AdbCommandFailed,
     AdbNotReady,
@@ -21,6 +24,8 @@ from uniover_agent.ports import (
     AdbUnavailable,
     AdbUnreachable,
     LaunchableApp,
+    TextFieldStatus,
+    TvUnreachable,
     user_initiated_adb,
 )
 
@@ -418,6 +423,174 @@ async def test_input_text_records_how_long_it_waited_for_the_lock() -> None:
     assert adb.last_input_wait_seconds == 2.5
     await adb.input_text("a")
     assert adb.last_input_wait_seconds == 0.0
+
+
+class RecoveryRemote(FakeTvRemote):
+    """Campo local compartilhado com o dublê do processo ADB."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.field = "abc"
+        self.lose_delete = True
+        self.fail_text = True
+        self.erased = asyncio.Event()
+
+    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+        await super().send_key(key, direction)
+        assert key == "DEL"
+        if not self.lose_delete:
+            self.field = self.field[:-1]
+            if not self.field:
+                self.erased.set()
+
+    async def send_text(self, text: str) -> None:
+        if self.fail_text:
+            raise TvUnreachable("caiu")
+        await super().send_text(text)
+        self.field += text
+
+
+async def owned_adb_editor(
+    adb: AdbTv, *, resumed: bool = True
+) -> tuple[TextReconciler, RecoveryRemote]:
+    clock = FakeClock()
+    remote = RecoveryRemote()
+    session = TvSessionManager(clock, remote, backoff=())
+    editor = TextReconciler(session, monotonic=clock.monotonic, remote_settle_seconds=0.0)
+    editor.observe_app("app.um")
+    editor.observe_field(TextFieldStatus("abc", 3, 3, "", counter=1))
+    if resumed:
+        with pytest.raises(TvSessionError):
+            await editor.set_text("abd")
+        editor.forget_field()
+    remote.lose_delete = remote.fail_text = False
+    editor.use_adb(adb)
+    return editor, remote
+
+
+@pytest.mark.parametrize("resumed", [True, False])
+async def test_input_text_rechecks_validation_after_waiting_for_the_adb_lock(
+    resumed: bool,
+) -> None:
+    runner = authorized()
+    runner.script[shell("input text 'xyz'")] = ok("")
+    adb = make(runner)
+    await adb.connect()
+    editor, remote = await owned_adb_editor(adb, resumed=resumed)
+    revoked = False
+
+    def validate() -> None:
+        if revoked:
+            raise TvSessionError("revoked", "canal revogado")
+
+    async with adb._lock:
+        typing = asyncio.create_task(editor.set_text("xyz", validate=validate))
+        await asyncio.wait_for(remote.erased.wait(), timeout=1)
+        if resumed:
+            editor.observe_app("app.dois")
+        else:
+            revoked = True
+    with pytest.raises(TvSessionError) as caught:
+        await typing
+
+    assert caught.value.code == ("text_resync_abandoned" if resumed else "revoked")
+    assert runner.shell_commands() == []
+
+
+async def test_recovery_rechecks_focus_after_opening_the_adb_connection() -> None:
+    runner = authorized()
+    adb = make(runner)
+    editor, _ = await owned_adb_editor(adb)
+
+    def connected() -> AdbOutput:
+        editor.observe_app("app.dois")
+        return ok("device\r\n")
+
+    runner.script[GET_STATE] = connected
+    runner.script[shell("input text 'xyz'")] = ok("")
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("xyz")
+
+    assert caught.value.code == "text_resync_abandoned"
+    assert runner.calls == [CONNECT, GET_STATE]
+
+
+async def test_recovery_rechecks_focus_before_recording_a_completed_adb_group() -> None:
+    runner = authorized()
+    adb = make(runner)
+    editor, remote = await owned_adb_editor(adb)
+
+    def typed() -> AdbOutput:
+        remote.field += "xyz"
+        editor.observe_app("app.dois")
+        return ok("")
+
+    runner.script[shell("input text 'xyz'")] = typed
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("xyz")
+
+    assert caught.value.code == "text_resync_abandoned"
+    assert remote.field == "xyz"
+    assert editor.last_text == ""
+
+
+@pytest.mark.parametrize("resumed", [True, False])
+async def test_cancelled_adb_group_after_deletion_stays_in_the_erase_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+    resumed: bool,
+) -> None:
+    runner = authorized()
+    adb = make(runner)
+    editor, remote = await owned_adb_editor(adb, resumed=resumed)
+
+    initial = "klmnopqrst"
+    first_group = shell(f"input text '{initial}'")
+    runner.script[first_group] = ok("")
+    sent, reply = asyncio.Event(), asyncio.Event()
+
+    async def run(argv: Sequence[str], seconds: float) -> AdbOutput:
+        output = await runner(argv, seconds)
+        if tuple(argv[1:]) == first_group:
+            remote.field += initial
+            sent.set()
+            await reply.wait()
+        return output
+
+    monkeypatch.setattr(adb, "_run", run)
+    typing = asyncio.create_task(editor.set_text(initial))
+    await asyncio.wait_for(sent.wait(), timeout=1)
+    typing.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await typing
+    assert remote.field == initial
+
+    def typed() -> AdbOutput:
+        remote.field += "xyz"
+        return ok("")
+
+    runner.script[shell("input text 'xyz'")] = typed
+    await editor.set_text("xyz")
+    assert remote.field == editor.last_text == "xyz"
+
+
+async def test_recovery_excludes_an_adb_group_cancelled_while_waiting_for_the_lock() -> None:
+    runner = authorized()
+    adb = make(runner)
+    editor, remote = await owned_adb_editor(adb)
+
+    async with adb._lock:
+        typing = asyncio.create_task(editor.set_text("klmnopqrst"))
+        await asyncio.wait_for(remote.erased.wait(), timeout=1)
+        typing.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await typing
+    assert runner.calls == []
+
+    remote.keys.clear()
+    runner.script[shell("input text 'xyz'")] = ok("")
+    await editor.set_text("xyz")
+    assert remote.keys == ["DEL"] * 3
+    assert editor.last_text == "xyz"
 
 
 async def test_commands_never_overlap() -> None:

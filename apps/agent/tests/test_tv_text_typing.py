@@ -6,6 +6,7 @@ só anda quando o teste manda. As durações do log são provadas fazendo o dubl
 
 import asyncio
 import logging
+from collections.abc import Callable
 
 import pytest
 
@@ -309,7 +310,9 @@ class FieldAdb(FakeTvAdb):
         super().__init__()
         self.remote = remote
 
-    async def input_text(self, text: str) -> None:
+    async def input_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
+        if before_send is not None:
+            before_send()
         await super().input_text(text)
         self.remote.field += text
 
@@ -327,6 +330,7 @@ async def test_a_lost_key_before_the_drop_is_never_completed_by_adb_as_if_it_wen
     # "b" ficou no socket que caiu e "c" é a primeira tecla a falhar: a TV tem só "a".
     remote = FieldRemote(lose={"TYPE_B"}, fail_on="TYPE_C")
     editor, adb = field_rig(remote)
+    editor.observe_field(TextFieldStatus("", 0, 0, "", counter=1))
     with pytest.raises(TvSessionError):
         await editor.set_text("abcd")
     # Nada de "cd" pelo ADB (a TV ficaria com "acd" e o agente acharia "abcd").
@@ -388,6 +392,466 @@ async def test_a_drop_while_retyping_keeps_the_unconfirmed_resync_deletes_in_dou
     remote.fail_on = None
     await editor.set_text("abd")
     assert remote.field == editor.last_text == "abd"
+
+
+class EraseDropRemote(FieldRemote):
+    """Conta os `DEL` (1, 2...): os de `lost_deletes` voltam sem chegar (ficaram no socket) e, do
+    `drop_at`-ésimo em diante, o socket cai, inclusive na repetição da sessão. Com `drop_once` só
+    o primeiro envio cai: a sessão reabre e repete sem erro. Com `applied_on_drop`, o primeiro
+    `DEL` que cai chega antes da queda (`TvSendUncertain`); a repetição da sessão não chega."""
+
+    def __init__(self) -> None:
+        super().__init__(lose=set(), fail_on=None)
+        self.deletes = 0
+        self.lost_deletes: set[int] = set()
+        self.drop_at: int | None = None
+        self.drop_once = False
+        self.applied_on_drop = False
+
+    def reset_deletes(self, *, lost: set[int], drop_at: int | None) -> None:
+        self.deletes, self.lost_deletes, self.drop_at = 0, lost, drop_at
+        self.keys.clear()
+
+    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+        if key == "DEL":
+            self.deletes += 1
+            if self.drop_at is not None and self.deletes >= self.drop_at:
+                if self.drop_once:
+                    self.drop_at = None
+                if self.applied_on_drop:
+                    self.applied_on_drop = False
+                    self.field = self.field[:-1]
+                    raise TvSendUncertain("caiu no envio")
+                raise TvUnreachable("caiu")
+            if self.deletes in self.lost_deletes:
+                self.lose.add("DEL")
+        await super().send_key(key, direction)
+
+
+async def erase_doubt_of_three(
+    remote: EraseDropRemote, *, owned: bool, adb: bool = True
+) -> tuple[TextReconciler, TvSessionManager]:
+    """Campo com "abc": a edição deixa três `DEL` seguros ou a posse para usar o teto."""
+    clock = FakeClock()
+    session = TvSessionManager(clock, remote, backoff=())
+    editor = TextReconciler(session, monotonic=clock.monotonic, keys=True, sleep=clock.sleep)
+    if adb:
+        editor.use_adb(FieldAdb(remote))
+    if owned:
+        editor.observe_field(TextFieldStatus("", 0, 0, "", counter=1))
+    await editor.set_text("abc")
+    remote.lose, remote.fail_on = ({"DEL"}, "TYPE_D") if owned else (set(), "DEL")
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+    remote.lose, remote.fail_on = set(), None
+    return editor, session
+
+
+async def test_a_resync_cut_after_a_delete_the_socket_accepted_restarts_the_whole_erase() -> None:
+    remote = EraseDropRemote()
+    editor, _ = await erase_doubt_of_three(remote, owned=True)
+    assert remote.field == "abc"
+
+    # Dos dois primeiros `DEL` só um chega (o primeiro ficou no socket) e o terceiro cai.
+    remote.reset_deletes(lost={1}, drop_at=3)
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+    assert remote.field == "ab"
+
+    # Sem relato, o saldo descontado (um `DEL`) deixaria o "a" sob o texto refeito.
+    remote.reset_deletes(lost=set(), drop_at=None)
+    await editor.set_text("abd")
+    assert remote.keys.count("DEL") == len("abc")
+    assert remote.field == editor.last_text == "abd"
+
+
+async def test_a_fresh_report_after_the_cut_sets_how_much_is_left_to_erase() -> None:
+    remote = EraseDropRemote()
+    editor, session = await erase_doubt_of_three(remote, owned=True)
+    editor.observe_field(TextFieldStatus("abc", 3, 3, "", counter=1, ime_counter=10))
+    remote.reset_deletes(lost={1}, drop_at=3)
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+
+    # Reconectou e a TV informa o mesmo campo: "ab" é o que de fato sobrou.
+    editor.forget_field()
+    await session.wake()
+    editor.observe_field(TextFieldStatus("ab", 2, 2, "", counter=1, ime_counter=11))
+    remote.reset_deletes(lost=set(), drop_at=None)
+    await editor.set_text("abd")
+    assert remote.keys.count("DEL") == len("ab")
+    assert remote.field == editor.last_text == "abd"
+
+
+async def test_a_reconnect_inside_a_resync_delete_leaves_the_erase_for_the_next_command() -> None:
+    remote = EraseDropRemote()
+    editor, session = await erase_doubt_of_three(remote, owned=True)
+    # Como na composição: a sessão nova esquece o campo (só agora, para a dúvida nascer com posse).
+    session.on_session_opened(lambda _elapsed: editor.forget_field())
+
+    # O primeiro DEL fica no socket antigo e a reabertura impede o reenvio do segundo.
+    remote.reset_deletes(lost={1}, drop_at=2)
+    remote.drop_once = True
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("abd")
+    assert caught.value.code == "text_resync_abandoned"
+    assert remote.deletes == 2
+    assert remote.field == "abc"
+
+    remote.reset_deletes(lost=set(), drop_at=None)
+    await editor.set_text("abd")
+    assert remote.field == editor.last_text == "abd"
+
+
+class RepeatedUncertainDeleteRemote(EraseDropRemote):
+    """Toda tentativa de DEL a partir do segundo chega antes de o canal cair."""
+
+    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+        if key == "DEL" and self.drop_at is not None and self.deletes + 1 >= self.drop_at:
+            self.applied_on_drop = True
+        await super().send_key(key, direction)
+
+
+async def test_resync_never_retries_an_uncertain_delete_in_an_unowned_field() -> None:
+    remote = RepeatedUncertainDeleteRemote()
+    remote.field = "hi"
+    editor, _ = await erase_doubt_of_three(remote, owned=False)
+    assert remote.field == "hiabc"
+
+    remote.reset_deletes(lost=set(), drop_at=2)
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("abd")
+    assert caught.value.may_have_sent
+    attempts = remote.deletes
+
+    remote.reset_deletes(lost=set(), drop_at=None)
+    await editor.set_text("abd")
+    assert remote.field == "hiabd"
+    assert attempts == 2
+
+
+@pytest.mark.parametrize("change_app", [True, False])
+async def test_resync_abandons_if_app_or_link_changes_during_wake(change_app: bool) -> None:
+    remote = EraseDropRemote()
+    editor, session = await erase_doubt_of_three(remote, owned=True)
+    editor.observe_app("app.um")
+    await remote.disconnect()
+    if change_app:
+        remote.on_connect = lambda: editor.observe_app("app.dois")
+    else:
+        session.on_session_opened(lambda _: editor.forget_field())
+    remote.field = "usuario"
+    remote.reset_deletes(lost=set(), drop_at=None)
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("abd")
+    assert caught.value.code == "text_resync_abandoned"
+    assert remote.field == "usuario"
+    assert remote.keys == []
+
+
+@pytest.mark.parametrize("change_app", [True, False])
+async def test_resync_does_not_retry_a_delete_after_focus_changes_on_reopen(
+    change_app: bool,
+) -> None:
+    remote = EraseDropRemote()
+    editor, session = await erase_doubt_of_three(remote, owned=True)
+    editor.observe_app("app.um")
+    session.on_session_opening(editor.forget_field)
+
+    def switch_field() -> None:
+        if change_app:
+            editor.observe_app("app.dois")
+        remote.field = "usuario"
+        editor.observe_field(TextFieldStatus("usuario", 7, 7, "", counter=2))
+
+    remote.on_connect = switch_field
+    remote.reset_deletes(lost=set(), drop_at=1)
+    remote.drop_once = True
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("abd")
+    assert caught.value.code == "text_resync_abandoned"
+    assert remote.field == "usuario"
+    assert remote.keys == []
+    assert editor.last_text == "usuario"
+
+
+@pytest.mark.parametrize("ime_counter", [None, 9, 10])
+async def test_resync_ignores_a_delayed_report_without_a_new_ime_counter(
+    ime_counter: int | None,
+) -> None:
+    remote = EraseDropRemote()
+    editor, _ = await erase_doubt_of_three(remote, owned=True)
+    editor.observe_field(TextFieldStatus("abc", 3, 3, "", counter=1, ime_counter=10))
+    remote.reset_deletes(lost={1}, drop_at=3)
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+    assert remote.field == "ab"
+
+    editor.observe_field(TextFieldStatus("a", 1, 1, "", counter=1, ime_counter=ime_counter))
+    remote.reset_deletes(lost=set(), drop_at=None)
+    await editor.set_text("abd")
+    assert remote.field == "abd"
+    assert remote.keys.count("DEL") == 3
+
+
+class AppSwitchRemote(EraseDropRemote):
+    """No `DEL` de número `switch_at`, a TV avisa que outro app tomou o foco."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.switch_at: int | None = None
+        self.target: TextReconciler | None = None
+
+    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+        await super().send_key(key, direction)
+        if key == "DEL" and self.deletes == self.switch_at and self.target is not None:
+            self.target.observe_app("app.dois")
+
+
+async def test_an_app_switch_inside_the_resync_erase_stops_before_touching_the_new_field() -> None:
+    remote = AppSwitchRemote()
+    editor, _ = await erase_doubt_of_three(remote, owned=True)
+    editor.observe_app("app.um")
+    remote.target = editor
+    remote.reset_deletes(lost=set(), drop_at=None)
+    remote.switch_at = 2
+
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("abd")
+    assert caught.value.code == "text_resync_abandoned"
+    assert remote.keys == ["DEL", "DEL"]
+
+
+@pytest.mark.parametrize("applied_on_drop", [False, True])
+async def test_a_cut_resync_never_erases_the_user_text_left_of_an_unowned_field(
+    applied_on_drop: bool,
+) -> None:
+    remote = EraseDropRemote()
+    remote.field = "hi"  # do dono, antes do agente; a TV nunca informou o campo
+    editor, _ = await erase_doubt_of_three(remote, owned=False)
+    assert remote.field == "hiabc"
+
+    if applied_on_drop:
+        # Os dois primeiros chegam e o terceiro cai depois de chegar: só "hi" sobrou.
+        remote.reset_deletes(lost=set(), drop_at=3)
+        remote.applied_on_drop = True
+    else:
+        remote.reset_deletes(lost={1}, drop_at=3)
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+
+    remote.reset_deletes(lost=set(), drop_at=None)
+    await editor.set_text("abd")
+    # Pode sobrar texto do agente, mas nunca se apaga além do que ele pode ter escrito.
+    assert remote.field.startswith("hi")
+    assert remote.field.endswith("abd")
+    assert editor.last_text == "abd"
+
+
+async def test_initial_delete_reduces_the_safe_erase_after_a_second_failure() -> None:
+    remote = EraseDropRemote()
+    remote.field = "hi"
+    clock = FakeClock()
+    session = TvSessionManager(clock, remote, backoff=())
+    editor = TextReconciler(session, monotonic=clock.monotonic, keys=True)
+    await editor.set_text("abc")
+    remote.fail_on = "TYPE_D"
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+    assert remote.field == "hiab"
+
+    # O terceiro DEL falharia antes de sair. Só dois são seguros e necessários.
+    remote.reset_deletes(lost=set(), drop_at=3)
+    remote.fail_on = "TYPE_A"
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+    assert remote.field == "hi"
+
+    remote.reset_deletes(lost=set(), drop_at=None)
+    remote.fail_on = None
+    await editor.set_text("abd")
+    assert remote.field == "hiabd"
+    assert "DEL" not in remote.keys
+
+
+async def test_an_ordinary_edit_does_not_retry_an_uncertain_delete() -> None:
+    remote = RepeatedUncertainDeleteRemote()
+    remote.field = "hi"
+    clock = FakeClock()
+    session = TvSessionManager(clock, remote, backoff=())
+    editor = TextReconciler(session, monotonic=clock.monotonic, keys=True)
+    await editor.set_text("abc")
+
+    remote.reset_deletes(lost=set(), drop_at=1)
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("abd")
+    assert caught.value.may_have_sent
+    assert remote.deletes == 1
+    assert remote.field == "hiab"
+
+    remote.reset_deletes(lost=set(), drop_at=None)
+    await editor.set_text("abd")
+    assert remote.field == "hiabd"
+
+
+@pytest.mark.parametrize("switch_app", [False, True])
+async def test_retype_interruption_preserves_user_text(switch_app: bool) -> None:
+    remote = EraseDropRemote()
+    remote.field = "" if switch_app else "hi"
+    clock = FakeClock()
+    session = TvSessionManager(clock, remote, backoff=())
+    interrupt = False
+
+    async def pause(_seconds: float) -> None:
+        if interrupt:
+            if switch_app:
+                editor.observe_app("app.dois")
+                editor.observe_app("app.um")
+                remote.field = "usuario"
+            else:
+                raise asyncio.CancelledError
+
+    editor = TextReconciler(
+        session, monotonic=clock.monotonic, keys=True, key_pause_seconds=0.1, sleep=pause
+    )
+    editor.observe_app("app.um")
+    if switch_app:
+        editor.observe_field(TextFieldStatus("", 0, 0, "", counter=1))
+    await editor.set_text("abc")
+    remote.reset_deletes(lost=set(), drop_at=1)
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+    remote.reset_deletes(lost=set(), drop_at=None)
+
+    interrupt = True
+    with pytest.raises(TvSessionError if switch_app else asyncio.CancelledError):
+        await editor.set_text("abd")
+    assert remote.field == ("usuario" if switch_app else "hia")
+
+    interrupt = False
+    remote.keys.clear()
+    await editor.set_text("abd")
+    assert "DEL" not in remote.keys
+    assert remote.field == ("usuarioabd" if switch_app else "hiaabd")
+
+
+async def test_a_link_change_after_an_erase_stopped_at_the_cap_restarts_an_owned_erase() -> None:
+    remote = EraseDropRemote()
+    clock = FakeClock()
+    session = TvSessionManager(clock, remote, backoff=())
+    editor = TextReconciler(session, monotonic=clock.monotonic, keys=True, sleep=clock.sleep)
+    editor.use_adb(FieldAdb(remote))
+    remote.field = "x" * 199
+    editor.observe_field(TextFieldStatus(remote.field, 199, 199, "", counter=1))
+    await editor.set_text("x" * 199 + "abc")
+    target = "x" * 199 + "abd"
+    remote.lose, remote.fail_on = {"DEL"}, "TYPE_D"
+    with pytest.raises(TvSessionError):
+        await editor.set_text(target)
+    remote.lose, remote.fail_on = set(), None
+    assert remote.field == "x" * 199 + "abc"
+
+    # A limpeza para no teto de 200 e os 200 `DEL` ficam no socket que depois cai.
+    remote.reset_deletes(lost=set(range(1, 201)), drop_at=None)
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text(target)
+    assert caught.value.code == "text_resync_incomplete"
+    editor.forget_field()
+    assert remote.field == "x" * 199 + "abc"
+
+    # Com a posse, a conexão nova recomeça a limpeza inteira: o saldo de 2 deixaria o antigo.
+    remote.reset_deletes(lost=set(), drop_at=None)
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text(target)
+    assert caught.value.code == "text_resync_incomplete"
+    await editor.set_text(target)
+    assert remote.deletes == len("x" * 199 + "abc")
+    assert remote.field == editor.last_text == target
+
+
+class LetterDropRemote(EraseDropRemote):
+    """A tecla `drop_letter` derruba o socket uma vez; a sessão reabre e tenta de novo."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.drop_letter: str | None = None
+
+    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+        if key == self.drop_letter:
+            self.drop_letter = None
+            raise TvUnreachable("caiu")
+        await super().send_key(key, direction)
+
+
+@pytest.mark.parametrize("adb", [True, False])
+async def test_a_reconnect_before_the_first_retyped_key_keeps_the_erase_in_doubt(
+    adb: bool,
+) -> None:
+    remote = LetterDropRemote()
+    editor, session = await erase_doubt_of_three(remote, owned=True, adb=adb)
+    session.on_session_opened(lambda _elapsed: editor.forget_field())
+
+    # Os três `DEL` ficaram no socket que caiu na primeira letra: o campo ainda tem "abc".
+    remote.reset_deletes(lost={1, 2, 3}, drop_at=None)
+    remote.drop_letter = "TYPE_A"
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("abd")
+    assert caught.value.code == "text_resync_abandoned"
+    assert remote.field == "abc"
+
+    remote.reset_deletes(lost=set(), drop_at=None)
+    await editor.set_text("abd")
+    assert remote.field == editor.last_text == "abd"
+
+
+async def test_a_reconnect_inside_the_retype_of_an_unowned_field_never_erases_the_user_text() -> (
+    None
+):
+    remote = LetterDropRemote()
+    remote.field = "hi"  # do dono, antes do agente; a TV nunca informou o campo
+    editor, session = await erase_doubt_of_three(remote, owned=False, adb=False)
+    session.on_session_opened(lambda _elapsed: editor.forget_field())
+    assert remote.field == "hiabc"
+
+    # A limpeza chega; "a" e "b" saem pelo socket e se perdem com a queda no "d".
+    remote.reset_deletes(lost=set(), drop_at=None)
+    remote.lose = {"TYPE_A", "TYPE_B"}
+    remote.drop_letter = "TYPE_D"
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("abd")
+    assert caught.value.code == "text_resync_abandoned"
+    assert remote.field == "hi"
+
+    remote.reset_deletes(lost=set(), drop_at=None)
+    remote.lose = set()
+    await editor.set_text("abd")
+    assert remote.field == "hiabd"
+    assert editor.last_text == "abd"
+
+
+async def test_a_failed_retype_after_a_resumed_erase_never_counts_its_deletes_twice() -> None:
+    remote = EraseDropRemote()
+    remote.field = "hi"  # do dono, antes do agente; a TV nunca informou o campo
+    editor, _ = await erase_doubt_of_three(remote, owned=False)
+    assert remote.field == "hiabc"
+    # O primeiro chega e o segundo cai depois de chegar: o piso já conta os dois.
+    remote.reset_deletes(lost=set(), drop_at=2)
+    remote.applied_on_drop = True
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+    assert remote.field == "hia"
+
+    # A retomada apaga o "a" que faltava e a primeira letra da redigitação cai.
+    remote.reset_deletes(lost=set(), drop_at=None)
+    remote.fail_on = "TYPE_A"
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+    assert remote.field == "hi"
+
+    remote.fail_on = None
+    await editor.set_text("abd")
+    assert remote.field == "hiabd"
+    assert editor.last_text == "abd"
 
 
 class StaleEchoRemote(FieldRemote):
@@ -561,14 +1025,14 @@ async def test_without_field_reports_a_failed_remote_text_never_erases_text_from
     remote.drop_deletes, remote.fail_text = False, None
     remote.keys.clear()
     await editor.set_text("abé")
-    assert remote.keys.count("DEL") == len("abc")
-    assert remote.field == "Xabé"
+    assert remote.keys.count("DEL") == len("ab")
+    assert remote.field == "Xaabé"
     assert editor.last_text == "abé"
 
 
 async def test_a_field_report_that_does_not_match_the_base_never_widens_the_erase() -> None:
     # 1) O campo tem "Xabc" e o agente acha que tem "abc"; o `DEL` se perde e o "é" falha antes
-    # de sair: o máximo a apagar fica em três.
+    # de sair: só dois DEL são seguros, porque o primeiro pode ter chegado.
     remote = TextDropRemote()
     remote.field = "X"
     editor = await typed_abc(remote, field_reported=False)
@@ -581,21 +1045,21 @@ async def test_a_field_report_that_does_not_match_the_base_never_widens_the_eras
     editor.observe_field(TextFieldStatus("Xabc", 0, 0, "", counter=1))
     assert editor.last_text == "abc"
 
-    # 3) O refazer apaga três e sobra "X"; 4) redigitar "abé" cai já dentro do envio.
+    # 3) O refazer apaga dois e sobra "Xa"; 4) redigitar "abé" cai já dentro do envio.
     remote.drop_deletes, remote.fail_text = False, DELIVERED_IN_SEND
     remote.keys.clear()
     with pytest.raises(TvSessionError) as caught:
         await editor.set_text("abé")
     assert caught.value.may_have_sent
-    assert remote.keys.count("DEL") == len("abc")
-    assert remote.field == "Xabé"
+    assert remote.keys.count("DEL") == len("ab")
+    assert remote.field == "Xaabé"
 
-    # A recuperação apaga só o que o agente pode ter posto: o "X" sobrevive.
+    # A recuperação não apaga o lote sem confirmação: o "X" sobrevive.
     remote.fail_text = None
     remote.keys.clear()
     await editor.set_text("abé")
-    assert remote.keys.count("DEL") == len("abé")
-    assert remote.field == "Xabé"
+    assert "DEL" not in remote.keys
+    assert remote.field == "Xaabéabé"
     assert editor.last_text == "abé"
 
 
@@ -693,7 +1157,9 @@ class Timed:
             rig.remote.connects += 1
             rig.remote._connected = True
 
-        async def input_text(text: str) -> None:
+        async def input_text(text: str, *, before_send: Callable[[], None] | None = None) -> None:
+            if before_send is not None:
+                before_send()
             clock.advance(0.4)
             rig.adb.typed.append(text)
             rig.adb.events.append(("adb", text))

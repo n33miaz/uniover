@@ -97,6 +97,7 @@ from uniover_agent.core import (
     TvPermission,
     TvSessionManager,
     TvSettings,
+    TvState,
     TvWatchdog,
     UserActivity,
     WatchdogEvents,
@@ -317,8 +318,17 @@ def build_driver_setup(  # noqa: PLR0913 - idem `build_tv`
     # uma sessão nova o tornam velho, e então vale o comportamento de antes.
     remote.on_text_field(text.observe_field)
     remote.on_app(text.observe_app)
-    manager.on_session_opened(lambda _elapsed: text.forget_field())
-    manager.subscribe(lambda state: text.forget_field() if state.connection != "hot" else None)
+    manager.on_session_opening(text.forget_field)
+    was_hot = False
+
+    def forget_text_on_loss(state: TvState) -> None:
+        nonlocal was_hot
+        hot = state.connection == "hot"
+        if was_hot and not hot:
+            text.forget_field()
+        was_hot = hot
+
+    manager.subscribe(forget_text_on_loss)
     _log.info(
         "digitação na TV: teclas do controle remoto %s",
         "ligadas" if settings.tv_text_by_keys else "desligadas",

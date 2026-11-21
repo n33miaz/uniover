@@ -261,11 +261,13 @@ class TvAdb(TvChannel, Protocol):
         """
         ...
 
-    async def input_text(self, text: str) -> None:
+    async def input_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
         """Digita no campo em foco (acrescenta ao que há lá).
 
         Só ASCII imprimível, e sem um `%` literal seguido de `s` (o `input text` do Android lê o par
         como espaço: quem chama divide com `adb_text_groups`). Levanta `ValueError` fora disso, e
         `AdbError` se não deu certo.
+        `before_send` roda depois das esperas, imediatamente antes de iniciar o comando do grupo.
+        Se levantar um erro, o comando não sai.
         """
         ...

@@ -261,7 +261,9 @@ class FakeTvAdb:
     async def forget_registration(self) -> None:
         self.forgets += 1
 
-    async def input_text(self, text: str) -> None:
+    async def input_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
+        if before_send is not None:
+            before_send()
         self._fail_if_scripted()
         self.typed.append(text)
         self.events.append(("adb", text))
