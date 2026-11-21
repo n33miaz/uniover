@@ -74,9 +74,9 @@ const sampler = (): void => {
     }
     return false;
   };
-  let armed = false;
   const snap = (src: Sample['src']): void => {
-    if (!document.body || probe.samples.length > 20_000) return;
+    // O app-root vem depois do esqueleto no HTML. Antes dele o parser ainda pode estar montando o desenho.
+    if (!document.querySelector('body > app-root') || probe.samples.length > 20_000) return;
     const cover = [...document.querySelectorAll('.bs-root')].some((root) => {
       for (const bone of root.querySelectorAll('.bone')) {
         if (seen(bone, COVER_OPACITY)) return true;
@@ -88,9 +88,6 @@ const sampler = (): void => {
     const page = document.querySelector('app-training-page router-outlet + *');
     const bones = page ? anyBone(page, PAGE_OPACITY) : false;
     const text = page ? anyText(page, PAGE_OPACITY) : false;
-    // O parser pode inserir o `<body>` antes do esqueleto estático: só vale como "em branco" depois do primeiro desenho.
-    if (cover || bones || text) armed = true;
-    else if (src === 'mutation' && !armed) return;
     probe.samples.push({
       t: Math.round(performance.now()),
       src,
@@ -155,11 +152,6 @@ function blankStretches(samples: Sample[]): Blank[] {
  * tela chegar, em vez de a abertura terminar colada no limite e virar, na prática, um caso rápido.
  */
 const SLOW_MS = 700;
-/**
- * Só a folha de estilos atrasada: a casca e a rota do Treino chegam rápido, e a folha tem de vir bem depois delas para a
- * tela ficar pronta antes dela, mesmo com a máquina ocupada.
- */
-const LATE_STYLES_MS = 2000;
 
 interface Scenario {
   name: string;
@@ -167,8 +159,8 @@ interface Scenario {
   main: number;
   /** Atraso de cada pedaço preguiçoso (a casca e a rota do Treino). */
   chunks: number;
-  /** Atraso da folha de estilos principal (o Angular pode subir antes dela). */
-  styles: number;
+  /** Atraso da folha principal em ms ou até a casca marcar a tela pronta. */
+  styles: number | 'after-screen';
   /** O esqueleto do Angular tem de ter aparecido: é o caminho lento da troca. */
   expectAngular?: boolean;
   /** A tela ficou pronta com a folha de estilos ainda a caminho: o caminho `dismissAfterStyles`. */
@@ -189,7 +181,7 @@ const SCENARIOS: Scenario[] = [
     name: 'folha de estilos lenta',
     main: 0,
     chunks: 0,
-    styles: LATE_STYLES_MS,
+    styles: 'after-screen',
     expectStylesPending: true,
   },
 ];
@@ -219,7 +211,8 @@ async function keepAssetsOutOfCache(
       if (route.request().resourceType() !== 'document') return route.fallback();
       const response = await route.fetch();
       const body = (await response.text()).replace(/(styles-[\w-]+\.css)/g, '$1?cold');
-      const { 'content-length': _length, ...headers } = response.headers();
+      const headers = response.headers();
+      delete headers['content-length'];
       return route.fulfill({ response, headers, body });
     },
   );
@@ -284,11 +277,32 @@ test.describe('troca do esqueleto de abertura pelo da tela', () => {
         page,
         context,
       }, testInfo) => {
-        await keepAssetsOutOfCache(context, path, scenario.styles > 0);
+        await keepAssetsOutOfCache(context, path, scenario.styles !== 0);
         await startTraining(context, page);
         await delayRequests(context, /\/(main|polyfills)-[^/]+\.js$/, scenario.main);
         await delayRequests(context, /\/chunk-[^/]+\.js$/, scenario.chunks);
-        await delayRequests(context, /\/styles-[^/]+\.css(\?.*)?$/, scenario.styles);
+        // O WebKit pode rodar o primeiro rAF depois de a rota já ter conteúdo. Deixa o HTML estático ter um quadro
+        // amostrado antes de rodar o Angular, sem esperar que a sonda encontre um esqueleto visível para liberar o main.
+        await page.route(/\/main-[^/]+\.js$/, async (route) => {
+          await page.waitForFunction(
+            () =>
+              (window as unknown as { __boot?: Probe }).__boot?.samples.some(
+                ({ src }) => src === 'frame',
+              ),
+            undefined,
+            { timeout: 25_000 },
+          );
+          await route.fallback();
+        });
+        const styles = /\/styles-[^/]+\.css(\?.*)?$/;
+        if (scenario.styles === 'after-screen') {
+          await page.route(styles, async (route) => {
+            await page.locator('[data-screen-ready="training"]').waitFor({ state: 'attached' });
+            await route.fallback();
+          });
+        } else {
+          await delayRequests(context, styles, scenario.styles);
+        }
         // Só a próxima carga é amostrada: a entrada acima já usou o documento.
         await page.addInitScript(sampler);
         await page.goto(path, { waitUntil: 'commit' });
@@ -306,6 +320,7 @@ test.describe('troca do esqueleto de abertura pelo da tela', () => {
             angular: samples.some((sample) => sample.angular),
             stylesLate: samples.some((sample) => sample.marker && sample.stylesPending),
             first: samples.slice(0, 5),
+            firstPainted: painted[0],
           }),
           contentType: 'application/json',
         });
