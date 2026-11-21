@@ -558,16 +558,17 @@ def _windows_power(outcomes: PowerOutcomes, marker: PowerCountdownMarker | None)
     """A energia do Windows: o aviso na tela do PC mostra a contagem e deixa cancelar ali; a recusa
     do Windows e a contagem perdida num reinício do agente vão à API. A marca da contagem anterior é
     lida aqui, uma vez, na partida."""
-    power = WindowsPcPower(notice=WindowsPowerNotice(), on_refused=outcomes.refused, marker=marker)
+    power = WindowsPcPower(notice=WindowsPowerNotice(), on_outcome=outcomes.report, marker=marker)
     lost = power.take_lost_countdown()
     if lost is not None:
-        verb = "reiniciar" if lost == "RESTART" else "desligar"
+        action, countdown_id = lost
+        verb = "reiniciar" if action == "RESTART" else "desligar"
         _log.warning(
             "o agente reiniciou no meio da contagem para %s: o PC não vai %s; avisando o app",
             verb,
             verb,
         )
-        outcomes.report(lost, OUTCOME_LOST)
+        outcomes.report(countdown_id, action, OUTCOME_LOST)
     return power
 
 

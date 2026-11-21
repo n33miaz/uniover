@@ -444,10 +444,10 @@ def pc_power_handler(
         if action == "LOCK":
             power.lock()
         elif action == "SHUTDOWN":
-            power.shutdown(shutdown_delay_seconds)
+            power.shutdown(shutdown_delay_seconds, countdown_id=command.id)
             _log.warning("desligamento agendado em %ds a pedido do app", shutdown_delay_seconds)
         elif action == "RESTART":
-            power.restart(shutdown_delay_seconds)
+            power.restart(shutdown_delay_seconds, countdown_id=command.id)
             _log.warning("reinício agendado em %ds a pedido do app", shutdown_delay_seconds)
         elif action == "CANCEL_SHUTDOWN":
             power.cancel_shutdown()

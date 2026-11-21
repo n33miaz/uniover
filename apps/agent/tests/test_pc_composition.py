@@ -86,13 +86,13 @@ class FakePower:
     def sleep(self) -> None:
         self.calls.append(("sleep",))
 
-    def shutdown(self, delay_seconds: int) -> None:
+    def shutdown(self, delay_seconds: int, countdown_id: str = "") -> None:
         self.calls.append(("shutdown", delay_seconds))
 
     def cancel_shutdown(self) -> None:
         self.calls.append(("cancel",))
 
-    def restart(self, delay_seconds: int) -> None:
+    def restart(self, delay_seconds: int, countdown_id: str = "") -> None:
         self.calls.append(("restart", delay_seconds))
 
     def hibernation_available(self) -> bool:
@@ -171,7 +171,7 @@ async def test_a_power_outcome_goes_out_after_the_hello_once_the_api_lists_it() 
         audio=FakeAudio(),
     )
     assert pc is not None and pc.power_outcomes is not None
-    pc.power_outcomes.refused("SHUTDOWN", 5)
+    pc.power_outcomes.report("0192f1e4-0000-7000-8000-0000000000c1", "SHUTDOWN", "refused", 5)
     for step in pc.after_hello:
         await step()
     assert [m for m in transport.sent if m["type"] == "pc.power.outcome.v1"] == []
@@ -186,12 +186,12 @@ async def test_a_countdown_lost_in_a_restart_is_logged_and_told_to_the_app(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     class LostMarker:
-        def save(self, action: str) -> None: ...
+        def save(self, action: str, countdown_id: str) -> None: ...
 
         def clear(self) -> None: ...
 
-        def take(self) -> str | None:
-            return "RESTART"
+        def take(self) -> tuple[str, str] | None:
+            return "RESTART", "0192f1e4-0000-7000-8000-0000000000c2"
 
     settings, transport, envelopes = parts(Settings(pc_control=True))
     pc = build_pc(
@@ -211,6 +211,7 @@ async def test_a_countdown_lost_in_a_restart_is_logged_and_told_to_the_app(
         await step()
     (sent,) = [m for m in transport.sent if m["type"] == "pc.power.outcome.v1"]
     assert (sent["body"]["action"], sent["body"]["outcome"]) == ("RESTART", "lost")
+    assert sent["body"]["countdownId"] == "0192f1e4-0000-7000-8000-0000000000c2"
 
 
 def test_turned_on_declares_the_capability_and_every_command() -> None:

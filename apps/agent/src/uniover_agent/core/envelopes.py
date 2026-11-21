@@ -324,12 +324,17 @@ class EnvelopeFactory:
         return self._build("pc.device.state.v1", body, None)
 
     def pc_power_outcome(
-        self, action: str, outcome: str, code: int | None, at: str
+        self, countdown_id: str, action: str, outcome: str, code: int | None, at: str
     ) -> dict[str, Any]:
         """`pc.power.outcome.v1`: a contagem de desligar ou reiniciar que não terminou no pedido
         (`refused` pelo Windows, com o código de saída quando houve, ou `lost` num reinício do
         agente). `at` é quando o agente soube."""
-        body: dict[str, Any] = {"action": action, "outcome": outcome, "at": at}
+        body: dict[str, Any] = {
+            "countdownId": countdown_id,
+            "action": action,
+            "outcome": outcome,
+            "at": at,
+        }
         if code is not None:
             body["code"] = code
         return self._build("pc.power.outcome.v1", body, None)

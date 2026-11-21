@@ -744,16 +744,19 @@ internal sealed class PcAgentMessageHandler(
             return;
         }
 
-        // A contagem de desligar ou reiniciar não terminou no pedido (o Windows recusou, ou o agente reiniciou no meio): a falha vai à
-        // auditoria, com quem pediu se a instância ainda lembra.
+        // A contagem de desligar ou reiniciar não terminou no pedido (o Windows recusou, o agente reiniciou no meio, ou quem está no PC
+        // cancelou no aviso): vai à auditoria, com quem pediu se a instância ainda lembra daquela contagem.
         if (string.Equals(message.Type, AgentMessageTypes.PcPowerOutcomeV1, StringComparison.Ordinal))
         {
             if (powerOutcomes is not null)
             {
                 await powerOutcomes.RecordAsync(
                     message.AgentId,
-                    message.Body.GetProperty("action").GetString()!,
-                    message.Body.GetProperty("outcome").GetString()!,
+                    new PcPowerNotice(
+                        message.Body.GetProperty("countdownId").GetGuid(),
+                        message.Body.GetProperty("action").GetString()!,
+                        message.Body.GetProperty("outcome").GetString()!,
+                        message.Body.GetProperty("at").GetDateTimeOffset()),
                     cancellationToken);
             }
 

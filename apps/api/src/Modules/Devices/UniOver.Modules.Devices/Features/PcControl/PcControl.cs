@@ -633,7 +633,7 @@ internal sealed partial class PcControlHandler(
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        RememberCountdown(auditEvent, target, userId, client);
+        RememberCountdown(auditEvent, target, userId, client, reply.Value.CorrelationId);
 
         // Os comandos que devolvem dados (o que toca, o texto da área de transferência) montam a resposta com o que o agente mandou antes do
         // resultado, achado pelo agente e pelo identificador deste pedido.
@@ -642,9 +642,10 @@ internal sealed partial class PcControlHandler(
 
     /// <summary>
     /// A contagem de desligar ou reiniciar que o agente acabou de aceitar fica lembrada (quem pediu, de onde): se ela não terminar no
-    /// pedido, o agente avisa depois e a falha vai à auditoria com essa pessoa. O cancelamento aceito a esquece.
+    /// pedido, o agente avisa depois, com o identificador dela (o id do comando que a agendou), e a falha vai à auditoria com essa pessoa.
+    /// O cancelamento aceito a esquece.
     /// </summary>
-    private void RememberCountdown(string? auditEvent, ReadyTarget target, Guid userId, ClientInfo client)
+    private void RememberCountdown(string? auditEvent, ReadyTarget target, Guid userId, ClientInfo client, Guid commandId)
     {
         if (auditEvent == PairingEvents.PcShutdown || auditEvent == PairingEvents.PcRestart)
         {
@@ -652,6 +653,7 @@ internal sealed partial class PcControlHandler(
             powerNotices.Forget(target.Slug);
             countdowns.Scheduled(
                 target.Slug,
+                commandId,
                 new PcPowerCountdown(target.AgentId, userId, client, auditEvent == PairingEvents.PcShutdown ? "SHUTDOWN" : "RESTART"));
         }
         else if (auditEvent == PairingEvents.PcShutdownCancelled)
