@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.75.0](https://github.com/n33miaz/uniover/compare/v0.74.2...v0.75.0) (2026-11-21)
+
+
+### TV 0.54.0
+
+#### Features
+
+* **web:** show direct link on the tv remote
+
+#### Bug Fixes
+
+* **agent:** safe tv text fallback and key merge
+
+
+### Web 0.72.0
+
+#### Features
+
+* **web:** show direct link on the tv remote
+
+
+### Agent 0.62.3
+
+#### Bug Fixes
+
+* **agent:** never drop tv keys on a busy loop
+* **agent:** safe tv text fallback and key merge
+
+#### Performance Improvements
+
+* **agent:** type tv text by remote keys
+* **agent:** warm up webrtc at startup
+
 ## [0.74.2](https://github.com/n33miaz/uniover/compare/v0.74.1...v0.74.2) (2026-11-21)
 
 
