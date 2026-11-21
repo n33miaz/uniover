@@ -10,7 +10,8 @@ import ssl
 import types
 import typing
 import unicodedata
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -22,6 +23,7 @@ from androidtvremote2 import (
     InvalidAuth,
     VolumeInfo,
 )
+from androidtvremote2.base import ProtobufProtocol
 from androidtvremote2.remotemessage_pb2 import RemoteDirection, RemoteKeyCode, RemoteMessage
 
 from uniover_agent.adapters.system_clock import SystemClock
@@ -38,6 +40,8 @@ from uniover_agent.adapters.tv_remote_v2 import (
 from uniover_agent.contracts.tv_key_v1 import TvKeyV1BodyKey
 from uniover_agent.contracts.tv_key_v2 import TvKeyV2BodyKey
 from uniover_agent.core import SessionState, TvSessionManager
+from uniover_agent.core.tv.session import TvSessionError
+from uniover_agent.core.tv.text_edit import TextReconciler
 from uniover_agent.ports import (
     TextFieldStatus,
     TvCertificateRefused,
@@ -699,6 +703,174 @@ class _ClosingTransport:
 def duplo_adapter(tmp_path: Path, library: FakeLibrary) -> AndroidTvRemoteV2:
     write_certificate(tmp_path, "UniOver")
     return AndroidTvRemoteV2("10.0.0.4", "UniOver", tmp_path, client_factory=lambda *_args: library)
+
+
+class _BufferedTransport(asyncio.Transport):
+    """Aceita o comprimento e o lote sem entregá-los à TV antes de fechar."""
+
+    def __init__(self, protocol: ProtobufProtocol) -> None:
+        super().__init__()
+        self._protocol = protocol
+        self._closing = False
+        self.frames: list[bytes] = []
+
+    def is_closing(self) -> bool:
+        return self._closing
+
+    def write(self, data: bytes | bytearray | memoryview[Any]) -> None:
+        self.frames.append(bytes(data))
+
+    def abort(self) -> None:
+        self._closing = True
+        self.frames.clear()
+        self._protocol.connection_lost(ConnectionResetError())
+
+
+class _BufferedProtocol(ProtobufProtocol):
+    """Monta e enfileira os lotes com a implementação que o adaptador usa em produção."""
+
+    def __init__(self) -> None:
+        super().__init__(asyncio.get_running_loop().create_future())
+        self.ime_counter = 0
+        self.ime_field_counter = 0
+        self.buffer = _BufferedTransport(self)
+        self.connection_made(self.buffer)
+
+    def report(self, value: str, *, counter: int = 1, sequence: int = 1) -> None:
+        message = RemoteMessage()
+        message.remote_ime_key_inject.app_info.counter = sequence
+        field = message.remote_ime_key_inject.text_field_status
+        field.counter_field, field.value = counter, value
+        self._handle_message(message.SerializeToString())
+
+    def sent_text(self) -> list[str]:
+        return [
+            RemoteMessage.FromString(frame)
+            .remote_ime_batch_edit.edit_info[0]
+            .text_field_status.value
+            for frame in self.buffer.frames[1::2]
+        ]
+
+
+class _BufferedLibrary(FakeLibrary):
+    async def async_connect(self) -> None:
+        self.protocol = _BufferedProtocol()
+        # Só o adaptador lê o campo privado. As outras funções do duplo seguem iguais.
+        self._remote_message_protocol = cast(FakeProtocol, self.protocol)
+
+
+@asynccontextmanager
+async def _buffered_ime(
+    tmp_path: Path, *, report_initial: bool = True
+) -> AsyncIterator[tuple[TextReconciler, TvSessionManager, _BufferedLibrary]]:
+    library = _BufferedLibrary()
+    adapter = duplo_adapter(tmp_path, library)
+    manager = TvSessionManager(SystemClock(), adapter)
+    editor = TextReconciler(manager, remote_connected=lambda: adapter.connected)
+    manager.on_session_opening(editor.forget_session)
+    adapter.on_available(lambda available: None if available else editor.forget_session())
+    adapter.on_text_field(editor.observe_field)
+    await manager.wake()
+    if report_initial:
+        library.protocol.report("")
+    try:
+        yield editor, manager, library
+    finally:
+        await manager.aclose()
+
+
+@pytest.mark.parametrize("first_echo", [False, True])
+async def test_losing_buffered_ime_does_not_claim_or_repeat_unconfirmed_text(
+    tmp_path: Path, first_echo: bool
+) -> None:
+    async with _buffered_ime(tmp_path) as (editor, _manager, library):
+        before = library.protocol
+        await editor.set_text("é")
+        await editor.set_text("éá")
+        assert before.sent_text() == ["é", "á"]
+        if first_echo:
+            before.report("é", sequence=2)
+        before.buffer.abort()
+        before.report("éá", sequence=30)  # o protocolo antigo ainda tem seu callback
+        # Aqui o Future da biblioteca já resolveu, mas o vigia ainda não rodou.
+        with pytest.raises(TvSessionError) as caught:
+            await editor.set_text("éá")
+        assert caught.value.may_have_sent
+        assert library.protocol is not before
+        assert library.protocol.sent_text() == []
+        library.protocol.report("éá")  # contador repetido do relato de antes da queda
+        with pytest.raises(TvSessionError):
+            await editor.set_text("éá")
+        library.protocol.report("dono", sequence=3)
+        with pytest.raises(TvSessionError):
+            await editor.set_text("éá")
+        assert library.protocol.sent_text() == []
+        library.protocol.report("é" if first_echo else "", sequence=4)
+        await editor.set_text("éá")
+        assert library.protocol.sent_text() == (["á"] if first_echo else ["éá"])
+
+
+async def test_full_field_echo_confirms_buffered_ime_before_a_drop(tmp_path: Path) -> None:
+    async with _buffered_ime(tmp_path) as (editor, manager, library):
+        await editor.set_text("é")
+        library.protocol.report("é", sequence=2)
+        library.protocol.buffer.abort()
+        await manager.wake()
+        await editor.set_text("é")
+        assert library.protocol.sent_text() == []
+
+
+async def test_a_new_field_does_not_keep_uncertainty_from_buffered_ime(tmp_path: Path) -> None:
+    async with _buffered_ime(tmp_path) as (editor, manager, library):
+        await editor.set_text("anterior")
+        before = library.protocol
+        before.buffer.abort()
+        await manager.wake()
+        library.protocol.report("dono", counter=2)
+        before.report("anterior", sequence=3)  # eco atrasado da conexão que caiu
+        await editor.set_text("dono")
+        await editor.set_text("dono!")
+        assert library.protocol.sent_text() == ["!"]
+
+
+async def test_an_empty_unknown_field_does_not_authorize_repeating_buffered_ime(
+    tmp_path: Path,
+) -> None:
+    async with _buffered_ime(tmp_path, report_initial=False) as (editor, manager, library):
+        await editor.set_text("anterior")
+        library.protocol.report("outra coisa", counter=7)
+        library.protocol.buffer.abort()
+        await manager.wake()
+        library.protocol.report("", counter=7, sequence=2)
+        with pytest.raises(TvSessionError):
+            await editor.set_text("anterior")
+        assert library.protocol.sent_text() == []
+
+        # Conferir o valor completo de um campo desconhecido permite retomar sem reenvio.
+        library.protocol.report("anterior", counter=7, sequence=3)
+        await editor.set_text("anterior")
+        assert library.protocol.sent_text() == []
+
+
+async def test_buffered_ime_recovery_revalidates_focus_before_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with _buffered_ime(tmp_path) as (editor, manager, library):
+        await editor.set_text("éá")
+        library.protocol.buffer.abort()
+        await manager.wake()
+        library.protocol.report("é", sequence=2)
+        send_text = manager.send_text
+
+        async def switch_focus(text: str, *, validate: Callable[[], None] | None = None) -> None:
+            library.protocol.report("dono", counter=2, sequence=3)
+            await send_text(text, validate=validate)
+
+        monkeypatch.setattr(manager, "send_text", switch_focus)
+        with pytest.raises(TvSessionError) as caught:
+            await editor.set_text("éá")
+        assert caught.value.code == "text_resync_abandoned"
+        assert library.protocol.sent_text() == []
 
 
 async def test_rejected_certificate_means_not_paired_and_closes_the_library(
