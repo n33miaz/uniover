@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.74.2](https://github.com/n33miaz/uniover/compare/v0.74.1...v0.74.2) (2026-11-21)
+
+
+### Devices 0.67.1
+
+#### Bug Fixes
+
+* **pc:** ask windows to restart without force
+* **pc:** name the screen probe metric precisely
+* **pc:** settle power cancel and tests
+
+
+### TV 0.53.4
+
+#### Bug Fixes
+
+* **tv:** only the owner installs tv livre
+
+
+### Training 0.46.2
+
+#### Bug Fixes
+
+* **training:** refresh today at local midnight
+
+
+### Web 0.71.1
+
+#### Bug Fixes
+
+* **pc:** ask windows to restart without force
+
+
+### Agent 0.62.2
+
+#### Bug Fixes
+
+* **pc:** ask windows to restart without force
+* **pc:** settle power cancel and tests
+
 ## [0.74.1](https://github.com/n33miaz/uniover/compare/v0.74.0...v0.74.1) (2026-11-20)
 
 
