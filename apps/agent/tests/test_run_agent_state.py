@@ -16,6 +16,8 @@ import pytest
 
 from uniover_agent.adapters.update_status import STATUS_FILE, FileUpdateStatus
 
+from .test_supervisor_guardrails import wait_for
+
 RUNNER = Path(__file__).parents[1] / "tools" / "run-agent.ps1"
 POWERSHELL = os.path.join(
     os.environ.get("SystemRoot", "C:\\Windows"),
@@ -471,19 +473,24 @@ def test_an_update_that_times_out_and_loses_the_app_folder_takes_the_agent_down_
     # `exit 42`: o lançador restaura a pasta; o agente que estava rodando não fica órfão.
     assert done.returncode == 42, done.stderr
     pid = int(marker.read_text(encoding="ascii").strip())
-    time.sleep(1.5)
-    listing = subprocess.run(  # noqa: S603 - tasklist do sistema
-        [
-            str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tasklist.exe"),
-            "/FI",
-            f"PID eq {pid}",
-            "/NH",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert str(pid) not in listing.stdout, "o agente ficou órfão depois do exit 42"
+
+    def agent_has_exited() -> bool:
+        listing = subprocess.run(  # noqa: S603 - tasklist do sistema
+            [
+                str(
+                    Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tasklist.exe"
+                ),
+                "/FI",
+                f"PID eq {pid}",
+                "/NH",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return str(pid) not in listing.stdout
+
+    assert wait_for(agent_has_exited, 30), "o agente ficou órfão depois do exit 42"
     assert (pc.runtime / "stop-reason.txt").read_text(encoding="ascii").strip() == "update"
 
 

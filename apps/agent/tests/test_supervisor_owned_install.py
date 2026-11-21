@@ -40,8 +40,11 @@ def test_an_agent_that_finds_another_owner_is_no_crash_for_a_version_in_proof(pc
     previous = pc.base / "app.previous"
     previous.mkdir()
     (previous / "marker.txt").write_text("anterior", encoding="ascii")
-    with pc.running(UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS=OWNED_WAIT):
-        assert wait_for(lambda: pc.starts() >= 3, 90), pc.supervisor_log()
+    # O pulso fresco representa o outro dono vivo durante todas as tentativas.
+    with heartbeat(pc.alive), pc.running(UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS=OWNED_WAIT):
+        assert wait_for(lambda: pc.supervisor_log().count("outro agente ja roda") >= 3, 90), (
+            pc.supervisor_log()
+        )
         assert trial.read_text(encoding="ascii") == CURRENT + "|2"
         assert (pc.base / "app" / ".version").exists()
         assert (previous / "marker.txt").exists()

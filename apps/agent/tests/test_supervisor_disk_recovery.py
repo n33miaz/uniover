@@ -187,7 +187,9 @@ def rollback_after_an_unwritable_trial(
         UNIOVER_TEST_FREE=str(free),
         UNIOVER_SUPERVISOR_TEST_FREE_MB_FILE=str(free),
     ):
-        assert wait_for(deferred.exists, 90), pc.supervisor_log()
+        assert wait_for(lambda: "voltei para a versao anterior" in pc.supervisor_log(), 90), (
+            pc.supervisor_log()
+        )
     lowdisk = pc.runtime / ".deferred-lowdisk"
     return (
         deferred.read_text(encoding="ascii"),

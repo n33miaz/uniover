@@ -163,11 +163,12 @@ def test_three_failed_syncs_of_a_version_in_proof_go_back_without_touching_the_e
     pc.previous_version()
     pc.trial()
     pc.uv(["exit /b 1"])
+    log = pc.base / "logs" / "supervisor.log"
     process = pc.start()
     try:
-        assert wait_for((pc.runtime / ".blocked-versions").is_file, 120), (
-            "a versao em prova deveria voltar para a anterior"
-        )
+        assert wait_for(
+            lambda: log.is_file() and "voltei para a versao anterior" in log.read_text("utf-8"), 120
+        ), "a versao em prova deveria voltar para a anterior"
         assert process.poll() is None
     finally:
         stop(process)

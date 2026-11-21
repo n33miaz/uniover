@@ -273,7 +273,9 @@ def test_an_old_one_that_exits_normally_still_requires_the_new_ready_mark(
         assert not (pc.runtime / "current.json").exists()
         assert pc.trial() is None
         assert NEW in (pc.runtime / ".deferred-versions").read_text(encoding="ascii")
-        assert any(item["kind"] == "update.handover_failed" for item in pc.diagnostics())
+        assert wait_for(
+            lambda: any(item["kind"] == "update.handover_failed" for item in pc.diagnostics()), 30
+        ), pc.supervisor_log()
         assert wait_for(lambda: pc.starts() >= 2, 60), pc.supervisor_log()
 
 
@@ -484,7 +486,10 @@ def test_the_old_one_is_asked_to_leave_in_an_orderly_way_before_anything_is_stop
         assert "nao saiu 4 s" in log
         assert "antiga foi derrubada" not in log
         assert pc.pointer()["current"]["sha"] == NEW
-        assert not (pc.runtime / "handover-exit").exists()
+        # O finally remove os pedidos depois do log de sucesso da passagem.
+        assert wait_for(lambda: not (pc.runtime / "handover-exit").exists(), 30), (
+            pc.supervisor_log()
+        )
         assert not (pc.runtime / "handover-exit.tmp").exists()
         # O que a antiga leu: prefixo e código de 32 hexadecimais, sem quebra de linha.
         request = Path(str(pc.launched) + ".exitreq").read_text(encoding="ascii")
@@ -532,7 +537,9 @@ def test_the_request_to_leave_also_comes_before_the_stop_when_the_deadline_passe
         assert "antiga foi derrubada" not in log
         assert not any(i["kind"] == "update.handover_forced" for i in pc.diagnostics())
         assert pc.pointer()["current"]["sha"] == NEW
-        assert not (pc.runtime / "handover-exit").exists()
+        assert wait_for(lambda: not (pc.runtime / "handover-exit").exists(), 30), (
+            pc.supervisor_log()
+        )
 
 
 def test_an_exit_request_left_by_a_dead_supervisor_is_dropped_on_start(pc: HandoverPc) -> None:
@@ -796,7 +803,7 @@ def test_a_version_that_keeps_falling_in_proof_goes_back_by_rewriting_the_pointe
         assert wait_for(blocked.exists, 300), pc.supervisor_log()
         assert NEW in blocked.read_text(encoding="ascii")
         assert wait_for(lambda: pc.pointer()["current"]["app"] == "app", 20)
-        assert pc.trial() is None
+        assert wait_for(lambda: pc.trial() is None, 30), pc.supervisor_log()
         assert (pc.base / "app.staging" / NEW).is_dir()
         # O ponteiro é regravado antes do estado e do registro: espera os dois.
         assert wait_for(lambda: pc.state().get("outcome") == "rolled_back", 30), pc.supervisor_log()
