@@ -76,7 +76,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Final, Protocol
 
-from uniover_agent.core.tv.session import TvSessionError
+from uniover_agent.core.tv.session import TV_UNREACHABLE, TvSessionError
 from uniover_agent.ports import (
     AdbError,
     AdbNotReady,
@@ -212,6 +212,16 @@ class _TextDoubt:
 
 
 @dataclass(slots=True)
+class _BufferedIme:
+    """Envio sem eco do valor inteiro, preso ao campo e à sessão em que saiu."""
+
+    counter: int | None
+    expected: str
+    lost: bool = False
+    report: TextFieldStatus | None = None
+
+
+@dataclass(slots=True)
 class _Trace:
     """O que um comando de texto fez e quanto cada fase levou. Nunca guarda o texto."""
 
@@ -260,8 +270,11 @@ class TextReconciler:
         remote_settle_seconds: float = 0.0,
         adb_group_chars: int = ADB_GROUP_CHARS,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        remote_connected: Callable[[], bool] | None = None,
     ) -> None:
         self._tv = tv
+        self._remote_connected = remote_connected
+        self._buffered_ime: _BufferedIme | None = None
         self._monotonic = monotonic
         self._idle = field_idle_seconds
         self._keys = keys
@@ -349,6 +362,7 @@ class TextReconciler:
         perde: fica guardado e entra assim que ela termina. Descartá-lo deixaria o contador antigo
         valendo para o campo novo, e o comando seguinte apagaria o texto do campo anterior.
         """
+        self._observe_buffered_ime(field)
         sequence = field.ime_counter
         previous = self._sequence_for(field.counter)
         if sequence is not None and (previous is None or sequence > previous):
@@ -381,6 +395,27 @@ class TextReconciler:
         sequence = self._field_sequence
         return sequence[1] if sequence is not None and sequence[0] == counter else None
 
+    def _observe_buffered_ime(self, field: TextFieldStatus) -> None:
+        buffered = self._buffered_ime
+        if buffered is None:
+            return
+        changed = buffered.counter is not None and field.counter != buffered.counter
+        sequence = self._sequence_for(field.counter)
+        fresh = sequence is None or (field.ime_counter is not None and field.ime_counter > sequence)
+        if buffered.lost:
+            if fresh:
+                buffered.report = field
+        elif not changed and fresh and self._last == unicodedata.normalize("NFC", field.value):
+            # Compara com o valor atual: `DEL` e digitação depois do envio também mudam `_last`.
+            self._buffered_ime = None
+
+    def forget_session(self) -> None:
+        """Invalida a sessão que podia entregar os lotes ainda sem eco."""
+        if self._buffered_ime is not None:
+            self._buffered_ime.lost = True
+            self._buffered_ime.report = None
+        self.forget_field()
+
     def forget_field(self) -> None:
         """Esquece o estado do campo: nova sessão com a TV ou outro app em foco.
 
@@ -406,7 +441,9 @@ class TextReconciler:
         A TV repete o app a cada eco de edição; só a troca de verdade esquece o estado.
         """
         previous, self._app = self._app, app
-        recovering = self._uncertain is not None or self._resyncing
+        recovering = (
+            self._uncertain is not None or self._resyncing or self._buffered_ime is not None
+        )
         if previous != app and (previous is not None or (recovering and self._lock.locked())):
             self._focus_generation += 1
             if recovering:
@@ -415,9 +452,19 @@ class TextReconciler:
                 self._last_at = None
             self.forget_field()
             self._field_sequence = None
+            self._buffered_ime = None
             self._clear_doubt()
 
     def _accept(self, field: TextFieldStatus) -> None:
+        buffered = self._buffered_ime
+        if (
+            buffered is not None
+            and buffered.counter is not None
+            and field.counter != buffered.counter
+        ):
+            self._buffered_ime = None
+            self._last_at = None  # o valor informado do campo novo vai semear o próximo diff
+            self._field_counter = None
         previous, self._field_counter = self._field_counter, field.counter
         if previous == field.counter:
             return
@@ -449,13 +496,76 @@ class TextReconciler:
         if self._validate is not None:
             self._validate()
 
+    def _check_effect(self) -> None:
+        self._check()
+        if self._lost_ime() is not None:
+            raise TvSessionError(TV_UNREACHABLE, "a TV não confirmou a entrega do texto anterior")
+
     def _effect(self) -> TextControl:
         """A TV, para um efeito (acordar, tecla, texto): o canal que pediu ainda vale?
 
         Roda sob a trava das edições, então `_validate` é o da edição em curso. Com o canal fechado
         (revogação, troca, queda) nada mais vai à TV: levanta `TvSessionError`."""
-        self._check()
+        self._check_effect()
         return self._tv
+
+    def _lost_ime(self) -> _BufferedIme | None:
+        buffered = self._buffered_ime
+        if buffered is None:
+            return None
+        if self._remote_connected is not None and not self._remote_connected():
+            buffered.lost = True
+            buffered.report = None
+        return buffered if buffered.lost else None
+
+    async def _recover_buffered_ime(self, buffered: _BufferedIme, target: str) -> None:
+        # O próximo comando pode chegar antes da recuperação automática ou ser igual ao anterior.
+        # Abre a sessão antes de calcular qualquer diferença e só usa relatos do canal novo.
+        await self._tv.wake()
+        self._check()
+        if self._buffered_ime is not buffered:
+            raise TvSessionError(RESYNC_ABANDONED, "o campo da TV mudou na reconexão")
+        self._lost_ime()  # invalida o relato se a sessão recém-aberta também caiu
+        report = buffered.report
+        if report is not None:
+            actual = unicodedata.normalize("NFC", report.value)
+            if buffered.counter is not None and report.counter != buffered.counter:
+                self._buffered_ime = None
+                self._last_at = None
+                self._field_counter = None
+                self._accept(report)
+                raise TvSessionError(RESYNC_ABANDONED, "o campo da TV mudou na reconexão")
+            # O relato permite completar só o que falta, sem apagar nem repetir às cegas.
+            if actual == target or (buffered.counter is not None and target.startswith(actual)):
+                self._last = actual
+                self._last_at = self._monotonic()
+                self._field_counter = report.counter
+                self._owns_field = True
+                self._buffered_ime = None
+                self._clear_doubt()
+                if actual != target:
+                    self._guard_ime_field(report.counter)
+                return
+        raise TvSessionError(
+            TV_UNREACHABLE, "a TV não confirmou a entrega do texto anterior", may_have_sent=True
+        )
+
+    def _guard_ime_field(self, counter: int) -> None:
+        """O acréscimo calculado pelo relato só serve para esse campo e essa conexão."""
+        link, generation, upstream = self._link, self._focus_generation, self._validate
+
+        def validate() -> None:
+            pending = self._pending_field
+            if (
+                self._link != link
+                or self._focus_generation != generation
+                or (pending is not None and pending.counter != counter)
+            ):
+                raise TvSessionError(RESYNC_ABANDONED, "o campo da TV mudou na reconexão")
+            if upstream is not None:
+                upstream()
+
+        self._validate = validate  # `set_text` desfaz a validação ao devolver a vez
 
     async def set_text(
         self, text: str, *, queued: float = 0.0, validate: Callable[[], None] | None = None
@@ -495,6 +605,8 @@ class TextReconciler:
         self._socket_keys = 0
         self._adb_confirmed = 0
         self._unconfirmed_text = ""
+        if (buffered := self._lost_ime()) is not None:
+            await self._recover_buffered_ime(buffered, target)
         now = self._monotonic()
         self._edit_counter = (
             self._field_counter if self._field_counter is not None else self._doubt_counter
@@ -509,6 +621,7 @@ class TextReconciler:
         if self._field_changed(now, target):
             self._last = ""
             self._owns_field = False
+            self._buffered_ime = None
         edit = plan_edit(self._last, target)
         trace.previous, trace.delete, trace.insert = len(self._last), edit.delete, len(edit.insert)
         if edit.delete == 0 and not edit.insert:
@@ -518,6 +631,7 @@ class TextReconciler:
         started = self._monotonic()
         await self._effect().wake()
         trace.wake = self._monotonic() - started
+        self._check_effect()
         await self._apply(edit, trace)
         self._last_at = self._monotonic()
 
@@ -861,17 +975,27 @@ class TextReconciler:
         trace.groups += 1
         tv = self._effect()
         try:
-            await tv.send_text(rest, validate=self._validate if self._resyncing else None)
+            await tv.send_text(rest, validate=self._check_effect)
         except TvSessionError as exc:
             # Só a queda já dentro do envio deixa o trecho incerto; uma falha anterior (sessão que
             # não abriu, transporte fechando) prova que nada saiu. Quem registrar a dúvida dos
-            # `DEL` conta este trecho. Sem `DEL` neste comando não há dúvida: um lote que tenha
-            # saído seria repetido pelo reenvio.
+            # `DEL` conta este trecho. Sem `DEL`, a próxima edição espera um relato novo do campo.
             if exc.may_have_sent:
                 self._unconfirmed_text = rest
+                if (
+                    self._remote_connected is not None
+                    and not self._socket_keys
+                    and not self._resyncing
+                    and self._buffered_ime is None
+                ):
+                    self._buffered_ime = _BufferedIme(
+                        self._edit_counter, self._last + rest, lost=True
+                    )
             raise
         self._remote_at = self._monotonic()
         self._typed(rest)
+        if self._remote_connected is not None:
+            self._buffered_ime = _BufferedIme(self._field_counter, self._last)
 
     async def _type_adb(self, adb: AdbTyping, text: str, trace: _Trace) -> str:
         """Digita grupo a grupo pelo ADB; devolve o que sobrou para o Remote (`""` se tudo foi).
@@ -887,7 +1011,7 @@ class TextReconciler:
 
         def before_send() -> None:
             nonlocal dispatched
-            self._check()
+            self._check_effect()
             dispatched = True
 
         for index, group in enumerate(pending):
@@ -944,7 +1068,7 @@ class TextReconciler:
                 await self._sleep(self._key_pause)
             tv = self._effect()
             try:
-                await tv.send_key(key, validate=self._validate if self._resyncing else None)
+                await tv.send_key(key, validate=self._check_effect)
             except (ValueError, TvSessionError) as exc:
                 if self._adb is None:
                     if isinstance(exc, TvSessionError):

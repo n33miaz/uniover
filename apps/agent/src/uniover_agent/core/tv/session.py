@@ -662,7 +662,9 @@ class TvSessionManager:
 
     async def send_text(self, text: str, *, validate: Callable[[], None] | None = None) -> None:
         """Insere o trecho no campo em foco da TV; não substitui o conteúdo."""
-        await self._run(lambda remote: remote.send_text(text), validate=validate)
+        await self._run(
+            lambda remote: remote.send_text(text), validate=validate, retry_uncertain=False
+        )
 
     async def wake(self) -> None:
         """Pré-aquece: abre a sessão (se preciso) e renova o relógio.
