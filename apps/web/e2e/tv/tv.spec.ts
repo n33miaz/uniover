@@ -13,6 +13,7 @@ import {
   failSse,
   installFakeEventSource,
   mockTvApi,
+  releaseSse,
   sseUrls,
 } from './tv-mock';
 import { BROKEN_PNG, ICONS, TINY_WEBP, noisyIcon, toDataUri } from './synthetic-icons';
@@ -1058,10 +1059,14 @@ test.describe('ponto de estado clicável', () => {
     expect(box!.y + box!.height).toBeLessThanOrEqual(size!.height);
     await page.keyboard.press('Escape');
 
-    await failSse(page);
+    // A volta do fluxo cortado é rápida (de 200 a 500 ms): a conexão nova fica segura em "conectando" para o
+    // "Reconectando…" ser visto com o painel aberto, e só some quando ela abre.
+    await failSse(page, { holdReconnect: true });
     await statusDot(page).click();
     await expect(statusPanel(page)).toContainText('Reconectando…');
     await expect.poll(() => sseUrls(page)).toHaveLength(2);
+    await expect(statusPanel(page)).toContainText('Reconectando…');
+    await releaseSse(page);
     await expect(statusPanel(page)).not.toContainText('Reconectando…');
   });
 
