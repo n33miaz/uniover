@@ -166,6 +166,7 @@ from uniover_agent.core.pc.power_outcomes import (
 from uniover_agent.core.self_care import SelfCare
 from uniover_agent.core.supervision import TaskHealth, keep_running, run_supervised
 from uniover_agent.core.tv.livre import EXTENDED_CAPABILITY as LIVRE_EXTENDED_CAPABILITY
+from uniover_agent.core.tv.livre import SLEEP_NO_INSTALL_CAPABILITY
 from uniover_agent.core.tv.pairing import PAIR_CAPABILITY
 from uniover_agent.core.tv.relocator import (
     DEFAULT_FAILURES,
@@ -228,6 +229,7 @@ API_LISTED_CAPABILITIES = frozenset(
         SETTINGS_OPEN_CAPABILITY,
         ADB_REBIND_CAPABILITY,
         LIVRE_EXTENDED_CAPABILITY,
+        SLEEP_NO_INSTALL_CAPABILITY,
         PC_KEY_V2_CAPABILITY,
         PC_TEXT_V2_CAPABILITY,
         PC_TEXT_V3_CAPABILITY,

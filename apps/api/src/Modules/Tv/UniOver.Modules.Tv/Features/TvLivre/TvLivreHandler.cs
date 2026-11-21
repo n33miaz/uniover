@@ -82,8 +82,13 @@ internal sealed class TvLivreHandler(
         AgentInfo() is { Connected: true } info && info.Capabilities.Contains(Capability, StringComparer.Ordinal);
 
     /// <summary>O agente online da TV atual entende os acréscimos do TV Livre (<see cref="TvCapabilities.LivreV2"/>).</summary>
-    public bool IsExtended() =>
-        AgentInfo() is { Connected: true } info && info.Capabilities.Contains(TvCapabilities.LivreV2, StringComparer.Ordinal);
+    public bool IsExtended() => HasCapability(TvCapabilities.LivreV2);
+
+    /// <summary>Código com que o agente recusa o dormir de um convidado quando o launcher sumiu da TV.</summary>
+    private const string LauncherRequiredCode = "launcher_required";
+
+    private bool HasCapability(string capability) =>
+        AgentInfo() is { Connected: true } info && info.Capabilities.Contains(capability, StringComparer.Ordinal);
 
     /// <summary>
     /// Se há como mandar a TV dormir agora: o agente da TV está ao alcance com o TV Livre e a TV não foi lida como
@@ -183,7 +188,10 @@ internal sealed class TvLivreHandler(
     /// Para quem não é o dono (<paramref name="mayInstall"/> falso) o pedido confere antes, na mesma vez da TV, se o
     /// launcher está lá: um <c>status</c> sem linha própria na trilha e o estado que ele traz. O estado guardado não serve
     /// para isso, porque pode ser de antes de a TV ser restaurada. Sem o launcher (ou sem a confirmação dele) o dormir não
-    /// sai e a resposta diz que é o dono quem prepara a TV.
+    /// sai e a resposta diz que é o dono quem prepara a TV. O launcher ainda pode sumir entre a leitura e o dormir (a TV é
+    /// mexida fora do UniOver): ao agente que sabe (<see cref="TvCapabilities.LivreSleepNoInstall"/>) o pedido vai com
+    /// <c>skipInstall</c>, e ele mesmo confere na hora e recusa com <c>launcher_required</c> em vez de instalar. Um agente
+    /// anterior recebe o pedido de sempre, só com a leitura antes.
     /// </para>
     /// <para>
     /// O tempo até acordar vai no pedido, mas só a agente que entende (um anterior recusaria o campo): sem ele o launcher
@@ -227,9 +235,12 @@ internal sealed class TvLivreHandler(
             }
         }
 
-        return await RunStepAsync(
+        // Só vai a agente que entende o campo: um anterior recusaria o pedido inteiro.
+        var skipInstall = !mayInstall && HasCapability(TvCapabilities.LivreSleepNoInstall) ? true : (bool?)null;
+        var step = await RunStepAsync(
             ticket, origin, TvCommandNames.LivreSleep, null, TvLivreAction.Sleep, longTimeout: true, cancellationToken,
-            waitForState: false, minutes: IsExtended() ? minutes : null);
+            waitForState: false, minutes: IsExtended() ? minutes : null, skipInstall: skipInstall);
+        return skipInstall is true && step.Outcome?.ErrorCode == LauncherRequiredCode ? LivreStep.OwnerRequired : step;
     }
 
     /// <summary>
@@ -364,7 +375,8 @@ internal sealed class TvLivreHandler(
         bool? uninstall = null,
         IReadOnlyList<string>? disable = null,
         IReadOnlyList<string>? enable = null,
-        int? minutes = null)
+        int? minutes = null,
+        bool? skipInstall = null)
     {
         var outcome = await runner.RunAsync(
             origin,
@@ -372,7 +384,7 @@ internal sealed class TvLivreHandler(
             detail,
             TvMessages.TvLivre(
                 ticket.RequestId, action, disableFactory: disableFactory, uninstall: uninstall, disable: disable, enable: enable,
-                minutes: minutes),
+                minutes: minutes, skipInstall: skipInstall),
             waitForReply: true,
             cancellationToken,
             longTimeout ? options.Value.LivreTimeout : null);

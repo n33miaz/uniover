@@ -92,6 +92,12 @@ class TvLivreV1Body(BaseModel):
         list[EnableItem] | None,
         Field(description='set-apps: pacotes a reativar.', max_length=64),
     ] = None
+    skipInstall: Annotated[
+        bool | None,
+        Field(
+            description='sleep: recusa abrir o Modo Dormir se o launcher estiver ausente. Só vai a agente que declara tv.livre.sleep-no-install.v1.'
+        ),
+    ] = None
     minutes: Annotated[
         int | None,
         Field(

@@ -147,7 +147,8 @@ internal static class TvMessages
         bool? uninstall = null,
         IReadOnlyList<string>? disable = null,
         IReadOnlyList<string>? enable = null,
-        int? minutes = null) =>
+        int? minutes = null,
+        bool? skipInstall = null) =>
         new(AgentMessageTypes.TvLivreV1, BodyOf(
             new TvLivreV1Message
             {
@@ -164,6 +165,7 @@ internal static class TvMessages
                     Disable = disable?.ToArray(),
                     Enable = enable?.ToArray(),
                     Minutes = minutes,
+                    SkipInstall = skipInstall,
                 },
             }.ToJson()));
 

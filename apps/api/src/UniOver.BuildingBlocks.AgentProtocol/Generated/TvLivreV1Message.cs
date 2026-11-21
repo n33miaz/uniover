@@ -114,6 +114,14 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public long? Revision { get; set; }
 
         /// <summary>
+        /// sleep: recusa abrir o Modo Dormir se o launcher estiver ausente. Só vai a agente que
+        /// declara tv.livre.sleep-no-install.v1.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("skipInstall")]
+        public bool? SkipInstall { get; set; }
+
+        /// <summary>
         /// restore: depois de voltar e verificar, desinstala o launcher. Padrão: sim.
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

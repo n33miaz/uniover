@@ -29,6 +29,11 @@ internal static class TvCapabilities
     /// configuração, e o nível do launcher e o "apply adiado" no estado. Sem ela a API manda e lê só o que já existia.
     /// </summary>
     public const string LivreV2 = "tv.livre.v2";
+    /// <summary>
+    /// O agente entende <c>skipInstall</c> no dormir: confere o launcher na hora e recusa com <c>launcher_required</c> em
+    /// vez de instalá-lo. Só com ela o dormir de um convidado vai com o campo.
+    /// </summary>
+    public const string LivreSleepNoInstall = "tv.livre.sleep-no-install.v1";
 }
 
 /// <summary>Códigos de erro estáveis que o agente devolve no <c>command.result.v1</c> do desligamento com leitura.</summary>

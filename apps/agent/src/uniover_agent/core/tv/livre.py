@@ -48,6 +48,7 @@ CAPABILITY: Final = "tv.livre.v1"
 # O agente entende os acréscimos do segundo passo do módulo (tempo no pedido de dormir, nível do
 # launcher e apply sem interromper no estado). Só vai ao `hello` depois de a API listá-la.
 EXTENDED_CAPABILITY: Final = "tv.livre.v2"
+SLEEP_NO_INSTALL_CAPABILITY: Final = "tv.livre.sleep-no-install.v1"
 PACKAGE: Final = "br.uniover.launcher"
 HOME_COMPONENT: Final = f"{PACKAGE}/.HomeActivity"
 SLEEP_COMPONENT: Final = f"{PACKAGE}/.SleepActivity"
@@ -446,7 +447,7 @@ class TvLivre:
             elif action == "set-apps":
                 await self._set_apps(body.get("disable") or [], body.get("enable") or [])
             elif action == "sleep":
-                await self._sleep(body.get("minutes"))
+                await self._sleep(body.get("minutes"), skip_install=body.get("skipInstall") is True)
             else:
                 raise LivreError("unknown_action", "Ação desconhecida.", rejected=True)
 
@@ -877,7 +878,7 @@ class TvLivre:
                 stored["disabled"] = disabled
                 self._state.save(stored)
 
-    async def _sleep(self, minutes: object = None) -> None:
+    async def _sleep(self, minutes: object = None, *, skip_install: bool = False) -> None:
         if minutes is not None and (
             not isinstance(minutes, int)
             or isinstance(minutes, bool)
@@ -885,7 +886,11 @@ class TvLivre:
         ):
             raise LivreError("invalid_minutes", "O tempo do Modo Dormir é inválido.", rejected=True)
         if not await self._is_installed():
-            # O Modo Dormir nunca some: sem o launcher (PC reinstalado, TV restaurada) o próprio
+            if skip_install:
+                raise LivreError(
+                    "launcher_required", "O dono precisa preparar a TV.", rejected=True
+                )
+            # Para o dono, sem o launcher (PC reinstalado, TV restaurada) o próprio
             # pedido o instala, do mesmo jeito que "Instalar" (APK assinado, a tela inicial de
             # fábrica continua a padrão), e então abre a tela preta.
             await self._install_for_sleep()
