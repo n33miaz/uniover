@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.75.1](https://github.com/n33miaz/uniover/compare/v0.75.0...v0.75.1) (2026-11-21)
+
+
+### Identity 0.46.4
+
+#### Bug Fixes
+
+* **identity:** serialize capacity alert writes
+
+
+### TV 0.54.1
+
+#### Maintenance
+
+* no user-facing changes
+
 ## [0.75.0](https://github.com/n33miaz/uniover/compare/v0.74.2...v0.75.0) (2026-11-21)
 
 
