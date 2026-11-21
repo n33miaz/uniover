@@ -335,6 +335,55 @@ async def test_a_lost_key_before_the_drop_is_never_completed_by_adb_as_if_it_wen
     assert editor.last_text == "abcd"
 
 
+@pytest.mark.parametrize("delete_applied", [False, True])
+async def test_socket_drop_after_delete_recovers_on_the_next_edit(delete_applied: bool) -> None:
+    remote = FieldRemote(lose=set() if delete_applied else {"DEL"}, fail_on=None)
+    editor, adb = field_rig(remote)
+    editor.observe_field(TextFieldStatus("", 0, 0, "", counter=1))
+    await editor.set_text("abc")
+    remote.fail_on = "TYPE_D"
+
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+
+    assert adb.typed == []
+    assert editor.last_text == "abc"
+    assert remote.field == ("ab" if delete_applied else "abc")
+
+    editor.forget_field()
+    if delete_applied:
+        editor.observe_field(TextFieldStatus("ab", 0, 0, "", counter=1))
+    remote.fail_on = None
+    remote.keys.clear()
+    await editor.set_text("abd")
+
+    assert remote.field == editor.last_text == "abd"
+    assert remote.keys.count("DEL") == (0 if delete_applied else 3)
+
+
+async def test_a_drop_while_retyping_keeps_the_unconfirmed_resync_deletes_in_doubt() -> None:
+    remote = FieldRemote(lose={"DEL"}, fail_on=None)
+    editor, _ = field_rig(remote)
+    editor.observe_field(TextFieldStatus("", 0, 0, "", counter=1))
+    await editor.set_text("abc")
+    remote.fail_on = "TYPE_D"
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+    assert remote.field == "abc"
+
+    # O refazer apaga três, mas um `DEL` fica no socket e a primeira letra cai: a TV tem "a".
+    remote.lose = {"DEL"}
+    remote.fail_on = "TYPE_A"
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+    assert remote.field == "a"
+
+    # Sem eco, o próximo texto refaz de novo em vez de acrescentar ao "a" que sobrou.
+    remote.fail_on = None
+    await editor.set_text("abd")
+    assert remote.field == editor.last_text == "abd"
+
+
 async def test_the_field_echo_proves_the_keys_and_adb_completes_the_text() -> None:
     remote = FieldRemote(lose=set(), fail_on="TYPE_C")
     editor, adb = field_rig(remote)
