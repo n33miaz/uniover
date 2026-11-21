@@ -91,11 +91,20 @@ internal sealed class CapacityHandler(
     /// O dono viu: só os avisos abertos saem do cartão. Um aviso que já fechou fica como está (nada a dispensar), e o próximo
     /// vermelho, depois de voltar ao normal e do cooldown, abre outro.
     /// </summary>
+    /// <remarks>
+    /// Pega a mesma trava da amostra diária (esperando, ao contrário da amostra): as duas escrevem nos avisos abertos e,
+    /// sem ordem entre elas, poderiam travar uma à outra. O clique espera os milissegundos da amostra; se a amostra chegar
+    /// enquanto este UPDATE está no meio, ela pula aquela execução e grava no próximo despertar.
+    /// </remarks>
     public async Task MarkSeenAsync(CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        await db.Database.ExecuteSqlAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({CapacitySampling.JobName}, 0))", cancellationToken);
         await db.CapacityAlerts.Where(a => a.SeenAt == null && a.RecoveredAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(a => a.SeenAt, now), cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 }
 

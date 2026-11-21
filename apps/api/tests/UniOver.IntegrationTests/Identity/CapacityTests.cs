@@ -2,6 +2,7 @@ using System.Net;
 using AwesomeAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using UniOver.BuildingBlocks.Persistence;
 using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Infrastructure;
@@ -30,6 +31,41 @@ public sealed class CapacityTests(PostgresFixture postgres)
     {
         var results = await app.Services.GetRequiredService<AuditPurgeService>().RunOnceAsync(Ct);
         return results.Single(r => r.Name == CapacitySampling.JobName);
+    }
+
+    /// <summary>
+    /// Abre outra sessão que segura a trava da amostra (a de transação, que sai certa no rollback mesmo com o pool de
+    /// conexões) e devolve a transação: desfazê-la solta a trava.
+    /// </summary>
+    private static async Task<(NpgsqlConnection Connection, NpgsqlTransaction Transaction)> HoldTheLockAsync(TestDatabase database)
+    {
+        var connection = new NpgsqlConnection(database.OwnerConnection);
+        await connection.OpenAsync(Ct);
+        var transaction = await connection.BeginTransactionAsync(Ct);
+        await using var command = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended(@job, 0))", connection, transaction);
+        command.Parameters.AddWithValue("job", CapacitySampling.JobName);
+        await command.ExecuteNonQueryAsync(Ct);
+        return (connection, transaction);
+    }
+
+    /// <summary>Espera até alguma sessão deste banco ficar parada na fila de uma trava consultiva.</summary>
+    private static async Task WaitForAnAdvisoryWaiterAsync(TestDatabase database)
+    {
+        await using var connection = new NpgsqlConnection(database.OwnerConnection);
+        await connection.OpenAsync(Ct);
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT count(*) FROM pg_locks
+            WHERE locktype = 'advisory' AND NOT granted
+              AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+            """,
+            connection);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        while ((long)(await command.ExecuteScalarAsync(timeout.Token))! == 0)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(50), timeout.Token);
+        }
     }
 
     [Fact]
@@ -315,22 +351,101 @@ public sealed class CapacityTests(PostgresFixture postgres)
                 Extra = options.Extra,
             });
 
-        await using var db = first.Db();
         for (var attempt = 1; attempt <= 20; attempt++)
         {
             // Cada disputa parte sem amostra e sem avisos, com duas métricas no vermelho.
-            await db.CapacityAlerts.ExecuteDeleteAsync(Ct);
-            await db.CapacitySamples.ExecuteDeleteAsync(Ct);
+            await using (var reset = first.Db())
+            {
+                await reset.CapacityAlerts.ExecuteDeleteAsync(Ct);
+                await reset.CapacitySamples.ExecuteDeleteAsync(Ct);
+            }
 
             // Seis execuções, três em cada processo, liberadas juntas pela mesma barreira.
             var results = await Race.RunTogetherAsync(6, i => RunJobAsync(i % 2 == 0 ? first : second), Ct);
 
             results.Should().OnlyContain(r => r.Succeeded, "a disputa {0} deve terminar sem falhas", attempt);
+            await using var db = first.Db();
             (await db.CapacitySamples.AsNoTracking().CountAsync(Ct)).Should().Be(1);
             var open = await db.CapacityAlerts.AsNoTracking()
                 .Where(a => a.RecoveredAt == null).Select(a => a.Metric).ToListAsync(Ct);
             open.Should().OnlyHaveUniqueItems().And.Contain(["database", "hours"]);
         }
+    }
+
+    [Fact]
+    public async Task WhileAnotherSessionHoldsTheLock_TheJobSkips_AndWritesNothing_ThenRunsAfterTheRelease()
+    {
+        await using var app = await IdentityApp.StartAsync(postgres, With(("DatabaseLimitBytes", "1024")));
+        var today = DateOnly.FromDateTime(app.Time.GetUtcNow().UtcDateTime);
+        var old = today.AddDays(-121);
+        await using (var seed = app.Db())
+        {
+            // Passou da retenção: uma execução de verdade a apagaria.
+            seed.CapacitySamples.Add(new CapacitySample { Day = old, DatabaseBytes = 1, TakenAt = app.Time.GetUtcNow().AddDays(-121) });
+            await seed.SaveChangesAsync(Ct);
+        }
+
+        var (connection, transaction) = await HoldTheLockAsync(app.Database);
+        await using (connection)
+        await using (transaction)
+        {
+            var skipped = await RunJobAsync(app);
+
+            skipped.Succeeded.Should().BeTrue();
+            skipped.Removed.Should().Be(0);
+            await using var db = app.Db();
+            (await db.CapacitySamples.AsNoTracking().Select(s => s.Day).ToListAsync(Ct)).Should().Equal(old);
+            (await db.CapacityAlerts.AsNoTracking().CountAsync(Ct)).Should().Be(0);
+
+            await transaction.RollbackAsync(Ct);
+        }
+
+        var ran = await RunJobAsync(app);
+
+        ran.Succeeded.Should().BeTrue();
+        ran.Removed.Should().Be(1);
+        await using var after = app.Db();
+        (await after.CapacitySamples.AsNoTracking().Select(s => s.Day).ToListAsync(Ct)).Should().Equal(today);
+        (await after.CapacityAlerts.AsNoTracking().Where(a => a.RecoveredAt == null).Select(a => a.Metric).ToListAsync(Ct))
+            .Should().Contain("database");
+    }
+
+    [Fact]
+    public async Task Dismissing_WaitsForTheSameLock_AndMarksTheAlertsAfterTheRelease()
+    {
+        await using var app = await IdentityApp.StartAsync(postgres);
+        var owner = await app.LoginAsync();
+        await using (var seed = app.Db())
+        {
+            seed.CapacityAlerts.Add(new CapacityAlert
+            {
+                Id = Guid.NewGuid(), Metric = "database", Percent = 85, DetectedAt = app.Time.GetUtcNow().AddHours(-1),
+            });
+            await seed.SaveChangesAsync(Ct);
+        }
+
+        var (connection, transaction) = await HoldTheLockAsync(app.Database);
+        Task<HttpResponseMessage> seen;
+        await using (connection)
+        await using (transaction)
+        {
+            seen = app.SendAsync(HttpMethod.Post, Route + "/alerts/seen", bearer: owner.AccessToken);
+
+            // Parado na fila da trava, sem ter tocado no aviso.
+            await WaitForAnAdvisoryWaiterAsync(app.Database);
+            seen.IsCompleted.Should().BeFalse();
+            await using (var db = app.Db())
+            {
+                (await db.CapacityAlerts.AsNoTracking().SingleAsync(Ct)).SeenAt.Should().BeNull();
+            }
+
+            await transaction.RollbackAsync(Ct);
+        }
+
+        using var response = await seen.WaitAsync(TimeSpan.FromSeconds(30), Ct);
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await using var check = app.Db();
+        (await check.CapacityAlerts.AsNoTracking().SingleAsync(Ct)).SeenAt.Should().NotBeNull();
     }
 
     [Fact]
