@@ -92,26 +92,19 @@ public sealed class TvStreamPermissionTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Stream_ClosesWithinTheCacheLifetime_WhenTheGrantIsRemovedBehindTheCache()
+    public async Task Stream_ClosesAtTheNextKeepAlive_WhenTheGrantIsRemovedBehindTheCache()
     {
-        // Outra instância: o banco muda sem passar pela invalidação desta. Vale quando o cache de 30 s vence.
+        // Outra instância: o banco muda sem passar pela invalidação desta. O cache das permissões (30 s) ainda diz que vale,
+        // mas a TV que o convidado vê sai da concessão vigente, lida no Identity a cada conferência: fecha no próximo keep-alive.
         await using var app = await TvApp.StartAsync(postgres);
         var guest = await app.NewGuestAsync("Alice", null, 41);
         using var response = await OpenAsync(app, guest.Login.AccessToken);
         using var reader = await ReadSnapshotAsync(response);
 
         await app.ExecuteSqlAsync($"DELETE FROM identity.user_grants WHERE user_id = '{guest.UserId}' AND permission = 'module:tv'");
+        var frame = await AdvanceThenReadAsync(app, reader, 15);
 
-        var elapsed = 0;
-        SseFrame? frame;
-        do
-        {
-            (frame, elapsed) = await AdvanceUntilFrameAsync(app, reader, elapsed);
-            frame?.Comment.Should().Be("keep-alive", "enquanto o cache vale o fluxo segue aberto, só com keep-alive");
-        }
-        while (frame is not null);
-
-        elapsed.Should().BeInRange(30, 45, "não antes do cache vencer (30 s) e no máximo um keep-alive depois");
+        frame.Should().BeNull("sem a concessão a TV some da seleção, sem esperar o cache das permissões vencer");
     }
 
     [Fact]
