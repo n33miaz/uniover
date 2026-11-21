@@ -68,6 +68,14 @@ def no_real_power_actions(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Uma contagem real sobreviveria ao fim do teste e, já sem esta guarda, chegaria ao Windows.
     monkeypatch.setattr(pc_windows, "_start_power_timer", refuse_countdown)
+    # Nem o aviso da contagem na tela: uma janela de verdade apareceria no desktop de quem roda.
+    from uniover_agent.adapters import pc_power_notice  # noqa: PLC0415
+
+    def refuse_notice(*args: object, **kwargs: object) -> object:
+        raise AssertionError("um teste tentou abrir o aviso de energia de verdade na tela")
+
+    monkeypatch.setattr(pc_power_notice, "_windows_message_box", refuse_notice)
+    monkeypatch.setattr(pc_power_notice, "_windows_close", refuse_notice)
     # Só leitura, mas também fora dos testes: a resposta vem sempre de quem monta o cenário.
     monkeypatch.setattr(pc_windows, "_hibernation_enabled", refuse)
     # Os ajustes do mouse do Windows (só leitura): fixos nos testes, iguais em qualquer máquina.

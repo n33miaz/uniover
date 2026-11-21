@@ -22,6 +22,7 @@ from uniover_agent.adapters.pc_input_thread import (
     PcInputThread,
 )
 from uniover_agent.adapters.pc_media_session import WindowsPcMediaSession
+from uniover_agent.adapters.pc_power_notice import WindowsPowerNotice
 from uniover_agent.adapters.pc_screen_process import ScreenProcess
 from uniover_agent.adapters.pc_windows import (
     WindowsPcForeground,
@@ -445,7 +446,8 @@ def build_pc(  # noqa: PLR0913 - portas trocáveis para os testes, todas com pad
     handlers = pc_handlers(
         pc_input,
         # O mesmo adaptador responde, mais abaixo, se a hibernação está ligada.
-        (power_port := power or WindowsPcPower()),
+        # O aviso na tela do PC mostra a contagem de desligar ou reiniciar e deixa cancelar ali.
+        (power_port := power or WindowsPcPower(notice=WindowsPowerNotice())),
         launcher or WindowsPcLauncher(),
         apps,
         shutdown_delay_seconds=settings.pc_shutdown_delay_seconds,

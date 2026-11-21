@@ -4,7 +4,7 @@ Tudo é síncrono e rápido (uma chamada de sistema), salvo `PcPower.sleep`, que
 acorda e por isso o manipulador o roda em outra thread.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -154,6 +154,21 @@ class PcPower(Protocol):
 
     def monitor_off(self) -> None:
         """Apaga a tela; o PC segue ligado e qualquer toque no mouse ou tecla a acende."""
+        ...
+
+
+class PowerNotice(Protocol):
+    """O aviso na tela do PC durante a contagem de desligar ou reiniciar: quem está na frente do PC
+    vê quanto falta e pode cancelar ali mesmo. Nada vai a disco."""
+
+    def show(self, action: str, seconds: int, cancel: Callable[[], None]) -> None:
+        """Abre o aviso (`action`: `SHUTDOWN` ou `RESTART`) sem esperar por ele. `cancel` é chamado
+        se a pessoa pedir o cancelamento no próprio aviso. Um aviso anterior ainda aberto fecha."""
+        ...
+
+    def close(self) -> None:
+        """Fecha o aviso aberto (a contagem acabou ou foi cancelada pelo app), sem esperar. Sem
+        aviso aberto, não faz nada."""
         ...
 
 
