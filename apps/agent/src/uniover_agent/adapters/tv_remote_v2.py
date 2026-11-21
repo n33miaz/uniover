@@ -313,7 +313,8 @@ class AndroidTvRemoteV2:
 
     @property
     def connected(self) -> bool:
-        return self._connected
+        lost = _lost_future(self._client)
+        return self._connected and (lost is None or not lost.done())
 
     # --- ciclo de vida ------------------------------------------------------------------------
 
@@ -494,7 +495,7 @@ class AndroidTvRemoteV2:
             protocol.ime_field_counter = 0
 
     def _require(self) -> RemoteClient:
-        if not self._connected or self._client is None:
+        if not self.connected or self._client is None:
             raise TvUnreachable("a conexão com a TV não está aberta")
         return self._client
 
@@ -522,7 +523,7 @@ class AndroidTvRemoteV2:
 
     def _is_current_protocol(self, protocol: Any) -> bool:
         return (
-            self._connected
+            self.connected
             and protocol is not None
             and (getattr(self._client, "_remote_message_protocol", None) is protocol)
         )
