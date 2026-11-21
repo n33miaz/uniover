@@ -9,6 +9,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -34,6 +35,7 @@ BAD = "b" * 40
 FUNCTIONS = (
     "Get-Version",
     "Get-UtcStamp",
+    "Move-FileOver",
     "Set-UpdateState",
     "Test-FreshFlag",
     "Move-Folder",
@@ -167,6 +169,58 @@ def test_a_state_that_cannot_be_written_never_stops_the_supervisor(pc: Pc) -> No
     (pc.runtime / STATUS_FILE).mkdir()  # um diretório no lugar do arquivo
     done = pc.run("Set-UpdateState @{ outcome = 'failed' } | Out-Null; 'seguiu'")
     assert done.returncode == 0 and "seguiu" in done.stdout
+
+
+def test_a_file_the_supervisor_rewrites_never_goes_missing_for_a_reader(pc: Pc) -> None:
+    # O ponteiro, o estado e a janela da troca são regravados por temporário e troca. O `Move-Item
+    # -Force` apagava o destino antes de renomear: quem lia no meio (o agente, o lançador) não
+    # achava o arquivo e caía no layout de sempre. Agora o nome existe o tempo todo, sempre inteiro.
+    path = pc.runtime / "current.json"
+    path.write_text('{"v":1,"n":0}', encoding="ascii")
+    body = r"""
+for ($n = 1; $n -le 300; $n++) {
+    $p = Join-Path $runtime 'current.json'
+    [System.IO.File]::WriteAllText($p + '.tmp', ('{"v":1,"n":' + $n + '}'))
+    Move-FileOver ($p + '.tmp') $p
+}
+'pronto'
+"""
+    result: list[subprocess.CompletedProcess[str]] = []
+    writer = threading.Thread(target=lambda: result.append(pc.run(body)))
+    writer.start()
+    missing = reads = 0
+    while writer.is_alive():
+        # Uma folga entre leituras: um leitor que segura o arquivo sem parar esgotaria as novas
+        # tentativas da troca, coisa que nenhum leitor de verdade faz.
+        time.sleep(0.002)
+        try:
+            text = path.read_text(encoding="ascii")
+        except FileNotFoundError:
+            missing += 1
+            continue
+        except PermissionError:  # o instante da troca: o arquivo existe, só não abre agora
+            continue
+        assert json.loads(text)["v"] == 1  # nunca meio arquivo
+        reads += 1
+    writer.join()
+    assert result[0].returncode == 0 and "pronto" in result[0].stdout, result[0].stderr
+    assert missing == 0
+    assert reads > 0
+    assert json.loads(path.read_text(encoding="ascii")) == {"v": 1, "n": 300}
+    assert [p.name for p in pc.runtime.iterdir()] == ["current.json"]
+
+
+def test_replacing_a_file_also_creates_it_when_it_is_not_there_yet(pc: Pc) -> None:
+    done = pc.run(
+        r"""
+$p = Join-Path $runtime 'novo.json'
+[System.IO.File]::WriteAllText($p + '.tmp', 'x')
+Move-FileOver ($p + '.tmp') $p
+"""
+    )
+    assert done.returncode == 0, done.stderr
+    assert (pc.runtime / "novo.json").read_text(encoding="ascii") == "x"
+    assert [p.name for p in pc.runtime.iterdir()] == ["novo.json"]
 
 
 def test_rolling_back_swaps_the_folders_blocks_the_bad_version_and_says_so(pc: Pc) -> None:

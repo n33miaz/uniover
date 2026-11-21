@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from .launcher_isolation import isolated_launcher
+from .support import read_now
 from .test_launcher_recovery import POWERSHELL, TASKKILL, folder
 from .test_supervisor_guardrails import CURRENT, RUNNER, Pc, wait_for
 
@@ -157,8 +158,7 @@ def test_an_update_killed_mid_swap_without_app_asks_the_launcher_to_restore_it(p
         assert wait_for(lambda: "sumiu no meio da troca" in pc.supervisor_log(), 60), (
             pc.supervisor_log()
         )
-        assert wait_for((pc.runtime / "stop-reason.txt").exists, 10)
-        assert (pc.runtime / "stop-reason.txt").read_text(encoding="ascii") == "update"
+        assert wait_for(lambda: read_now(pc.runtime / "stop-reason.txt") == "update", 10)
         assert wait_for(lambda: hung_children(marker) == 0, 20)
 
 

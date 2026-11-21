@@ -167,6 +167,18 @@ def read_text_retrying(path: Path, *, encoding: str = "utf-8", seconds: float = 
             time.sleep(0.05)
 
 
+def read_now(path: Path, *, encoding: str = "ascii") -> str:
+    """O arquivo como está agora, ou vazio se ainda não existe ou está aberto por quem escreve.
+
+    O supervisor cria `.blocked-versions`, `.deferred-versions` e `stop-reason.txt` vazios e só
+    depois escreve: quem confere a existência e lê na hora pode pegar o arquivo vazio. Espere o
+    conteúdo com `wait_for(lambda: ... in read_now(...))` em vez de esperar o arquivo existir."""
+    try:
+        return path.read_text(encoding=encoding)
+    except OSError:
+        return ""
+
+
 def kill_tree(process: subprocess.Popen[Any]) -> None:
     """Encerra o processo e os filhos: o `python.exe` do venv no Windows é um lançador que cria o
     interpretador de verdade como filho, e matar só o lançador deixaria o filho vivo."""
