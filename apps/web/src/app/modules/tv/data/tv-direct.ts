@@ -73,6 +73,11 @@ export class TvDirect {
     return this.channel.canUseTv();
   }
 
+  /** As teclas desta tela vão pelo canal agora? A mesma conferência do envio (`command`): o rótulo "Direto" só aparece com ela. */
+  carriesKeys(): boolean {
+    return this.canUse() && this.channel.accepts('tv.key.v3');
+  }
+
   /**
    * Manda a tecla ou o texto pelo canal e espera a resposta do agente: `true` se a TV o executou, `false` se nada saiu e a nuvem deve
    * levar. A falha de verdade (recusa do agente, resposta que não veio) sobe como erro, no mesmo formato da nuvem.

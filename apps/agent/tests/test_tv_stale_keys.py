@@ -561,6 +561,37 @@ async def test_a_direct_key_received_during_the_stall_still_reaches_the_tv() -> 
     assert direct == ["ok"]
 
 
+async def test_repeats_typed_during_a_stall_are_not_merged_while_the_session_opens() -> None:
+    # Uma tecla espera a sessão abrir; dois VOLUME_UP chegam no começo de uma parada de 2 s e a
+    # fila ainda leva 200 ms depois dela: a folga da parada não soma na espera da junção.
+    process, transport, remote, clock = build(loop_progress=True)
+    await process(dump(message("tv.key.v3", {"key": "RIGHT"}, clock)))
+    await asyncio.wait_for(remote.opening.wait(), timeout=1)
+    for _ in range(2):
+        await process(dump(message("tv.key.v3", {"key": "VOLUME_UP"}, clock)))
+    clock.advance(2.0)
+    running(process, clock, 0.2)
+    remote.release.set()
+    await finish_keys(process)
+
+    assert remote.sent == [("RIGHT", "SHORT"), ("VOLUME_UP", "SHORT"), ("VOLUME_UP", "SHORT")]
+    assert results(transport) == ["ok"] * 3
+
+
+async def test_repeats_still_merge_when_the_session_wait_runs_past_the_merge_wait() -> None:
+    process, _transport, remote, clock = build(loop_progress=True)
+    await process(dump(message("tv.key.v3", {"key": "RIGHT"}, clock)))
+    await asyncio.wait_for(remote.opening.wait(), timeout=1)
+    for _ in range(2):
+        await process(dump(message("tv.key.v3", {"key": "VOLUME_UP"}, clock)))
+    clock.advance(2.0)
+    running(process, clock, 0.4)
+    remote.release.set()
+    await finish_keys(process)
+
+    assert remote.sent == [("RIGHT", "SHORT"), ("VOLUME_UP", "SHORT")]
+
+
 def test_a_stall_counts_less_than_the_coalescing_wait() -> None:
     assert SLACK_SECONDS < KEY_COALESCE_AFTER_SECONDS
 
@@ -583,3 +614,5 @@ def test_the_loop_clock_discounts_only_the_stalls() -> None:
     assert progress.elapsed_since(start) == pytest.approx(1.1 + SLACK_SECONDS)
     # Antes do primeiro carimbo não há parada conhecida.
     assert progress.elapsed_since(start - 1.0) == pytest.approx(2.1 + SLACK_SECONDS)
+    # Sem folga nenhuma (a junção): a parada não conta nada.
+    assert progress.elapsed_since(start, strict=True) == pytest.approx(1.1)

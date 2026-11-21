@@ -169,7 +169,7 @@ export class TvStore {
   private readonly api = inject(TvApi);
   /** O canal direto do aparelho: a tela da TV o pede aberto, e ele só leva as teclas com a sessão da TV aberta. */
   private readonly direct = inject(TvDirect);
-  readonly directReady = computed(() => this.direct.canUse());
+  readonly directReady = computed(() => this.direct.carriesKeys());
   private readonly stream = inject(StreamService);
   private readonly connectivity = inject(ConnectivityService);
   /** O comando que fica sem resposta ganha o aviso "A TV não está respondendo" (ver `SlowCommandWatch`). */

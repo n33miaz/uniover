@@ -20,7 +20,7 @@ from uniover_agent.core import (
     tv_text_handler,
 )
 from uniover_agent.core.tv.text_edit import TYPING_KEYS, typing_keys
-from uniover_agent.ports import AdbTimeout, AdbUnauthorized, TvUnreachable
+from uniover_agent.ports import AdbTimeout, AdbUnauthorized, TextFieldStatus, TvUnreachable
 
 Events = list[tuple[str, str]]
 
@@ -258,17 +258,105 @@ async def test_unknown_key_falls_back_to_adb() -> None:
     assert editor.last_text == "x"
 
 
-async def test_remote_failure_falls_back_to_adb_for_the_unsent_suffix() -> None:
+async def test_remote_failure_before_any_key_falls_back_to_adb_for_the_whole_text() -> None:
     clock = FakeClock()
-    remote = DropsAfter(2)
+    remote = DropsAfter(0)
     adb = FakeTvAdb()
     session = TvSessionManager(clock, remote, backoff=())
     editor = TextReconciler(session, monotonic=clock.monotonic, keys=True, sleep=clock.sleep)
     editor.use_adb(adb)
     await editor.set_text("abcd")
-    assert remote.keys == ["TYPE_A", "TYPE_B"]
-    assert adb.typed == ["cd"]
+    assert remote.keys == []
+    assert adb.typed == ["abcd"]
     assert editor.last_text == "abcd"
+
+
+class FieldRemote(FakeTvRemote):
+    """O campo da TV de verdade: `DEL` apaga, letra insere; perde as teclas de `lose` (pacote que
+    ficou no socket quando ele caiu) e o socket cai na tecla `fail_on` enquanto ela estiver
+    marcada. Com `editor`, ecoa o campo a cada tecla aplicada (como a TV faz)."""
+
+    def __init__(self, *, lose: set[str], fail_on: str | None) -> None:
+        super().__init__()
+        self.field = ""
+        self.lose = set(lose)
+        self.fail_on = fail_on
+        self.editor: TextReconciler | None = None
+
+    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+        if key == self.fail_on:
+            raise TvUnreachable("caiu")
+        await super().send_key(key, direction)
+        if key in self.lose:
+            self.lose.discard(key)
+            return
+        if key == "DEL":
+            self.field = self.field[:-1]
+        elif key.startswith("TYPE_"):
+            self.field += key.removeprefix("TYPE_").lower()
+        if self.editor is not None:
+            self.editor.observe_field(TextFieldStatus(self.field, 0, 0, "", counter=1))
+
+
+class FieldAdb(FakeTvAdb):
+    def __init__(self, remote: FieldRemote) -> None:
+        super().__init__()
+        self.remote = remote
+
+    async def input_text(self, text: str) -> None:
+        await super().input_text(text)
+        self.remote.field += text
+
+
+def field_rig(remote: FieldRemote) -> tuple[TextReconciler, FieldAdb]:
+    clock = FakeClock()
+    adb = FieldAdb(remote)
+    session = TvSessionManager(clock, remote, backoff=())
+    editor = TextReconciler(session, monotonic=clock.monotonic, keys=True, sleep=clock.sleep)
+    editor.use_adb(adb)
+    return editor, adb
+
+
+async def test_a_lost_key_before_the_drop_is_never_completed_by_adb_as_if_it_went() -> None:
+    # "b" ficou no socket que caiu e "c" é a primeira tecla a falhar: a TV tem só "a".
+    remote = FieldRemote(lose={"TYPE_B"}, fail_on="TYPE_C")
+    editor, adb = field_rig(remote)
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abcd")
+    # Nada de "cd" pelo ADB (a TV ficaria com "acd" e o agente acharia "abcd").
+    assert adb.typed == []
+    assert remote.field == "a"
+    assert editor.last_text == ""
+
+    # Com o socket de volta, o próximo texto (o app manda sempre o campo inteiro) refaz o campo.
+    remote.fail_on = None
+    await editor.set_text("abcd")
+    assert remote.field == "abcd"
+    assert editor.last_text == "abcd"
+
+
+async def test_the_field_echo_proves_the_keys_and_adb_completes_the_text() -> None:
+    remote = FieldRemote(lose=set(), fail_on="TYPE_C")
+    editor, adb = field_rig(remote)
+    editor.observe_field(TextFieldStatus("", 0, 0, "", counter=1))
+    remote.editor = editor
+    await editor.set_text("abcd")
+    assert adb.typed == ["cd"]
+    assert remote.field == "abcd"
+    assert editor.last_text == "abcd"
+
+
+async def test_an_echo_that_misses_a_key_does_not_prove_the_prefix() -> None:
+    remote = FieldRemote(lose={"TYPE_B"}, fail_on="TYPE_C")
+    editor, adb = field_rig(remote)
+    editor.observe_field(TextFieldStatus("", 0, 0, "", counter=1))
+    remote.editor = editor
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abcd")
+    assert adb.typed == []
+    remote.fail_on = None
+    await editor.set_text("abcd")
+    assert remote.field == "abcd"
 
 
 async def test_the_handler_keeps_the_newest_wins_rule_with_keys_on() -> None:
