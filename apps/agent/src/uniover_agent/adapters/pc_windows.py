@@ -907,20 +907,23 @@ class WindowsPcPower:
         if not self._monitor_off():
             raise OSError("o Windows não conseguiu apagar o monitor")
 
-    def cancel_shutdown(self, countdown_id: str | None = None) -> None:
+    def cancel_shutdown(self, countdown_id: str | None = None) -> bool:
         if not self._can_schedule:
             raise PcUnsupported(_UNSUPPORTED)
         state = self._state
         with state.lock:
             # Conferido sob a mesma trava do temporizador: a contagem não troca no meio.
-            if countdown_id is not None and state.countdown_id != countdown_id:
+            # A mesma contagem já cancelada (no aviso da tela) também não vale: nada a cancelar.
+            ended = state.pending is None and not state.requested
+            if countdown_id is not None and (state.countdown_id != countdown_id or ended):
                 _log.warning(
                     "o cancelamento pedido pelo app não valeu: a contagem que ele mostrava já "
                     "acabou"
                 )
-                return
+                return False
             self._cancel_locked()
         self._abort_windows_countdown()
+        return True
 
     def _abort_windows_countdown(self) -> None:
         # Garantia: cai também a contagem do Windows aberta por uma versão anterior.

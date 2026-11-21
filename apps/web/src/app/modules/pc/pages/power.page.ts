@@ -284,12 +284,16 @@ export class PowerPage {
   protected async cancelCountdown(): Promise<void> {
     tick();
     const shown = this.countdownId;
-    const cancelled = await this.send(() =>
-      shown === null
+    let gone = false;
+    const cancelled = await this.send(async () => {
+      const failure = await (shown === null
         ? this.store.power('CANCEL_SHUTDOWN', false)
-        : this.store.power('CANCEL_SHUTDOWN', false, shown),
-    );
-    if (cancelled) this.countdown.set(null);
+        : this.store.power('CANCEL_SHUTDOWN', false, shown));
+      gone = failure?.kind === 'countdown-gone';
+      return failure;
+    });
+    // A contagem desta tela já acabou: não há mais o que cancelar (a mensagem diz que nada foi cancelado).
+    if (cancelled || gone) this.countdown.set(null);
   }
 
   private run(action: PcPowerAction, confirmed = false): Promise<boolean> {

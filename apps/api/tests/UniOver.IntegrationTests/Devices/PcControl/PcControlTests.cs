@@ -1955,16 +1955,72 @@ public sealed class PcControlTests(PostgresFixture postgres)
         await SendPowerOutcomeAsync(agent, older, "SHUTDOWN", "cancelled");
         var current = await ScheduleAsync(app, agent, "SHUTDOWN", "painel/1.0");
 
-        // O botão ainda aberto de outro celular cancela a contagem que ele mostrava, não a de agora.
+        // O botão ainda aberto de outro celular cancela a contagem que ele mostrava: o agente confere e diz que ela já acabou.
         var cancel = PostAsync(app, "power", new { action = "CANCEL_SHUTDOWN", countdownId = older });
-        await AnswerAsync(agent);
-        (await Within(cancel)).Dispose();
+        await AnswerAsync(agent, Failed("power_countdown_gone"));
+        using (var response = await Within(cancel))
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-power-countdown-gone");
+        }
+
         await SendPowerOutcomeAsync(agent, current, "SHUTDOWN", "refused");
 
         await using var db = app.App.Db();
         await TransportApp.WaitUntilAsync(
             async () => await db.PairingAudit.AnyAsync(a => a.Event == "pc_shutdown_failed", Ct), "falha gravada");
         (await db.PairingAudit.SingleAsync(a => a.Event == "pc_shutdown_failed", Ct)).UserAgent.Should().Be("painel/1.0");
+        // Nada foi cancelado por quem apertou: nenhuma linha de cancelamento além da do PC.
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_shutdown_cancelled" && a.UserId != null, Ct)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Power_AnOlderAgent_NeverGetsABlindCancelForACountdownThatAlreadyEnded()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectPcAsync(app);
+        app.App.Time.Advance(PcControlHandler.CapabilitySettle + TimeSpan.FromSeconds(1));
+        // A foi cancelada no aviso do PC; B foi agendada em outro celular; a primeira tela ainda mostra A.
+        var shown = await ScheduleAsync(app, agent, "SHUTDOWN");
+        await SendPowerOutcomeAsync(agent, shown, "SHUTDOWN", "cancelled");
+        await using var db = app.App.Db();
+        await TransportApp.WaitUntilAsync(
+            async () => await db.PairingAudit.AnyAsync(a => a.Event == "pc_shutdown_cancelled", Ct), "cancelamento no PC gravado");
+        var live = await ScheduleAsync(app, agent, "SHUTDOWN", "painel/1.0");
+
+        using var response = await PostAsync(app, "power", new { action = "CANCEL_SHUTDOWN", countdownId = shown });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-power-countdown-gone");
+        // Nada foi ao agente: o próximo comando é o primeiro que ele recebe.
+        var next = PostAsync(app, "key", new { key = "A" });
+        var command = await AnswerAsync(agent);
+        (await Within(next)).Dispose();
+        command.GetProperty("type").GetString().Should().Be("pc.key.v1");
+        // B segue lembrada, com quem a pediu.
+        await SendPowerOutcomeAsync(agent, live, "SHUTDOWN", "refused");
+        await TransportApp.WaitUntilAsync(
+            async () => await db.PairingAudit.AnyAsync(a => a.Event == "pc_shutdown_failed", Ct), "falha gravada");
+        (await db.PairingAudit.SingleAsync(a => a.Event == "pc_shutdown_failed", Ct)).UserAgent.Should().Be("painel/1.0");
+    }
+
+    [Fact]
+    public async Task Power_AResendTwentyMinutesAfterALostAck_IsConfirmedWithoutASecondLine()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, OutcomeAck);
+        var countdown = await ScheduleAsync(app, agent, "SHUTDOWN");
+
+        await SendPowerOutcomeAsync(agent, countdown, "SHUTDOWN", "refused");
+        (await Within(agent.ReceiveAsync()))!.Value.GetProperty("type").GetString().Should().Be("pc.power.outcome.ack.v1");
+
+        // A confirmação se perdeu e o agente só volta 20 minutos depois (a lembrança da contagem já venceu).
+        app.App.Time.Advance(TimeSpan.FromMinutes(20));
+        await SendPowerOutcomeAsync(agent, countdown, "SHUTDOWN", "refused");
+        (await Within(agent.ReceiveAsync()))!.Value.GetProperty("type").GetString().Should().Be("pc.power.outcome.ack.v1");
+
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_shutdown_failed", Ct)).Should().Be(1);
     }
 
     [Theory]

@@ -20,6 +20,7 @@ export type PcFailureKind =
   | 'not-found'
   | 'invalid'
   | 'key-unsupported'
+  | 'countdown-gone'
   | 'cancelled'
   | 'unknown';
 
@@ -31,6 +32,9 @@ export const RECONNECTING_PROBLEM = 'agent-reconnecting';
  * deste PC é de antes dela. Nada foi enviado: a pessoa precisa atualizar o agente.
  */
 export const KEY_UNSUPPORTED_PROBLEM = 'pc-key-unsupported';
+
+/** `type` (sufixo) do 409 do cancelamento de uma contagem que já acabou: nada foi cancelado, e a que estiver correndo segue. */
+export const COUNTDOWN_GONE_PROBLEM = 'pc-power-countdown-gone';
 
 /**
  * O que um pedido devolve quando desistiu por conta própria (a conta mudou antes da vez dele): não é falha do PC, não tem
@@ -156,6 +160,12 @@ export function pcFailureOf(error: unknown): PcFailure {
     return {
       kind: 'key-unsupported',
       message: $localize`:@@pc.error.key-unsupported:Este computador precisa de uma atualização para fazer isso.`,
+    };
+  }
+  if (problem.status === 409 && problem.kind === COUNTDOWN_GONE_PROBLEM) {
+    return {
+      kind: 'countdown-gone',
+      message: $localize`:@@pc.error.countdown-gone:Essa contagem já terminou. Nada foi cancelado.`,
     };
   }
   if (problem.status === 409) {

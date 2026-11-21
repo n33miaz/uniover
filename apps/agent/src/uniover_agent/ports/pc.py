@@ -130,10 +130,10 @@ class PcPower(Protocol):
         do comando que a pediu): volta à API no desfecho, para ela saber de qual se trata."""
         ...
 
-    def cancel_shutdown(self, countdown_id: str | None = None) -> None:
+    def cancel_shutdown(self, countdown_id: str | None = None) -> bool:
         """Cancela a contagem (de desligar ou reiniciar); sem contagem em andamento não é erro. Com
-        `countdown_id`, só cancela se a contagem em andamento for essa: com outra, não faz nada
-        (o app mostrava uma contagem que já acabou, e a de agora é de outro pedido)."""
+        `countdown_id`, só cancela se a contagem em andamento for essa: com outra (ou nenhuma), não
+        faz nada e devolve `False` (o app mostrava uma contagem que já acabou)."""
         ...
 
     def restart(self, delay_seconds: int, countdown_id: str = "") -> None:

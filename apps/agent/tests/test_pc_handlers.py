@@ -91,8 +91,9 @@ class FakePower:
         self.calls.append(("shutdown", delay_seconds))
         self.countdowns.append(countdown_id)
 
-    def cancel_shutdown(self, countdown_id: str | None = None) -> None:
+    def cancel_shutdown(self, countdown_id: str | None = None) -> bool:
         self.calls.append(("cancel", countdown_id))
+        return countdown_id != "gone"
 
     def restart(self, delay_seconds: int, countdown_id: str = "") -> None:
         self.calls.append(("restart", delay_seconds))
@@ -232,6 +233,16 @@ async def test_the_cancel_carries_the_countdown_the_app_shows() -> None:
     body = {"action": "CANCEL_SHUTDOWN", "countdownId": "cmd-1"}
     await handler(Command("cmd-2", "pc.power.v1", body))
     assert power.calls == [("cancel", "cmd-1")]
+
+
+async def test_a_cancel_of_a_countdown_that_already_ended_says_nothing_was_cancelled() -> None:
+    power = FakePower()
+    handler = pc_power_handler(power, shutdown_delay_seconds=30)
+    result = await handler(
+        Command("cmd-3", "pc.power.v1", {"action": "CANCEL_SHUTDOWN", "countdownId": "gone"})
+    )
+    assert result.status is ResultStatus.REJECTED
+    assert result.code == "power_countdown_gone"
 
 
 async def test_sleep_answers_first_and_suspends_afterwards() -> None:

@@ -419,6 +419,20 @@ internal static class PcProblems
 
     public const string KeyUnsupportedType = "pc-key-unsupported";
 
+    public const string CountdownGoneType = "pc-power-countdown-gone";
+
+    /// <summary>O código do agente para o cancelamento de uma contagem que não é a que está correndo (nada foi cancelado).</summary>
+    public const string CountdownGoneCode = "power_countdown_gone";
+
+    /// <summary>
+    /// O cancelamento era de uma contagem que já acabou (cancelada no PC, recusada, perdida) ou que a API não sabe estar correndo naquele
+    /// agente: nada foi cancelado, e a contagem que estiver correndo segue. A tela para de oferecer o botão.
+    /// </summary>
+    public static IResult CountdownGone() => Results.Problem(
+        statusCode: StatusCodes.Status409Conflict,
+        title: "Essa contagem já terminou. Nada foi cancelado.",
+        type: ProblemDetailsExtensions.TypeBase + CountdownGoneType);
+
     /// <summary>
     /// O pedido precisa de uma mensagem v2 (<c>pc.key.v2</c>, <c>pc.text.v2</c> ou <c>pc.click.v2</c>: tecla nova, repetição, segurar, apagar e digitar, clique com modificador) e o agente deste PC é de antes
     /// dela: nada é enviado (o esquema fechado dele recusaria a mensagem e o toque morreria sem explicação). A tela mostra

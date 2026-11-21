@@ -129,18 +129,28 @@ def test_the_app_cancels_only_the_countdown_it_shows(power_timers: list[FakeTime
     power = WindowsPcPower(run=exits_with(0, calls))
     power.restart(30, countdown_id="cmd-2")
     # O botão ainda aberto de uma contagem que já acabou nunca cancela a de outro pedido.
-    power.cancel_shutdown("cmd-1")
+    assert power.cancel_shutdown("cmd-1") is False
     assert not power_timers[0].cancelled
     assert calls == [], "nem a garantia do Windows sai: a contagem viva é de outro pedido"
-    power.cancel_shutdown("cmd-2")
+    assert power.cancel_shutdown("cmd-2") is True
     assert power_timers[0].cancelled
     assert calls == [["/a"]]
+
+
+def test_a_countdown_cancelled_on_the_pc_is_not_cancelled_again_by_the_app(
+    power_timers: list[FakeTimer],
+) -> None:
+    calls: list[list[str]] = []
+    power = WindowsPcPower(run=exits_with(0, calls))
+    power.shutdown(30, countdown_id="cmd-1")
+    assert power.cancel_shutdown("cmd-1") is True
+    assert power.cancel_shutdown("cmd-1") is False
 
 
 def test_a_cancel_with_an_id_and_no_countdown_does_nothing(power_timers: list[FakeTimer]) -> None:
     calls: list[list[str]] = []
     power = WindowsPcPower(run=exits_with(0, calls))
-    power.cancel_shutdown("cmd-1")
+    assert power.cancel_shutdown("cmd-1") is False
     assert calls == []
 
 

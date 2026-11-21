@@ -4,8 +4,10 @@ from pathlib import Path
 
 import pytest
 
+from uniover_agent.adapters import power_countdown_file
 from uniover_agent.adapters.power_countdown_file import (
     LOST_CAPACITY,
+    LOST_KEEP_SECONDS,
     POWER_COUNTDOWN_FILE,
     POWER_COUNTDOWN_LOST_FILE,
     PowerCountdownFile,
@@ -108,3 +110,37 @@ def test_a_disk_that_refuses_never_raises(tmp_path: Path, caplog: pytest.LogCapt
     marker.confirm_lost("cid-2")
     assert marker.take_lost() == []
     assert "não consegui marcar a contagem" in caplog.text
+
+
+def test_a_lost_countdown_waits_for_the_api_one_day_at_most(tmp_path: Path) -> None:
+    clock = [1_000_000.0]
+    PowerCountdownFile(tmp_path, pid=lambda: 100).save("SHUTDOWN", "cid-1")
+    marker = PowerCountdownFile(tmp_path, pid=lambda: 200, now=lambda: clock[0])
+    assert marker.take_lost() == [("SHUTDOWN", "cid-1")]
+    clock[0] += LOST_KEEP_SECONDS - 1
+    assert marker.take_lost() == [("SHUTDOWN", "cid-1")]
+    # Passado um dia, a API já esqueceu o que gravou: um reenvio viraria outra linha.
+    clock[0] += 2
+    assert marker.take_lost() == []
+
+
+def test_the_confirmation_also_clears_the_mark_used_when_the_list_could_not_be_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    PowerCountdownFile(tmp_path, pid=lambda: 100).save("SHUTDOWN", "cid-1")
+    marker = PowerCountdownFile(tmp_path, pid=lambda: 200)
+    real_write = PowerCountdownFile._write
+
+    def refuse_list(path: Path, data: object) -> bool:
+        return False if path.name == POWER_COUNTDOWN_LOST_FILE else real_write(path, data)
+
+    monkeypatch.setattr(
+        power_countdown_file.PowerCountdownFile, "_write", staticmethod(refuse_list)
+    )
+    assert marker.take_lost() == [("SHUTDOWN", "cid-1")]
+    assert (tmp_path / POWER_COUNTDOWN_FILE).exists(), "sem a lista, a marca fica"
+    marker.confirm_lost("outra")
+    assert (tmp_path / POWER_COUNTDOWN_FILE).exists()
+    marker.confirm_lost("cid-1")
+    assert not (tmp_path / POWER_COUNTDOWN_FILE).exists()
+    assert marker.take_lost() == []
