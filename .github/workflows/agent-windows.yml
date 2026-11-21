@@ -96,6 +96,23 @@ jobs:
             throw ("testes obrigatórios do Windows foram pulados:" + [Environment]::NewLine + ($skipped -join [Environment]::NewLine))
           }
 
+          # Os testes do Agendador valem pelo nome: cada um tem de estar no relatório e ter passado. Sem isto, renomear ou
+          # apagar um deles faria a lista acima não casar com nada e o job passaria sem ter rodado o teste.
+          $schedulerProblems = foreach ($name in $schedulerTests) {
+            $cases = @($report.SelectNodes('//testcase') | Where-Object {
+              ($_.GetAttribute('classname') -creplace '^tests\.([^.]+)(\..*)?$', '$1') -ceq 'test_update_path' -and
+              ($_.GetAttribute('name') -creplace '\[.*$', '') -ceq $name
+            })
+            if ($cases.Count -eq 0) { "$name (ausente do relatório)"; continue }
+            if (@($cases | Where-Object { $_.SelectSingleNode('skipped|failure|error') }).Count -gt 0) {
+              "$name (não passou)"
+            }
+          }
+          if ($schedulerProblems) {
+            throw ("testes obrigatórios do Agendador ausentes ou sem aprovação:" + [Environment]::NewLine +
+                   ($schedulerProblems -join [Environment]::NewLine))
+          }
+
           # O relatório único do xdist precisa registrar pelo menos um teste aprovado de cada módulo.
           $passedModules = $passed |
             ForEach-Object { $_.GetAttribute('classname') -creplace '^(tests\.[^.]+)\..*', '$1' }
