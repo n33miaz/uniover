@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using UniOver.BuildingBlocks.Persistence;
 using UniOver.Modules.Devices.Domain;
 using UniOver.Modules.Devices.Persistence;
 using UniOver.Modules.Devices.Security;
@@ -9,28 +11,18 @@ namespace UniOver.Modules.Devices.Features.PcControl;
 /// As contagens de desligar ou reiniciar que o agente aceitou há pouco, pelo identificador opaco de cada uma (o <c>id</c> do comando
 /// <c>pc.power</c> que a agendou): quem pediu, de onde, e qual é a mais recente de cada agente. O agente só avisa o desfecho depois
 /// (<c>pc.power.outcome.v1</c>, com o mesmo identificador), já sem o pedido HTTP: a pessoa da linha de auditoria sai daqui, e só da
-/// contagem certa (um desfecho atrasado de outra contagem nunca leva a pessoa errada). Cada desfecho (pela contagem e pelo desfecho) é
-/// gravado uma vez: quem grava o reserva antes (<see cref="Claim"/>), o marca como gravado só depois de a linha de auditoria ser salva
-/// (<see cref="Recorded"/>) e o devolve se a gravação falhou (<see cref="Release"/>), para o reenvio do agente gravá-lo. Em memória e da
-/// instância: com a API reiniciada, a falha ainda é gravada, só sem a pessoa.
+/// contagem certa (um desfecho atrasado de outra contagem nunca leva a pessoa errada). Em memória e da instância: com a API reiniciada,
+/// a falha ainda é gravada, só sem a pessoa. Saber se um desfecho já foi gravado NÃO é daqui: é do banco
+/// (<see cref="Domain.PcPowerOutcomeReceipt"/>), que sobrevive ao reinício e vale para qualquer instância.
 /// </summary>
 internal sealed class PcPowerCountdowns(TimeProvider time)
 {
     /// <summary>Bem mais que a contagem mais longa do agente (e que os 5 min em que o app oferece cancelar).</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(15);
 
-    /// <summary>
-    /// Por quanto tempo o desfecho gravado é lembrado: um pouco mais que o dia em que o agente segue reenviando o que não teve confirmação
-    /// (na memória e na marca em disco da contagem perdida). Um reenvio dentro dessa janela nunca vira outra linha na auditoria. Limite
-    /// conhecido: a lembrança é desta instância; uma API reiniciada (ou outra instância) aceitaria o reenvio como novo.
-    /// </summary>
-    public static readonly TimeSpan RecordedLifetime = TimeSpan.FromHours(25);
-
     private readonly object _gate = new();
     private readonly Dictionary<Guid, PcPowerCountdown> _countdowns = [];
     private readonly Dictionary<string, Guid> _latest = new(StringComparer.Ordinal);
-    private readonly Dictionary<(Guid CountdownId, string Outcome), DateTimeOffset> _recorded = [];
-    private readonly HashSet<(Guid CountdownId, string Outcome)> _recording = [];
 
     public void Scheduled(string agentSlug, Guid countdownId, PcPowerCountdown countdown)
     {
@@ -84,45 +76,6 @@ internal sealed class PcPowerCountdowns(TimeProvider time)
         }
     }
 
-    /// <summary>
-    /// Reserva a gravação do desfecho <paramref name="outcome"/> da contagem: <see cref="PcPowerOutcomeClaim.Mine"/> (grave e chame
-    /// <see cref="Recorded"/> ou <see cref="Release"/>), <see cref="PcPowerOutcomeClaim.Recorded"/> (já gravado: o agente reenviou) ou
-    /// <see cref="PcPowerOutcomeClaim.Busy"/> (outro envio está gravando agora).
-    /// </summary>
-    public PcPowerOutcomeClaim Claim(Guid countdownId, string outcome)
-    {
-        lock (_gate)
-        {
-            Prune();
-            var key = (countdownId, outcome);
-            if (_recorded.ContainsKey(key))
-            {
-                return PcPowerOutcomeClaim.Recorded;
-            }
-
-            return _recording.Add(key) ? PcPowerOutcomeClaim.Mine : PcPowerOutcomeClaim.Busy;
-        }
-    }
-
-    /// <summary>A linha de auditoria do desfecho foi salva: reenvios dele não gravam de novo.</summary>
-    public void Recorded(Guid countdownId, string outcome)
-    {
-        lock (_gate)
-        {
-            _recording.Remove((countdownId, outcome));
-            _recorded[(countdownId, outcome)] = time.GetUtcNow();
-        }
-    }
-
-    /// <summary>A gravação falhou: o reenvio do agente pode gravar o desfecho.</summary>
-    public void Release(Guid countdownId, string outcome)
-    {
-        lock (_gate)
-        {
-            _recording.Remove((countdownId, outcome));
-        }
-    }
-
     /// <summary>A contagem <paramref name="countdownId"/> daquele agente, se ainda vale; fica aqui (ver <see cref="Take"/>).</summary>
     public PcPowerCountdown? Peek(string agentSlug, Guid countdownId)
     {
@@ -157,11 +110,6 @@ internal sealed class PcPowerCountdowns(TimeProvider time)
         foreach (var id in _countdowns.Where(c => now - c.Value.At > Lifetime).Select(c => c.Key).ToList())
         {
             _countdowns.Remove(id);
-        }
-
-        foreach (var key in _recorded.Where(r => now - r.Value > RecordedLifetime).Select(r => r.Key).ToList())
-        {
-            _recorded.Remove(key);
         }
     }
 }
@@ -210,14 +158,6 @@ internal sealed class PcPowerNotices(TimeProvider time)
 /// </summary>
 internal sealed record PcPowerNotice(Guid CountdownId, string Action, string Outcome, DateTimeOffset At);
 
-/// <summary>A reserva da gravação de um desfecho (ver <see cref="PcPowerCountdowns.Claim"/>).</summary>
-internal enum PcPowerOutcomeClaim
-{
-    Mine,
-    Recorded,
-    Busy,
-}
-
 /// <summary>Uma contagem aceita pelo agente: o agente (Guid), quem pediu, de onde, e a ação (<c>SHUTDOWN</c> ou <c>RESTART</c>).</summary>
 internal sealed record PcPowerCountdown(
     Guid AgentId, Guid UserId, ClientInfo Client, string Action, string Slug = "", DateTimeOffset At = default);
@@ -225,17 +165,29 @@ internal sealed record PcPowerCountdown(
 /// <summary>
 /// O desfecho que o agente avisou (<c>pc.power.outcome.v1</c>): a contagem não terminou no pedido. Recusada ou perdida vira a linha de
 /// falha da ação, com quem pediu quando a instância ainda lembra daquela contagem; cancelada no PC vira o cancelamento, sem pessoa (foi
-/// quem estava no PC). A contagem só é marcada como gravada, a pessoa só é consumida e o app só fica sabendo depois de a linha ser salva:
-/// se a gravação falha, nada disso acontece e o reenvio do agente grava. Um reenvio do que já foi gravado não grava de novo.
+/// quem estava no PC).
+/// <para>
+/// Cada desfecho (agente, contagem e desfecho) é gravado uma vez, e quem decide é o banco: o recibo
+/// (<see cref="PcPowerOutcomeReceipt"/>) entra com <c>ON CONFLICT DO NOTHING</c> na mesma transação da linha de auditoria. Só quem de
+/// fato incluiu o recibo grava a auditoria e avisa o app; um reenvio (mesmo depois de a API reiniciar, ou em outra instância) não
+/// inclui nada e só é confirmado. Dois envios iguais ao mesmo tempo: o segundo espera o índice único até o primeiro terminar; se o
+/// primeiro falhou (transação desfeita, sem recibo), o segundo grava. A pessoa só é consumida e o app só fica sabendo depois da
+/// transação confirmada: se a gravação falha, nada disso acontece e o reenvio do agente grava.
+/// </para>
+/// <para>
+/// O aviso ao app (<see cref="PcPowerNotices"/>) é volátil: fica na memória da instância e sai depois da transação. Se a API cair
+/// entre a confirmação e o aviso, o reenvio encontra o recibo, é confirmado e não avisa de novo. O que fica garantido no banco é o
+/// recibo e a linha de auditoria.
+/// </para>
 /// </summary>
 internal sealed class PcPowerOutcomeRecorder(
-    PcPowerCountdowns countdowns, PairingAuditWriter audit, DevicesDbContext db, PcPowerNotices? notices = null)
+    PcPowerCountdowns countdowns, PairingAuditWriter audit, DevicesDbContext db, TimeProvider time, PcPowerNotices? notices = null)
 {
     /// <summary>
-    /// Grava o desfecho. <c>true</c> quando ele está resolvido (gravado agora, já gravado antes, ou sem como gravar, como um agente que não
-    /// existe mais): o agente pode esquecê-lo. <c>false</c> quando outro envio do mesmo desfecho ainda está gravando. Falha do banco sobe.
+    /// Grava o desfecho, se ainda não foi gravado. Ao voltar, ele está resolvido (gravado agora, já gravado antes, ou sem como gravar,
+    /// como um agente que não existe mais) e o agente pode esquecê-lo. Falha do banco sobe, sem nada gravado.
     /// </summary>
-    public async Task<bool> RecordAsync(string agentSlug, PcPowerNotice outcome, CancellationToken cancellationToken)
+    public async Task RecordAsync(string agentSlug, PcPowerNotice outcome, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(outcome);
         var cancelled = string.Equals(outcome.Outcome, "cancelled", StringComparison.Ordinal);
@@ -248,44 +200,26 @@ internal sealed class PcPowerOutcomeRecorder(
         };
         if (auditEvent is null)
         {
-            return true;
+            return;
         }
 
-        switch (countdowns.Claim(outcome.CountdownId, outcome.Outcome))
+        var countdown = countdowns.Peek(agentSlug, outcome.CountdownId);
+        // Sem a lembrança (API reiniciada, contagem velha, ação diferente): fica na trilha do agente, sem a pessoa.
+        if (countdown is not null && !string.Equals(countdown.Action, outcome.Action, StringComparison.Ordinal))
         {
-            case PcPowerOutcomeClaim.Recorded:
-                return true;
-            case PcPowerOutcomeClaim.Busy:
-                return false;
+            countdown = null;
         }
 
-        try
+        var agentId = countdown?.AgentId ?? await db.Agents.AsNoTracking()
+            .Where(a => a.Slug == agentSlug)
+            .Select(a => (Guid?)a.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (agentId is not null && !await RecordOnceAsync(agentId.Value, outcome, auditEvent, cancelled ? null : countdown, cancellationToken))
         {
-            var countdown = countdowns.Peek(agentSlug, outcome.CountdownId);
-            // Sem a lembrança (API reiniciada, contagem velha, ação diferente): fica na trilha do agente, sem a pessoa.
-            if (countdown is not null && !string.Equals(countdown.Action, outcome.Action, StringComparison.Ordinal))
-            {
-                countdown = null;
-            }
-
-            var agentId = countdown?.AgentId ?? await db.Agents.AsNoTracking()
-                .Where(a => a.Slug == agentSlug)
-                .Select(a => (Guid?)a.Id)
-                .SingleOrDefaultAsync(cancellationToken);
-            if (agentId is not null)
-            {
-                var person = cancelled ? null : countdown;
-                audit.Add(auditEvent, person?.Client ?? new ClientInfo(null, null), agentId: agentId, userId: person?.UserId);
-                await db.SaveChangesAsync(cancellationToken);
-            }
-        }
-        catch
-        {
-            countdowns.Release(outcome.CountdownId, outcome.Outcome);
-            throw;
+            // Já gravado antes (o agente reenviou porque a confirmação se perdeu): nada de nova linha nem de novo aviso.
+            return;
         }
 
-        countdowns.Recorded(outcome.CountdownId, outcome.Outcome);
         // Só o desfecho da contagem mais recente chega ao app: um atrasado nunca esconde o "cancelar" de outra que segue viva.
         if (countdowns.IsCurrent(agentSlug, outcome.CountdownId))
         {
@@ -293,6 +227,60 @@ internal sealed class PcPowerOutcomeRecorder(
         }
 
         countdowns.Take(agentSlug, outcome.CountdownId);
+    }
+
+    /// <summary>
+    /// Inclui o recibo e, só se ele entrou agora, a linha de auditoria, numa transação. <c>false</c> quando o recibo já existia.
+    /// </summary>
+    private async Task<bool> RecordOnceAsync(
+        Guid agentId, PcPowerNotice outcome, string auditEvent, PcPowerCountdown? person, CancellationToken cancellationToken)
+    {
+        var now = time.GetUtcNow();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var inserted = await db.Database.ExecuteSqlAsync(
+            $"""
+            INSERT INTO devices.pc_power_outcome_receipts (agent_id, countdown_id, outcome, recorded_at)
+            VALUES ({agentId}, {outcome.CountdownId}, {outcome.Outcome}, {now})
+            ON CONFLICT DO NOTHING
+            """,
+            cancellationToken);
+        if (inserted == 0)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        audit.Add(auditEvent, person?.Client ?? new ClientInfo(null, null), agentId: agentId, userId: person?.UserId);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return true;
+    }
+}
+
+/// <summary>
+/// Apaga os recibos de desfecho de energia que passaram de <see cref="PcPowerOutcomeReceipt.Retention"/>. Entra na lista do serviço de
+/// retenção que já existe (<c>AuditPurge</c>, um despertar por dia): sem laço próprio, para o banco gratuito poder dormir. Com a limpeza
+/// diária, um recibo dura entre 25 h e pouco mais de dois dias; são poucas linhas pequenas.
+/// </summary>
+internal static class PcPowerOutcomeRetention
+{
+    public const string JobName = "devices_pc_power_outcomes";
+
+    public static async Task<int> PurgeExpiredAsync(DevicesDbContext db, TimeProvider time, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(time);
+        var floor = time.GetUtcNow() - PcPowerOutcomeReceipt.Retention;
+        return await db.PcPowerOutcomeReceipts.Where(r => r.RecordedAt < floor).ExecuteDeleteAsync(cancellationToken);
+    }
+
+    public static IServiceCollection AddPcPowerOutcomeRetention(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.AddSingleton(new AuditPurgeJob(
+            JobName,
+            async (provider, cancellationToken) => await PurgeExpiredAsync(
+                provider.GetRequiredService<DevicesDbContext>(), provider.GetRequiredService<TimeProvider>(), cancellationToken)));
+        return services;
     }
 }

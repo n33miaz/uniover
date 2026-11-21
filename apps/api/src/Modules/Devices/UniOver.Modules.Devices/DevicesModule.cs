@@ -123,6 +123,8 @@ public static class DevicesModule
         services.AddSingleton<PcPowerCountdowns>();
         services.AddSingleton<PcPowerNotices>();
         services.AddScoped<PcPowerOutcomeRecorder>();
+        // Os recibos de desfecho de energia vencidos saem no mesmo serviço de retenção diário.
+        services.AddPcPowerOutcomeRetention();
         services.AddSingleton<PcTargetCache>();
         services.AddSingleton<PcKeyBudget>();
         services.AddScoped<IIntegrationEventHandler<AgentRevoked>, PcAgentRevokedInvalidator>();

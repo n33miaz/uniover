@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
+using UniOver.BuildingBlocks.Persistence;
 using UniOver.BuildingBlocks.Web;
 using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Devices.Transport;
@@ -15,6 +16,7 @@ using UniOver.IntegrationTests.Identity.Guests;
 using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Devices;
 using UniOver.Modules.Devices.Features.PcControl;
+using UniOver.Modules.Devices.Persistence;
 using UniOver.Modules.Identity.Domain;
 using UniOver.Modules.Identity.Persistence;
 
@@ -2125,6 +2127,100 @@ public sealed class PcControlTests(PostgresFixture postgres)
                 throw new InvalidOperationException("gravação recusada no teste");
             }
         }
+    }
+
+    /// <summary>
+    /// Grava o desfecho como outra instância da API faria (ou esta mesma depois de reiniciar): memória vazia, escopo e conexão próprios,
+    /// o mesmo banco. <paramref name="notices"/> é o estado de avisos dessa outra instância (um novo, se omitido).
+    /// </summary>
+    private static async Task RecordOnAnotherInstanceAsync(
+        TransportApp app, Guid countdownId, string action, string outcome, PcPowerNotices? notices = null)
+    {
+        await using var scope = app.App.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<DevicesDbContext>();
+        var time = app.App.Time;
+        var recorder = new PcPowerOutcomeRecorder(
+            new PcPowerCountdowns(time), new UniOver.Modules.Devices.Security.PairingAuditWriter(db, time), db, time,
+            notices ?? new PcPowerNotices(time));
+        await recorder.RecordAsync(app.Agent.Slug, new PcPowerNotice(countdownId, action, outcome, time.GetUtcNow()), Ct);
+    }
+
+    [Fact]
+    public async Task Power_AResendAfterTheApiRestarted_IsConfirmed_WithoutASecondLineNorANotice()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Capability, OutcomeAck);
+        var countdown = await ScheduleAsync(app, agent, "SHUTDOWN");
+
+        // A instância que gravou o desfecho publicou o aviso e caiu antes de a confirmação chegar ao agente.
+        var firstNotices = new PcPowerNotices(app.App.Time);
+        await RecordOnAnotherInstanceAsync(app, countdown, "SHUTDOWN", "refused", firstNotices);
+        var published = firstNotices.Get(app.Agent.Slug);
+        published.Should().NotBeNull("a instância que gravou avisa o app");
+        published!.CountdownId.Should().Be(countdown);
+        published.Outcome.Should().Be("refused");
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_shutdown_failed", Ct)).Should().Be(1);
+
+        // A instância de agora não sabe nada desse desfecho na memória: o agente reenvia, ela confirma e não grava de novo.
+        await SendPowerOutcomeAsync(agent, countdown, "SHUTDOWN", "refused");
+        var ack = (await Within(agent.ReceiveAsync()))!.Value;
+        ack.GetProperty("type").GetString().Should().Be("pc.power.outcome.ack.v1");
+        ack.GetProperty("body").GetProperty("countdownId").GetGuid().Should().Be(countdown);
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_shutdown_failed", Ct)).Should().Be(1);
+        (await PowerOfStatusAsync(app)).ValueKind.Should().Be(JsonValueKind.Null, "o aviso já saiu na instância que gravou");
+
+        // Mais um reinício: de novo nada.
+        await RecordOnAnotherInstanceAsync(app, countdown, "SHUTDOWN", "refused");
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_shutdown_failed", Ct)).Should().Be(1);
+        (await db.PcPowerOutcomeReceipts.CountAsync(Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Power_TheSameOutcomeArrivingTwiceAtOnce_IsAuditedOnce()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var countdown = Guid.CreateVersion7();
+
+        // Instâncias distintas, cada uma com a sua conexão: só o banco decide quem grava.
+        await Race.RunTogetherAsync(
+            4,
+            async _ =>
+            {
+                await RecordOnAnotherInstanceAsync(app, countdown, "RESTART", "lost");
+                return true;
+            },
+            Ct);
+
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_restart_failed", Ct)).Should().Be(1);
+        (await db.PcPowerOutcomeReceipts.CountAsync(Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Power_TheDailyCleanup_RemovesOnlyTheReceiptsOlderThanTwentyFiveHours()
+    {
+        await using var app = await TransportApp.StartAsync(postgres);
+        var old = Guid.CreateVersion7();
+        var recent = Guid.CreateVersion7();
+        await RecordOnAnotherInstanceAsync(app, old, "SHUTDOWN", "lost");
+        app.App.Time.Advance(TimeSpan.FromMinutes(2));
+        await RecordOnAnotherInstanceAsync(app, recent, "SHUTDOWN", "lost");
+
+        // O primeiro recibo passa das 25 h por um segundo; o segundo ainda tem um minuto e pouco.
+        app.App.Time.Advance(UniOver.Modules.Devices.Domain.PcPowerOutcomeReceipt.Retention - TimeSpan.FromMinutes(2) + TimeSpan.FromSeconds(1));
+        var results = await app.App.Services.GetRequiredService<AuditPurgeService>().RunOnceAsync(Ct);
+
+        // O laço do serviço também pode ter rodado com o relógio adiantado: vale o que sobrou na tabela.
+        results.Single(r => r.Name == PcPowerOutcomeRetention.JobName).Succeeded.Should().BeTrue();
+        await using var db = app.App.Db();
+        (await db.PcPowerOutcomeReceipts.Select(r => r.CountdownId).ToListAsync(Ct)).Should().Equal(recent);
+        // A trilha de auditoria não é tocada por esta limpeza.
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_shutdown_failed", Ct)).Should().Be(2);
+
+        // O recibo que ficou segue barrando o reenvio.
+        await RecordOnAnotherInstanceAsync(app, recent, "SHUTDOWN", "lost");
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_shutdown_failed", Ct)).Should().Be(2);
     }
 
     [Fact]
