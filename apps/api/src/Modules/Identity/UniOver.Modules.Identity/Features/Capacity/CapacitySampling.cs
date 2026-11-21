@@ -34,6 +34,17 @@ internal static class CapacitySampling
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(time);
 
+        // A trava vale para todas as datas: a limpeza e os avisos abertos são compartilhados entre elas.
+        // Se outra instância já estiver amostrando, sai antes da consulta de tamanho do banco.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var acquired = await db.Database.SqlQuery<bool>(
+            $"SELECT pg_try_advisory_xact_lock(hashtextextended({JobName}, 0)) AS \"Value\"")
+            .SingleAsync(cancellationToken);
+        if (!acquired)
+        {
+            return 0;
+        }
+
         var now = time.GetUtcNow();
         var today = DateOnly.FromDateTime(now.UtcDateTime);
         var size = await DatabaseSizeReader.ReadAsync(db, [.. modules.Registrations.Select(r => r.Schema)], 1, cancellationToken);
@@ -65,6 +76,7 @@ internal static class CapacitySampling
             },
             now,
             cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return removed;
     }
 

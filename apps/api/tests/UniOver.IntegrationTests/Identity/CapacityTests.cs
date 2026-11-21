@@ -305,23 +305,32 @@ public sealed class CapacityTests(PostgresFixture postgres)
     [Fact]
     public async Task TwoProcessesSamplingTheSameDayAtOnce_LeaveOneSampleAndOneAlertPerMetric()
     {
-        await using var first = await IdentityApp.StartAsync(postgres, With(("DatabaseLimitBytes", "1024")));
+        var options = With(("DatabaseLimitBytes", "1024"), ("ServicesInWorkspace", "2"));
+        await using var first = await IdentityApp.StartAsync(postgres, options);
         await using var second = await IdentityApp.StartAsync(
             postgres, new IdentityAppOptions
             {
                 Database = first.Database,
                 Start = first.Time.GetUtcNow(),
-                Extra = new Dictionary<string, string?> { ["Modules:Identity:Capacity:DatabaseLimitBytes"] = "1024" },
+                Extra = options.Extra,
             });
 
-        // Seis execuções, três em cada processo, liberadas juntas pela mesma barreira: a corrida que dois deploys podem produzir.
-        var results = await Race.RunTogetherAsync(6, i => RunJobAsync(i % 2 == 0 ? first : second), Ct);
-
-        results.Should().OnlyContain(r => r.Succeeded);
         await using var db = first.Db();
-        (await db.CapacitySamples.AsNoTracking().CountAsync(Ct)).Should().Be(1);
-        var open = await db.CapacityAlerts.AsNoTracking().Where(a => a.RecoveredAt == null).Select(a => a.Metric).ToListAsync(Ct);
-        open.Should().OnlyHaveUniqueItems().And.Contain("database");
+        for (var attempt = 1; attempt <= 20; attempt++)
+        {
+            // Cada disputa parte sem amostra e sem avisos, com duas métricas no vermelho.
+            await db.CapacityAlerts.ExecuteDeleteAsync(Ct);
+            await db.CapacitySamples.ExecuteDeleteAsync(Ct);
+
+            // Seis execuções, três em cada processo, liberadas juntas pela mesma barreira.
+            var results = await Race.RunTogetherAsync(6, i => RunJobAsync(i % 2 == 0 ? first : second), Ct);
+
+            results.Should().OnlyContain(r => r.Succeeded, "a disputa {0} deve terminar sem falhas", attempt);
+            (await db.CapacitySamples.AsNoTracking().CountAsync(Ct)).Should().Be(1);
+            var open = await db.CapacityAlerts.AsNoTracking()
+                .Where(a => a.RecoveredAt == null).Select(a => a.Metric).ToListAsync(Ct);
+            open.Should().OnlyHaveUniqueItems().And.Contain(["database", "hours"]);
+        }
     }
 
     [Fact]
