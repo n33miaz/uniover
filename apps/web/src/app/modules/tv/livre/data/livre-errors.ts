@@ -137,6 +137,12 @@ export function describeLivreFailure(error: unknown): LivreFailure {
       code,
     };
   }
+  if (problem?.status === 409 && problem.kind === 'tv-livre-sleep-agent-update-required') {
+    return {
+      message: $localize`:@@tv-livre.error.sleep-agent-update-required:Peça ao dono para atualizar o UniOver no computador que controla a TV para liberar o Modo Dormir para convidados.`,
+      code,
+    };
+  }
   const known = code ? livreCodeMessage(code) : null;
   if (known) return { message: known, code };
 

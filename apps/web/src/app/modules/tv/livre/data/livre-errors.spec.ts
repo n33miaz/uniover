@@ -65,6 +65,11 @@ describe('livreCodeOf', () => {
 });
 
 describe('describeLivreFailure', () => {
+  it('pede a atualização do agente para liberar o Modo Dormir a convidados', () => {
+    const failure = describeLivreFailure(http(409, 'tv-livre-sleep-agent-update-required'));
+    expect(failure.message).toContain('Peça ao dono para atualizar o UniOver');
+  });
+
   it('translates the code of the agent', () => {
     const failure = describeLivreFailure(
       http(502, 'command-failed', { agentError: 'install_failed' }),

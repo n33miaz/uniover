@@ -244,6 +244,7 @@ internal static class TvLivreEndpoint
             LivreStepKind.Unsupported => LivreProblems.Unsupported(),
             LivreStepKind.Busy => LivreProblems.Busy(),
             LivreStepKind.OwnerRequired => LivreProblems.OwnerRequired(),
+            LivreStepKind.SleepAgentUpdateRequired => LivreProblems.SleepAgentUpdateRequired(),
             _ => LivreProblems.Fail(step.Outcome!),
         };
     }

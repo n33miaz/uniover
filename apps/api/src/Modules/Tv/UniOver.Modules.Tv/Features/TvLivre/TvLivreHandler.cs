@@ -25,6 +25,7 @@ internal enum LivreStepKind
     Busy,
     Failed,
     OwnerRequired,
+    SleepAgentUpdateRequired,
 }
 
 internal sealed record LivreStep(LivreStepKind Kind, TvSendOutcome? Outcome = null)
@@ -36,6 +37,8 @@ internal sealed record LivreStep(LivreStepKind Kind, TvSendOutcome? Outcome = nu
     public static LivreStep Busy { get; } = new(LivreStepKind.Busy);
 
     public static LivreStep OwnerRequired { get; } = new(LivreStepKind.OwnerRequired);
+
+    public static LivreStep SleepAgentUpdateRequired { get; } = new(LivreStepKind.SleepAgentUpdateRequired);
 
     public static LivreStep Failed(TvSendOutcome outcome) => new(LivreStepKind.Failed, outcome);
 }
@@ -189,9 +192,9 @@ internal sealed class TvLivreHandler(
     /// launcher está lá: um <c>status</c> sem linha própria na trilha e o estado que ele traz. O estado guardado não serve
     /// para isso, porque pode ser de antes de a TV ser restaurada. Sem o launcher (ou sem a confirmação dele) o dormir não
     /// sai e a resposta diz que é o dono quem prepara a TV. O launcher ainda pode sumir entre a leitura e o dormir (a TV é
-    /// mexida fora do UniOver): ao agente que sabe (<see cref="TvCapabilities.LivreSleepNoInstall"/>) o pedido vai com
-    /// <c>skipInstall</c>, e ele mesmo confere na hora e recusa com <c>launcher_required</c> em vez de instalar. Um agente
-    /// anterior recebe o pedido de sempre, só com a leitura antes.
+    /// mexida fora do UniOver). Por isso, o convidado precisa de um agente com
+    /// <see cref="TvCapabilities.LivreSleepNoInstall"/> e o pedido sempre leva <c>skipInstall</c>. O agente confere na
+    /// hora e recusa com <c>launcher_required</c> se o launcher sumiu.
     /// </para>
     /// <para>
     /// O tempo até acordar vai no pedido, mas só a agente que entende (um anterior recusaria o campo): sem ele o launcher
@@ -204,6 +207,24 @@ internal sealed class TvLivreHandler(
         if (RefusesToRun())
         {
             return LivreStep.Unsupported;
+        }
+
+        if (!mayInstall)
+        {
+            if (string.IsNullOrWhiteSpace(selection.Current.AgentSlug))
+            {
+                return LivreStep.Failed(TvSendOutcome.Failed(TvSendStatus.NotConfigured, TvCommandRunner.NotConfiguredCode));
+            }
+
+            if (AgentInfo() is not { Connected: true } agent)
+            {
+                return LivreStep.Failed(TvSendOutcome.Failed(TvSendStatus.AgentOffline, AgentErrors.OfflineCode));
+            }
+
+            if (!agent.Capabilities.Contains(TvCapabilities.LivreSleepNoInstall, StringComparer.Ordinal))
+            {
+                return LivreStep.SleepAgentUpdateRequired;
+            }
         }
 
         await using var ticket = await requests.TryBeginAsync(TvId, cancellationToken);
@@ -235,12 +256,10 @@ internal sealed class TvLivreHandler(
             }
         }
 
-        // Só vai a agente que entende o campo: um anterior recusaria o pedido inteiro.
-        var skipInstall = !mayInstall && HasCapability(TvCapabilities.LivreSleepNoInstall) ? true : (bool?)null;
         var step = await RunStepAsync(
             ticket, origin, TvCommandNames.LivreSleep, null, TvLivreAction.Sleep, longTimeout: true, cancellationToken,
-            waitForState: false, minutes: IsExtended() ? minutes : null, skipInstall: skipInstall);
-        return skipInstall is true && step.Outcome?.ErrorCode == LauncherRequiredCode ? LivreStep.OwnerRequired : step;
+            waitForState: false, minutes: IsExtended() ? minutes : null, skipInstall: mayInstall ? null : true);
+        return !mayInstall && step.Outcome?.ErrorCode == LauncherRequiredCode ? LivreStep.OwnerRequired : step;
     }
 
     /// <summary>

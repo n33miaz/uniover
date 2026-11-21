@@ -110,6 +110,7 @@ internal static class LivreProblems
 {
     public const string UnsupportedType = "tv-livre-unsupported";
     public const string BusyType = "tv-livre-busy";
+    public const string SleepAgentUpdateRequiredType = "tv-livre-sleep-agent-update-required";
     public const string OwnerRequiredType = "tv-livre-owner-required";
     public const string PhotoTooLargeType = "tv-livre-photo-too-large";
     public const string PhotoDimensionsType = "tv-livre-photo-dimensions";
@@ -134,6 +135,11 @@ internal static class LivreProblems
         statusCode: StatusCodes.Status409Conflict,
         title: "O TV Livre não está na TV, e só o dono pode instalá-lo.",
         type: ProblemDetailsExtensions.TypeBase + OwnerRequiredType);
+
+    public static IResult SleepAgentUpdateRequired() => Results.Problem(
+        statusCode: StatusCodes.Status409Conflict,
+        title: "O agente precisa ser atualizado para que convidados possam usar o Modo Dormir.",
+        type: ProblemDetailsExtensions.TypeBase + SleepAgentUpdateRequiredType);
 
     public static IResult PhotoTooLarge() => Results.Problem(
         statusCode: StatusCodes.Status413PayloadTooLarge,
