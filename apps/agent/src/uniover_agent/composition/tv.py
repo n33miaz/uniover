@@ -313,19 +313,20 @@ def build_driver_setup(  # noqa: PLR0913 - idem `build_tv`
         remote_settle_seconds=settings.tv_text_remote_settle_ms / 1000,
         adb_group_chars=settings.tv_text_adb_group_chars,
         sleep=clock.sleep,
+        remote_connected=lambda: remote.connected,
     )
     # O estado real do campo (quando a TV o manda) semeia o diff da digitação; outro app em foco ou
     # uma sessão nova o tornam velho, e então vale o comportamento de antes.
     remote.on_text_field(text.observe_field)
     remote.on_app(text.observe_app)
-    manager.on_session_opening(text.forget_field)
+    manager.on_session_opening(text.forget_session)
     was_hot = False
 
     def forget_text_on_loss(state: TvState) -> None:
         nonlocal was_hot
         hot = state.connection == "hot"
         if was_hot and not hot:
-            text.forget_field()
+            text.forget_session()
         was_hot = hot
 
     manager.subscribe(forget_text_on_loss)
