@@ -19,6 +19,8 @@ import pytest
 
 from uniover_agent.adapters.update_status import STATUS_FILE
 
+from .support import SUPERVISOR_ROLLBACK_LOG
+
 SYSTEM32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
 POWERSHELL = SYSTEM32 / "WindowsPowerShell" / "v1.0" / "powershell.exe"
 TASKKILL = SYSTEM32 / "taskkill.exe"
@@ -167,7 +169,7 @@ def test_three_failed_syncs_of_a_version_in_proof_go_back_without_touching_the_e
     process = pc.start()
     try:
         assert wait_for(
-            lambda: log.is_file() and "voltei para a versao anterior" in log.read_text("utf-8"), 120
+            lambda: log.is_file() and SUPERVISOR_ROLLBACK_LOG in log.read_text("utf-8"), 120
         ), "a versao em prova deveria voltar para a anterior"
         assert process.poll() is None
     finally:

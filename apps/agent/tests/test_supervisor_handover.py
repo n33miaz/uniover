@@ -16,7 +16,7 @@ import pytest
 
 from uniover_agent.adapters.update_lock import update_lock
 
-from .support import read_now, read_text_retrying
+from .support import SUPERVISOR_ROLLBACK_LOG, read_now, read_text_retrying
 from .test_supervisor_guardrails import CURRENT, POWERSHELL, Pc, heartbeat, wait_for
 from .test_update_lock import held_by_another_process
 
@@ -815,7 +815,7 @@ def test_a_version_that_keeps_falling_in_proof_goes_back_by_rewriting_the_pointe
         assert wait_for(lambda: pc.state().get("outcome") == "rolled_back", 30), pc.supervisor_log()
         state = pc.state()
         assert state["blockedSha"] == NEW
-        assert wait_for(lambda: "voltei para a versao anterior" in pc.supervisor_log(), 10)
+        assert wait_for(lambda: SUPERVISOR_ROLLBACK_LOG in pc.supervisor_log(), 10)
         assert wait_for(
             lambda: any(i["kind"] == "update.rolled_back" for i in pc.diagnostics()), 10
         )

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from .support import SUPERVISOR_ROLLBACK_LOG
 from .test_supervisor_guardrails import (
     CURRENT,
     POWERSHELL,
@@ -121,7 +122,7 @@ def test_a_version_returned_for_lack_of_space_is_marked_apart_from_the_old_forma
     trial_with_previous(pc)
     pc.uv(["exit /b 0"], sync_lines=["echo sem espaco 1>&2", "exit /b 1"])
     with pc.running(UNIOVER_SUPERVISOR_MIN_FREE_MB="999999999"):
-        assert wait_for(lambda: "voltei para a versao anterior" in pc.supervisor_log(), 120), (
+        assert wait_for(lambda: SUPERVISOR_ROLLBACK_LOG in pc.supervisor_log(), 120), (
             pc.supervisor_log()
         )
     marks = (pc.runtime / ".deferred-versions").read_text(encoding="ascii").split()
@@ -134,7 +135,7 @@ def test_a_version_returned_for_a_real_sync_error_is_not_marked_as_lack_of_space
     trial_with_previous(pc)
     pc.uv(["exit /b 0"], sync_lines=["echo erro de dependencia 1>&2", "exit /b 1"])
     with pc.running(UNIOVER_SUPERVISOR_MIN_FREE_MB="1"):
-        assert wait_for(lambda: "voltei para a versao anterior" in pc.supervisor_log(), 120), (
+        assert wait_for(lambda: SUPERVISOR_ROLLBACK_LOG in pc.supervisor_log(), 120), (
             pc.supervisor_log()
         )
     assert not (pc.runtime / ".deferred-lowdisk").exists()
@@ -187,7 +188,7 @@ def rollback_after_an_unwritable_trial(
         UNIOVER_TEST_FREE=str(free),
         UNIOVER_SUPERVISOR_TEST_FREE_MB_FILE=str(free),
     ):
-        assert wait_for(lambda: "voltei para a versao anterior" in pc.supervisor_log(), 90), (
+        assert wait_for(lambda: SUPERVISOR_ROLLBACK_LOG in pc.supervisor_log(), 90), (
             pc.supervisor_log()
         )
     lowdisk = pc.runtime / ".deferred-lowdisk"

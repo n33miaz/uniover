@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from .support import read_now, read_text_retrying
+from .support import SUPERVISOR_ROLLBACK_LOG, read_now, read_text_retrying
 
 SYSTEM32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
 POWERSHELL = SYSTEM32 / "WindowsPowerShell" / "v1.0" / "powershell.exe"
@@ -597,7 +597,7 @@ def test_three_sync_timeouts_roll_back_without_blocking_the_version(pc: Pc) -> N
     with pc.running(
         UNIOVER_SUPERVISOR_SYNC_TIMEOUT_SECONDS="2", UNIOVER_SUPERVISOR_LAP_SECONDS="0.3"
     ):
-        assert wait_for(lambda: "voltei para a versao anterior" in pc.supervisor_log(), 120), (
+        assert wait_for(lambda: SUPERVISOR_ROLLBACK_LOG in pc.supervisor_log(), 120), (
             pc.supervisor_log()
         )
     blocked = pc.runtime / ".blocked-versions"
@@ -793,7 +793,7 @@ def test_three_sync_failures_from_a_full_disk_roll_back_without_blocking(pc: Pc)
     trial_with_previous(pc)
     pc.uv(["exit /b 0"], sync_lines=["echo sem espaco 1>&2", "exit /b 1"])
     with pc.running(UNIOVER_SUPERVISOR_MIN_FREE_MB="999999999"):
-        assert wait_for(lambda: "voltei para a versao anterior" in pc.supervisor_log(), 120), (
+        assert wait_for(lambda: SUPERVISOR_ROLLBACK_LOG in pc.supervisor_log(), 120), (
             pc.supervisor_log()
         )
     blocked = pc.runtime / ".blocked-versions"
@@ -805,7 +805,7 @@ def test_three_real_sync_errors_roll_back_and_block_the_version(pc: Pc) -> None:
     trial_with_previous(pc)
     pc.uv(["exit /b 0"], sync_lines=["echo erro de dependencia 1>&2", "exit /b 1"])
     with pc.running(UNIOVER_SUPERVISOR_MIN_FREE_MB="1"):
-        assert wait_for(lambda: "voltei para a versao anterior" in pc.supervisor_log(), 120), (
+        assert wait_for(lambda: SUPERVISOR_ROLLBACK_LOG in pc.supervisor_log(), 120), (
             pc.supervisor_log()
         )
     assert CURRENT in (pc.runtime / ".blocked-versions").read_text(encoding="ascii")

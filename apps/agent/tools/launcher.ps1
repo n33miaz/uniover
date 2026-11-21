@@ -68,11 +68,21 @@ function Get-CurrentRunner {
     # O supervisor da versao em uso: o do ponteiro (runtime\current.json, gravado pela atualizacao sem queda) quando a versao dele
     # esta inteira, a anterior dele se ela nao esta, e a `app` de sempre no resto. Cada versao preparada mora em `app.staging\<sha>`.
     $fallbackRunner = Join-Path $base 'app\tools\run-agent.ps1'
+    $file = Join-Path $runtimeDir 'current.json'
+    # Uma troca em andamento pode negar a leitura ou deixar o nome livre por um instante.
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            if ((Get-Item -LiteralPath $file -ErrorAction Stop).Length -gt 4096) { return $fallbackRunner }
+            $text = [System.IO.File]::ReadAllText($file)
+            break
+        } catch {
+            if ($attempt -ge 5) { return $fallbackRunner }
+            Start-Sleep -Milliseconds 100
+        }
+    }
     try {
-        $file = Join-Path $runtimeDir 'current.json'
-        if (-not (Test-Path -LiteralPath $file) -or (Get-Item -LiteralPath $file).Length -gt 4096) { return $fallbackRunner }
         Add-Type -AssemblyName System.Web.Extensions
-        $pointer = (New-Object System.Web.Script.Serialization.JavaScriptSerializer).DeserializeObject([System.IO.File]::ReadAllText($file))
+        $pointer = (New-Object System.Web.Script.Serialization.JavaScriptSerializer).DeserializeObject($text)
         $root = [System.IO.Path]::GetFullPath($base).TrimEnd('\') + '\'
         foreach ($name in @('current', 'previous')) {
             $slot = $pointer[$name]

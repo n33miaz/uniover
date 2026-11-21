@@ -22,6 +22,8 @@ AGENT_ID = "pc-casa"
 # teclas opcionais, o pareamento pelo app e a procura de TVs na rede.
 ANDROID_KEYS = ["tv.power.off.v1", "tv.key.v3", "tv.key.INPUT", "tv.pair.v1", "tv.discovery.v1"]
 TOKEN = "uo_dev_TOKEN-SECRETO-DE-TESTE"
+# `Invoke-Rollback` e `Invoke-PointerRollback` (tools/run-agent.ps1) registram isto após a gravação.
+SUPERVISOR_ROLLBACK_LOG = "voltei para a versao anterior"
 
 
 def envelope(
