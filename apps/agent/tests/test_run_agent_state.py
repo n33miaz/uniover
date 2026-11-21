@@ -35,6 +35,7 @@ BAD = "b" * 40
 FUNCTIONS = (
     "Get-Version",
     "Get-UtcStamp",
+    "Initialize-AtomicMove",
     "Move-FileOver",
     "Set-UpdateState",
     "Test-FreshFlag",
@@ -221,6 +222,72 @@ Move-FileOver ($p + '.tmp') $p
     assert done.returncode == 0, done.stderr
     assert (pc.runtime / "novo.json").read_text(encoding="ascii") == "x"
     assert [p.name for p in pc.runtime.iterdir()] == ["novo.json"]
+
+
+def test_without_the_atomic_swap_the_supervisor_still_writes_the_old_way_and_says_so_once(
+    pc: Pc,
+) -> None:
+    # A compilação do `MoveFileEx` pode falhar (compilador bloqueado na máquina). O ponteiro e o
+    # estado têm de ser gravados mesmo assim, pelo `Move-Item` de antes, e o aviso sai uma vez só.
+    (pc.runtime / "current.json").write_text('{"v":1,"n":0}', encoding="ascii")
+    done = pc.run(
+        r"""
+$env:UNIOVER_SUPERVISOR_TEST_NO_ATOMIC_MOVE = '1'
+foreach ($name in @('current.json', 'novo.json', 'current.json')) {
+    $p = Join-Path $runtime $name
+    [System.IO.File]::WriteAllText($p + '.tmp', ('{"v":1,"de":"' + $name + '"}'))
+    Move-FileOver ($p + '.tmp') $p
+}
+"modo=$script:atomicMove"
+"""
+    )
+    assert done.returncode == 0, done.stderr
+    assert "modo=False" in done.stdout
+    assert json.loads((pc.runtime / "current.json").read_text(encoding="ascii")) == {
+        "v": 1,
+        "de": "current.json",
+    }
+    assert (pc.runtime / "novo.json").is_file()
+    assert sorted(p.name for p in pc.runtime.iterdir()) == ["current.json", "novo.json"]
+    log = (pc.base / "logs" / "supervisor.log").read_text(encoding="utf-8")
+    assert log.count("modo antigo (Move-Item)") == 1
+
+
+def test_with_the_atomic_swap_nothing_is_said_about_the_old_way(pc: Pc) -> None:
+    done = pc.run(
+        r"""
+$p = Join-Path $runtime 'current.json'
+[System.IO.File]::WriteAllText($p + '.tmp', 'x')
+Move-FileOver ($p + '.tmp') $p
+"modo=$script:atomicMove"
+"""
+    )
+    assert done.returncode == 0, done.stderr
+    assert "modo=True" in done.stdout
+    log = pc.base / "logs" / "supervisor.log"
+    assert not log.exists() or "modo antigo" not in log.read_text(encoding="utf-8")
+
+
+def test_a_destination_held_open_gives_up_keeps_the_old_file_and_cleans_the_temporary(
+    pc: Pc,
+) -> None:
+    # Um leitor que nunca solta o arquivo: a troca desiste depois das novas tentativas, levanta o
+    # erro para quem chamou (que decide o que fazer), o arquivo antigo fica inteiro e o
+    # temporário não sobra.
+    path = pc.runtime / "current.json"
+    path.write_text('{"v":1,"n":0}', encoding="ascii")
+    with path.open("rb"):  # o Python abre sem permitir apagar nem renomear o arquivo
+        done = pc.run(
+            r"""
+$p = Join-Path $runtime 'current.json'
+[System.IO.File]::WriteAllText($p + '.tmp', '{"v":1,"n":1}')
+try { Move-FileOver ($p + '.tmp') $p; 'trocou' } catch { 'desistiu' }
+"""
+        )
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.split() == ["desistiu"]
+    assert path.read_text(encoding="ascii") == '{"v":1,"n":0}'
+    assert [p.name for p in pc.runtime.iterdir()] == ["current.json"]
 
 
 def test_rolling_back_swaps_the_folders_blocks_the_bad_version_and_says_so(pc: Pc) -> None:
