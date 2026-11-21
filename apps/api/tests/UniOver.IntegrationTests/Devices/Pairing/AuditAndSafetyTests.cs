@@ -206,13 +206,19 @@ public sealed class AuditAndSafetyTests(PostgresFixture postgres)
         var tables = await Tables(database.OwnerConnection);
         tables.Should().Equal(
             "__ef_migrations_history", "agent_beacons", "agent_diagnostic_events", "agent_outages", "agent_presence_snapshots", "agents", "client_events", "dead_letters", "idempotency_keys", "outbox_messages",
-            "pairing_audit", "pairings");
+            "pairing_audit", "pairings", "pc_power_outcome_receipts");
 
         await using var runtime = new NpgsqlConnection(database.RuntimeConnection);
         await runtime.OpenAsync(Ct);
         await using (var dml = new NpgsqlCommand("SELECT count(*) FROM devices.agents", runtime))
         {
             (await dml.ExecuteScalarAsync(Ct)).Should().Be(0L);
+        }
+
+        // Os recibos de energia não são trilha de auditoria: a limpeza diária roda pelo papel da aplicação e precisa do DELETE.
+        await using (var receipts = new NpgsqlCommand("DELETE FROM devices.pc_power_outcome_receipts", runtime))
+        {
+            (await receipts.ExecuteNonQueryAsync(Ct)).Should().Be(0);
         }
 
         await using var ddl = new NpgsqlCommand("CREATE TABLE devices.intruso (id int)", runtime);
