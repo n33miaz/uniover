@@ -98,38 +98,37 @@ public partial class DeployWorkflowTests
         var concurrency = text[start..text.IndexOf("\njobs:\n", StringComparison.Ordinal)];
 
         concurrency.Should().Contain(
-            $"github.event_name == 'push' && !({QueueTriage}) && format('deploy-skip-{{0}}', github.run_id)",
-            "um push que não é release cancelaria um release pendente na fila e depois pararia no gate");
-        concurrency.Should().Contain("cancel-in-progress: false");
+            $"github.event_name == 'push' && !{QueueTriage} && format('deploy-skip-{{0}}', github.run_id)",
+            "cada push sem o prefixo de release recebe seu próprio grupo");
+        concurrency.Should().Contain("\n  cancel-in-progress: false\n").And.Contain("\n  queue: max\n",
+            "as publicações devem esperar a vez sem substituir execuções em andamento ou pendentes");
         Job("gate").Should().Contain($"PRODUCTION_QUEUE: \"${{{{ {QueueTriage} }}}}\"",
-            "o gate recebe a mesma triagem do grupo e falha quando ela diverge da regra exata do release");
+            "o gate recebe a mesma triagem do grupo para impedir a publicação fora da fila");
     }
 
     /// <summary>A triagem do grupo de concorrência, repetida no env do job gate.</summary>
     private const string QueueTriage =
-        "startsWith(github.event.head_commit.message, 'chore: release ') && !contains(github.event.head_commit.message, '-') && !contains(github.event.head_commit.message, '+')";
+        "startsWith(github.event.head_commit.message, 'chore: release ')";
 
     /// <summary>
-    /// Espelho em C# da <see cref="QueueTriage"/> (não avalia a expressão do GitHub; o teste acima prende o texto dela).
-    /// Versão com sufixo fica fora da fila da produção; o release exato entra. O startsWith e o contains do GitHub
-    /// ignoram maiúsculas, então `Chore: Release` entra na fila (e o gate, que diferencia, falha e avisa).
+    /// Espelho em C# do startsWith do GitHub, que ignora maiúsculas e minúsculas. O gate valida o assunto depois da triagem.
     /// </summary>
     [Theory]
     [InlineData("chore: release 0.78.4", true)]
     [InlineData("chore: release 10.20.300", true)]
     [InlineData("chore: release 0.79.0\n\nCorpo qualquer.", true)]
-    [InlineData("chore: release 0.79.0\r\n\r\nCorpo com CRLF.", true)]
+    [InlineData("chore: release 0.79.0\n\nreviewed-by: someone", true)]
+    [InlineData("chore: release 0.79.0\r\n\r\nCorpo com CRLF e versão 0.79.0+build.7.", true)]
     [InlineData("Chore: Release 0.78.4", true)]
-    [InlineData("chore: release 0.78.4-rc.1", false)]
-    [InlineData("CHORE: RELEASE 0.78.4-RC.1", false)]
-    [InlineData("chore: release 0.78.4+build.7", false)]
+    [InlineData("chore: release 0.78.4-rc.1", true)]
+    [InlineData("CHORE: RELEASE 0.78.4-RC.1", true)]
+    [InlineData("chore: release 0.78.4+build.7", true)]
     [InlineData("fix(web): stabilize browser scenarios", false)]
+    [InlineData("fix(web): stabilize browser scenarios\n\nchore: release 0.79.0", false)]
     [InlineData("chore: releases 0.78.4", false)]
-    public void OnlyAnUnsuffixedReleaseSubject_EntersTheProductionQueue(string message, bool production)
+    public void OnlyMessagesWithTheReleaseSubjectPrefix_EnterTheProductionQueue(string message, bool production)
     {
-        var triage = message.StartsWith("chore: release ", StringComparison.OrdinalIgnoreCase)
-            && !message.Contains('-', StringComparison.Ordinal)
-            && !message.Contains('+', StringComparison.Ordinal);
+        var triage = message.StartsWith("chore: release ", StringComparison.OrdinalIgnoreCase);
 
         triage.Should().Be(production);
     }

@@ -29,13 +29,16 @@ produção, enquanto entregas sem incremento de versão podem ser integradas par
   Valide a preparação com o mesmo script, reúna as alterações em um commit `chore: release x.y.z`
   e integre o PR por rebase.
 - O [Deploy](../.github/workflows/deploy.yml) só segue no merge de versão: o job `gate` confere se o
-  assunto do commit de head do push é exatamente `chore: release x.y.z`. Nos outros merges ele encerra
+  assunto (primeira linha) do commit de head do push é exatamente `chore: release x.y.z`. Nos outros merges ele encerra
   a execução com sucesso, sem migrar, publicar nem notificar. A execução manual (`workflow_dispatch`,
   inclusive o ensaio do alerta) passa sempre pelo `gate`. Como segunda proteção, se `VERSION` coincide
   com a maior tag `v*` e ela aponta para outro commit, o workflow encerra com sucesso, sem publicar
   nem migrar o banco. Para uma publicação, `version` roda `--verify` antes das
   migrações. A versão precisa superar a maior tag de versão. A igualdade é permitida para republicar o
   mesmo commit. Versões inválidas, inferiores ou divergentes dos metadados falham nessa etapa.
+- Pushes com o prefixo `chore: release ` no assunto e execuções manuais de publicação compartilham a fila
+  de produção. O Deploy processa uma execução por vez nesse grupo e mantém até 100 pendentes. O ensaio
+  do alerta usa um grupo próprio.
 - O Deploy aplica migrações retrocompatíveis no Neon antes de acionar o Render para o commit da
   execução. Após `/health/version` confirmar o SHA e as verificações do PWA e da API passarem, o job
   `release` cria automaticamente a tag `vX.Y.Z` no commit publicado e o GitHub Release com a entrada do

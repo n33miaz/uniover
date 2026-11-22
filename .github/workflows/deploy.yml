@@ -3,8 +3,7 @@ name: Deploy
 # Política de publicação
 # - Só publica o merge de release: o push segue apenas quando o assunto do commit de head é exatamente
 #   `chore: release x.y.z` (job gate, regra em .github/scripts/release-gate.sh, testada no CI do PR). Os outros merges
-#   param no gate, com a execução verde, sem migrar nem notificar. A exceção é o push que entra na fila da produção
-#   sem ser release (ver concurrency): o gate falha e o notify avisa. O workflow_dispatch passa sempre pelo gate.
+#   param no gate, com a execução verde, sem migrar nem notificar. O workflow_dispatch passa sempre pelo gate.
 # - As migrations rodam ANTES do código novo entrar no ar. Por alguns minutos o código antigo roda sobre o schema novo.
 # - Por isso toda migration deve ser retrocompatível com a versão anterior da API: acrescentar primeiro; remover ou
 #   renomear coluna só em duas etapas, depois que nenhum código a usa.
@@ -45,20 +44,14 @@ permissions:
   contents: read
 
 concurrency:
-  # O ensaio tem grupo próprio: nunca toma o lugar de uma publicação na fila.
-  # Só a execução manual e o push com cara de release entram na fila da produção. O GitHub mantém um único pendente por
-  # grupo e cancela o anterior: se um push que não é release entrasse na mesma fila, cancelaria um release que espera a
-  # vez, e como esse push para no gate, aquele release nunca seria publicado. Os demais pushes ganham um grupo só deles
-  # (o id da execução). O ensaio só existe na execução manual, então o push nunca cai no grupo dele.
-  # A expressão do GitHub não tem regex nem recorte de texto, então a triagem não repete a regra do gate: exige o prefixo
-  # `chore: release ` e recusa `-` e `+` em qualquer ponto da mensagem, o que deixa de fora as versões com sufixo
-  # (`0.78.4-rc.1`, `0.78.4+build`). O gate recebe a mesma triagem em PRODUCTION_QUEUE e falha quando ela diverge da
-  # regra exata: um release fora da fila não publica, e um push sem release que entrou na fila vira aviso no notify.
-  # A triagem aparece duas vezes (aqui e no job gate) e as duas precisam ser idênticas.
+  # A fila da produção recebe execuções manuais e pushes com o prefixo `chore: release ` no assunto. Os demais pushes
+  # usam o id da execução, e o ensaio tem grupo próprio. A fila mantém até 100 execuções pendentes por grupo.
+  # O gate recebe a mesma triagem em PRODUCTION_QUEUE e valida o assunto inteiro antes de liberar a publicação.
   group: >-
-    ${{ github.event_name == 'push' && !(startsWith(github.event.head_commit.message, 'chore: release ') && !contains(github.event.head_commit.message, '-') && !contains(github.event.head_commit.message, '+')) && format('deploy-skip-{0}', github.run_id)
+    ${{ github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'chore: release ') && format('deploy-skip-{0}', github.run_id)
     || inputs.alert_drill && 'deploy-alert-drill' || 'deploy-production' }}
   cancel-in-progress: false
+  queue: max
 
 env:
   # Variável do repositório APP_URL; se não existir, vale o endereço padrão.
@@ -85,7 +78,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           HEAD_MESSAGE: ${{ github.event.head_commit.message }}
           # Mesma triagem do grupo de concorrência: diz se este push entrou na fila da produção.
-          PRODUCTION_QUEUE: "${{ startsWith(github.event.head_commit.message, 'chore: release ') && !contains(github.event.head_commit.message, '-') && !contains(github.event.head_commit.message, '+') }}"
+          PRODUCTION_QUEUE: "${{ startsWith(github.event.head_commit.message, 'chore: release ') }}"
         run: bash .github/scripts/release-gate.sh
 
   channel:
