@@ -72,7 +72,8 @@ reviews:
     - path: "**/*.md"
       instructions: >-
         Public text should describe the subject and outcome. Omit internal process history, internal
-        planning codes, tool names, personal data, and local filesystem paths.
+        planning codes, tool names, personal data, and local filesystem paths that point outside the
+        repository. Repository-relative paths to files or directories within the repository are allowed.
 chat:
   art: false
   allow_non_org_members: false
