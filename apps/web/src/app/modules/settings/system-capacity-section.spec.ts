@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../core/session/session-state';
 import { CapacityReport, SystemApi } from './system-api';
@@ -207,6 +208,49 @@ describe('SystemCapacitySection', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(system.dismissCapacityAlerts).toHaveBeenCalledTimes(1);
+    expect(root.querySelector('.alert')).toBeNull();
+  });
+
+  it('keeps the alerts and lets the owner retry when dismissal fails', async () => {
+    system.capacity.mockResolvedValue(
+      report({
+        alerts: [
+          { id: 'a1', metric: 'hours', percent: 81, detectedAt: '2026-10-31T09:00:00Z' },
+          { id: 'a2', metric: 'database', percent: 90, detectedAt: '2026-10-31T09:00:00Z' },
+        ],
+      }),
+    );
+    system.dismissCapacityAlerts.mockRejectedValueOnce(
+      new HttpErrorResponse({
+        status: 503,
+        error: { type: 'https://uniover.app/problems/capacity-alerts-busy' },
+      }),
+    );
+    const fixture = await renderFixture();
+    const root = fixture.nativeElement as HTMLElement;
+    const button = root.querySelector<HTMLButtonElement>('.alert button')!;
+
+    button.click();
+    fixture.detectChanges();
+    expect(button.disabled).toBe(true);
+
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(root.querySelector('.alert')?.textContent).toContain('Horas do Mês, Dados');
+    expect(root.querySelector('.alert [role="alert"]')?.textContent?.trim()).toBe(
+      'Não foi possível dispensar os avisos. Tente novamente.',
+    );
+    expect(button.disabled).toBe(false);
+
+    button.click();
+    fixture.detectChanges();
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    expect(root.querySelector('.alert')?.textContent).toContain('Horas do Mês, Dados');
+    expect(button.disabled).toBe(true);
+
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(system.dismissCapacityAlerts).toHaveBeenCalledTimes(2);
     expect(root.querySelector('.alert')).toBeNull();
   });
 
