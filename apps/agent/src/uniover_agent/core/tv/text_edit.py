@@ -72,7 +72,8 @@ import logging
 import string
 import time
 import unicodedata
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Final, Protocol
 
@@ -543,29 +544,50 @@ class TextReconciler:
                 self._owns_field = True
                 self._buffered_ime = None
                 self._clear_doubt()
-                if actual != target:
-                    self._guard_ime_field(report.counter)
                 return
         raise TvSessionError(
             TV_UNREACHABLE, "a TV não confirmou a entrega do texto anterior", may_have_sent=True
         )
 
-    def _guard_ime_field(self, counter: int) -> None:
-        """O acréscimo calculado pelo relato só serve para esse campo e essa conexão."""
-        link, generation, upstream = self._link, self._focus_generation, self._validate
+    def _focus_changed(self, counter: int | None, generation: int) -> bool:
+        pending = self._pending_field
+        return self._focus_generation != generation or (
+            pending is not None and pending.counter != counter
+        )
+
+    @contextmanager
+    def _guard_edit_field(self, link: int | None) -> Iterator[None]:
+        """O plano pertence ao foco observado e, na recuperação do IME, também à conexão."""
+        counter, generation, upstream = self._field_counter, self._focus_generation, self._validate
+
+        def focus_changed() -> bool:
+            if counter is None:
+                # Sem contador no plano, o primeiro relato pode ser um eco desta edição.
+                return self._focus_generation != generation
+            return self._focus_changed(counter, generation)
 
         def validate() -> None:
-            pending = self._pending_field
-            if (
-                self._link != link
-                or self._focus_generation != generation
-                or (pending is not None and pending.counter != counter)
-            ):
-                raise TvSessionError(RESYNC_ABANDONED, "o campo da TV mudou na reconexão")
+            link_changed = link is not None and self._link != link
+            if focus_changed() or link_changed:
+                raise TvSessionError(RESYNC_ABANDONED, "o campo da TV mudou durante a edição")
             if upstream is not None:
                 upstream()
 
-        self._validate = validate  # `set_text` desfaz a validação ao devolver a vez
+        self._validate = validate
+        try:
+            yield
+        finally:
+            self._validate = upstream
+            if focus_changed():
+                # A base e os envios incertos pertencem ao foco antigo. O relato pendente,
+                # inclusive após uma reconexão, vai semear a edição seguinte.
+                self._last = ""
+                self._last_at = None
+                self._field_counter = None
+                self._echo = None
+                self._owns_field = False
+                self._buffered_ime = None
+                self._clear_doubt()
 
     async def set_text(
         self, text: str, *, queued: float = 0.0, validate: Callable[[], None] | None = None
@@ -605,8 +627,10 @@ class TextReconciler:
         self._socket_keys = 0
         self._adb_confirmed = 0
         self._unconfirmed_text = ""
+        recovered_link = None
         if (buffered := self._lost_ime()) is not None:
             await self._recover_buffered_ime(buffered, target)
+            recovered_link = self._link
         now = self._monotonic()
         self._edit_counter = (
             self._field_counter if self._field_counter is not None else self._doubt_counter
@@ -628,12 +652,13 @@ class TextReconciler:
             self._last_at = now
             return
         # Abre a sessão (e renova a hibernação) uma vez, antes de qualquer tecla.
-        started = self._monotonic()
-        await self._effect().wake()
-        trace.wake = self._monotonic() - started
-        self._check_effect()
-        await self._apply(edit, trace)
-        self._last_at = self._monotonic()
+        with self._guard_edit_field(recovered_link):
+            started = self._monotonic()
+            await self._effect().wake()
+            trace.wake = self._monotonic() - started
+            self._check_effect()
+            await self._apply(edit, trace)
+            self._last_at = self._monotonic()
 
     def _doubt(self, group: str) -> None:
         """Um grupo falhou de um jeito ambíguo: a base passa a ser duvidosa.
@@ -715,10 +740,7 @@ class TextReconciler:
         owned = self._doubt_owns_field
 
         def focus_moved() -> bool:
-            pending = self._pending_field
-            return self._focus_generation != generation or (
-                pending is not None and pending.counter != counter
-            )
+            return self._focus_changed(counter, generation)
 
         def validate_focus() -> None:
             if focus_moved() or self._link != link:
@@ -911,7 +933,9 @@ class TextReconciler:
                     tv = self._effect()
                     attempted = True
                     try:
-                        await tv.send_key(DELETE_KEY, retry_uncertain=False)
+                        await tv.send_key(
+                            DELETE_KEY, validate=self._check_effect, retry_uncertain=False
+                        )
                     except TvSessionError as exc:
                         maybe_deleted = exc.may_have_sent
                         raise

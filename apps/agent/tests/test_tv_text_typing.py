@@ -326,6 +326,42 @@ def field_rig(remote: FieldRemote) -> tuple[TextReconciler, FieldAdb]:
     return editor, adb
 
 
+@pytest.mark.parametrize("change_app", [False, True])
+async def test_edit_preserves_the_new_field_when_focus_changes_during_wake(
+    change_app: bool,
+) -> None:
+    remote = FieldRemote(lose=set(), fail_on=None)
+    clock = FakeClock()
+    session = TvSessionManager(clock, remote, backoff=())
+    editor = TextReconciler(session, monotonic=clock.monotonic, keys=True, sleep=clock.sleep)
+    adb = FieldAdb(remote)
+    editor.use_adb(adb)
+    session.on_session_opening(editor.forget_session)
+    remote.on_app(editor.observe_app)
+    remote.on_text_field(editor.observe_field)
+    remote.push_app("app.um")
+    remote.field = "matrix"
+    remote.push_text_field(TextFieldStatus(remote.field, 6, 6, "", counter=1))
+
+    def switch_field() -> None:
+        if change_app:
+            remote.push_app("app.dois")
+        remote.field = "dono"
+        counter = 1 if change_app else 2
+        remote.push_text_field(TextFieldStatus(remote.field, 4, 4, "", counter=counter))
+
+    remote.on_connect = switch_field
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("mate")
+    assert caught.value.code == "text_resync_abandoned"
+    assert remote.field == editor.last_text == "dono"
+    assert remote.keys == remote.texts == adb.typed == []
+
+    await editor.set_text("dono!")
+    assert remote.field == "dono!"
+    assert adb.typed == ["!"]
+
+
 async def test_a_lost_key_before_the_drop_is_never_completed_by_adb_as_if_it_went() -> None:
     # "b" ficou no socket que caiu e "c" é a primeira tecla a falhar: a TV tem só "a".
     remote = FieldRemote(lose={"TYPE_B"}, fail_on="TYPE_C")
