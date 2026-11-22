@@ -17,6 +17,7 @@ import {
   modulesForFile,
   prepare,
   readModules,
+  releaseNotes,
   run,
   verify,
 } from './release-version.mjs';
@@ -81,7 +82,9 @@ const API = 'apps/api/src/Modules';
 function fixture(version = '0.4.0') {
   const root = mkdtempSync(join(tmpdir(), 'release-version-'));
   git(root, 'init', '-q', '-b', 'develop');
-  put(root, 'CHANGELOG.md', '# Changelog\n\n## [0.4.0](x) (2026-10-01)\n\n\n### Features\n\n* **web:** antigo\n\n');
+  // A entrada de `version` já existe, como depois de um --prepare: o verify a exige.
+  const current = version === '0.4.0' ? '' : `## [${version}](x) (2026-10-02)\n\n\n### Bug Fixes\n\n* **web:** atual\n\n`;
+  put(root, 'CHANGELOG.md', `# Changelog\n\n${current}## [0.4.0](x) (2026-10-01)\n\n\n### Features\n\n* **web:** antigo\n\n`);
   writeVersions(root, version);
   git(root, 'add', '-A');
   commit(root, 'chore: base');
@@ -175,6 +178,50 @@ test('verify recusa lock, pyproject, uv.lock ou props diferentes de VERSION', ()
       assert.throws(() => verify(root), expected, path);
     });
   }
+});
+
+test('verify aceita a entrada da versão no CHANGELOG, também com CRLF', () =>
+  withFixture('0.5.0', (root) => {
+    assert.match(verify(root), /0\.5\.0/);
+    put(root, 'CHANGELOG.md', read(root, 'CHANGELOG.md').replace(/\n/g, '\r\n'));
+    assert.match(verify(root), /0\.5\.0/);
+  }));
+
+test('verify recusa CHANGELOG sem a entrada da versão', () => {
+  withFixture('0.5.0', (root) => {
+    put(root, 'CHANGELOG.md', '# Changelog\n\n## [0.4.0](x) (2026-10-01)\n\n\n### Features\n\n* **web:** antigo\n\n');
+    assert.throws(() => verify(root), /CHANGELOG\.md não tem a entrada '## \[0\.5\.0\]'/);
+  });
+  withFixture('0.5.0', (root) => {
+    // Prefixo parecido não conta: a entrada de 0.5.01 não é a de 0.5.0.
+    put(root, 'CHANGELOG.md', '# Changelog\n\n## [0.5.01](x) (2026-10-02)\n\n* **web:** outra\n\n');
+    assert.throws(() => verify(root), /não tem a entrada '## \[0\.5\.0\]'/);
+  });
+  withFixture('0.5.0', (root) => {
+    rmSync(join(root, 'CHANGELOG.md'));
+    assert.throws(() => verify(root), /CHANGELOG\.md não existe/);
+  });
+});
+
+test('verify recusa a entrada da versão vazia no CHANGELOG', () => {
+  const empty = [
+    '# Changelog\n\n## [0.5.0](x) (2026-10-02)\n\n\n## [0.4.0](x) (2026-10-01)\n\n* **web:** antigo\n',
+    '# Changelog\n\n## [0.5.0](x) (2026-10-02)\r\n  \r\n\t\r\n## [0.4.0](x) (2026-10-01)\r\n\r\n* **web:** antigo\r\n',
+    '# Changelog\n\n## [0.5.0](x) (2026-10-02)', // última linha do arquivo, sem nada depois
+  ];
+  for (const changelog of empty) {
+    withFixture('0.5.0', (root) => {
+      put(root, 'CHANGELOG.md', changelog);
+      assert.throws(() => verify(root), /a entrada '## \[0\.5\.0\]' está vazia/, JSON.stringify(changelog));
+    });
+  }
+});
+
+test('releaseNotes corta a entrada como o job de release', () => {
+  const changelog = '# Changelog\n\n## [0.5.0](x) (d)\n\n### TV 1.0.0\n\n#### Bug Fixes\n\n* a\n\n## [0.4.0](x) (d)\n\n* b\n';
+  assert.equal(releaseNotes(changelog, '0.5.0'), '\n### TV 1.0.0\n\n#### Bug Fixes\n\n* a\n');
+  assert.equal(releaseNotes(changelog, '0.4.0'), '\n* b\n');
+  assert.equal(releaseNotes(changelog, '0.3.0'), null);
 });
 
 test('prepare patch sobe todos os arquivos e escreve a entrada só com feat, fix e perf', () =>
