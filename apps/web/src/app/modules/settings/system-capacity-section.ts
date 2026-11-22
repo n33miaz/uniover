@@ -42,6 +42,7 @@ export class SystemCapacitySection {
   protected readonly failed = signal(false);
   protected readonly dismissing = signal(false);
   protected readonly dismissFailed = signal(false);
+  protected readonly dismissFailedText = $localize`:@@settings.system.capacity.dismiss-failed:Não foi possível dispensar os avisos. Tente novamente.`;
 
   protected readonly meters = computed<readonly Meter[]>(() => {
     const report = this.report();
