@@ -698,6 +698,42 @@ async def test_resync_does_not_retry_a_delete_after_focus_changes_on_reopen(
     assert editor.last_text == "usuario"
 
 
+@pytest.mark.parametrize("owned", [True, False])
+async def test_a_resync_abandoned_by_a_dropped_field_report_forgets_the_old_doubt(
+    owned: bool,
+) -> None:
+    remote = EraseDropRemote()
+    editor, _ = await erase_doubt_of_three(remote, owned=owned)
+    editor.observe_app("app.um")
+
+    # A queda no meio dos DEL deixa um plano de limpeza do campo antigo.
+    remote.reset_deletes(lost={1}, drop_at=2)
+    with pytest.raises(TvSessionError):
+        await editor.set_text("abd")
+    await remote.disconnect()
+
+    def switch_field() -> None:
+        # A reabertura invalida o relato pendente do campo novo para a próxima edição.
+        remote.field = "ab"
+        editor.observe_field(TextFieldStatus("ab", 2, 2, "", counter=2))
+        editor.forget_field()
+
+    remote.on_connect = switch_field
+    remote.reset_deletes(lost=set(), drop_at=None)
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("abd")
+    assert caught.value.code == "text_resync_abandoned"
+    assert remote.field == "ab"
+    assert remote.keys == []
+
+    # O texto novo continua o esperado da dúvida antiga, mas ela era do outro campo: nada se apaga.
+    remote.on_connect = None
+    await editor.set_text("abd")
+    assert "DEL" not in remote.keys
+    assert remote.field == "ababd"
+    assert editor.last_text == "abd"
+
+
 @pytest.mark.parametrize("ime_counter", [None, 9, 10])
 async def test_resync_ignores_a_delayed_report_without_a_new_ime_counter(
     ime_counter: int | None,
