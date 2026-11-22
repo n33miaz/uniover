@@ -2776,8 +2776,8 @@ test.describe('carrossel do palco: o indicador e a posição não perdem o fio',
 /**
  * Gesto de toque com ritmo: `steps` passos de `stepMs` cada, sem soltar se `release` for falso. O ritmo vai no carimbo
  * de tempo de cada evento (é por ele que o navegador mede a velocidade do dedo), e os eventos saem em seguida, sem
- * esperar tempo de verdade entre eles. `holdMs` deixa o dedo parado esse tanto antes de sair da tela (só no carimbo do
- * `touchEnd`): sem ele o dedo sai um passo depois do último movimento, ainda com a velocidade do arrasto.
+ * esperar tempo de verdade entre eles. `holdMs` é o intervalo entre o último movimento e o `touchEnd`.
+ * Sem ele, o intervalo é de um passo, ainda com a velocidade do arrasto.
  */
 async function drag(
   page: Page,
@@ -2786,8 +2786,9 @@ async function drag(
   opts: { steps: number; stepMs: number; release?: boolean; holdMs?: number },
 ) {
   const cdp = await page.context().newCDPSession(page);
-  // O último evento fica no instante de agora e os anteriores no passado, na cadência pedida.
-  const start = Date.now() / 1000 - (opts.steps * opts.stepMs) / 1000;
+  const releaseDelayMs = opts.release === false ? 0 : (opts.holdMs ?? opts.stepMs);
+  // Inclui a pausa no cálculo para que nenhum evento receba um carimbo no futuro.
+  const start = Date.now() / 1000 - (opts.steps * opts.stepMs + releaseDelayMs) / 1000;
   const at = (step: number) => start + (step * opts.stepMs) / 1000;
   await cdp.send('Input.dispatchTouchEvent', {
     type: 'touchStart',
@@ -2810,8 +2811,7 @@ async function drag(
     await cdp.send('Input.dispatchTouchEvent', {
       type: 'touchEnd',
       touchPoints: [],
-      timestamp:
-        opts.holdMs === undefined ? at(opts.steps + 1) : at(opts.steps) + opts.holdMs / 1000,
+      timestamp: at(opts.steps) + releaseDelayMs / 1000,
     });
   }
   return cdp;
@@ -2830,10 +2830,19 @@ test.describe('carrossel do palco: gestos de dedo (toque sintético, só Chromiu
     await openTv(page);
     const box = (await stageBox(page))!;
     const y = box.y + box.height / 2;
-    // Arrasto lento termina com o dedo parado antes de sair. Soltar ainda com a velocidade do arrasto faz o Chromium às
-    // vezes lançar uma inércia mínima e não encaixar; o carrossel, achando a página presa no meio, a vira (o arrasto
-    // passou de `advanceRatio`) e o teste mediria esse socorro, não a regra da metade.
-    // Menos de um terço da largura, devagar: fica na página 1.
+    const scroll = await page.locator('.pager').evaluateHandle((pager) => {
+      const observed = { ended: false, scrollToCalls: 0 };
+      const scrollTo = pager.scrollTo;
+      pager.scrollTo = (...args: unknown[]) => {
+        observed.scrollToCalls++;
+        Reflect.apply(scrollTo, pager, args);
+      };
+      pager.addEventListener('scrollend', () => (observed.ended = true), { once: true });
+      return observed;
+    });
+    // A pausa antes de soltar evita a inércia residual no Chromium. A recuperação de uma página que fica
+    // parada entre 15% e 50% da largura tem cobertura unitária no StagePager.
+    // Aos 25%, o encaixe nativo devolve o carrossel à página 1 sem chamar scrollTo.
     await drag(
       page,
       { x: box.x + box.width * 0.7, y },
@@ -2844,8 +2853,12 @@ test.describe('carrossel do palco: gestos de dedo (toque sintético, só Chromiu
         holdMs: 150,
       },
     );
+    await expect.poll(() => scroll.evaluate((observed) => observed.ended)).toBe(true);
     await settlePage(page, 0);
     await expect(dot(page, 1)).toHaveAttribute('aria-current', 'true');
+    // Dá tempo para o pager tentar uma correção após os 140 ms de rolagem parada.
+    await page.waitForTimeout(200);
+    expect(await scroll.evaluate((observed) => observed.scrollToCalls)).toBe(0);
     // Quase toda a largura, devagar: vai para a página 2.
     await drag(
       page,
