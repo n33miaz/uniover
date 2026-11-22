@@ -333,16 +333,19 @@ test.describe('esqueleto de espera: Início', () => {
       await expect(
         page.locator('#boot-skeleton, app-update-skeleton .bs-root').first(),
       ).toBeVisible();
-      // A Início entra no lugar do esqueleto da abertura e, com o agente ainda sem responder, espera com a forma do topo.
-      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      // A seção de módulos já aparece na Início enquanto o topo ainda espera pelo agente.
+      await expect(
+        page.getByRole('heading', { name: 'Módulos', level: 2, exact: true }),
+      ).toBeVisible();
       await expect(page.locator('#boot-skeleton, app-update-skeleton .bs-root')).toHaveCount(0);
       await expect.poll(async () => (await watched(page)).seen, { timeout: 10_000 }).toBe(true);
-      await expect(page.locator('.hero .ui-skeleton').first()).toBeVisible();
+      await expect(page.locator('.hero .greeting-skeleton')).toBeVisible();
     } finally {
       release();
     }
 
     // O agente respondeu: o topo de verdade fica e nenhuma forma de espera sobra.
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     await expect(page.locator('.hero .ui-skeleton')).toHaveCount(0);
     await expect(page.locator('.ui-skeleton')).toHaveCount(0);
     const result = await watched(page);

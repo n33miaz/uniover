@@ -1,5 +1,5 @@
 // API mínima do dono para o e2e de atualização: o servidor de versões responde a sessão, a conta e o estado da TV sem
-// passar pelas rotas do Playwright (que não enxergam o que o service worker repassa). Só o que a Início lê ao abrir.
+// passar pelas rotas do Playwright (que não enxergam o que o service worker repassa).
 
 const JSON_TYPE = { 'content-type': 'application/json', 'cache-control': 'no-store' };
 
@@ -58,6 +58,10 @@ export function createOwnerApi({ isOwner, meDelayMs = () => 0 }) {
         agentOnline: true,
         updatedAt: '2026-10-19T14:02:00Z',
       });
+      return true;
+    }
+    if (req.method === 'GET' && path === '/tv/shortcuts') {
+      json(res, 200, []);
       return true;
     }
     if (req.method === 'GET' && path === '/devices/agent-alerts') {

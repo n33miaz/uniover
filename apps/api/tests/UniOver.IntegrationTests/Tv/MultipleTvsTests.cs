@@ -595,6 +595,8 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
 
         await using var oldConnection = await app.ConnectAsync(oldAgent);
         await oldConnection.SendHelloAsync("2.0.0", "tv.remote", "tv.cleanup.automatic.v1", "tv.light-settings.v1");
+        await TvApp.WaitUntilAsync(
+            () => app.Presence.Get(oldAgent.Slug)?.Capabilities.Contains("tv.light-settings.v1") == true, "agente antigo apresentado");
         await using var samsungConnection = await app.ConnectAsync(samsung);
         await samsungConnection.SendHelloAsync("2.0.0", "tv.remote", "tv.kind.samsung");
         await TvApp.WaitUntilAsync(
@@ -613,6 +615,8 @@ public sealed class MultipleTvsTests(PostgresFixture postgres)
         await using var knows = await app.ConnectAsync(app.Agent);
         await knows.SendHelloAsync(
             "2.0.0", "tv.remote", "tv.cleanup.automatic.v1", "tv.light-settings.v1", "tv.focus-catalog.v1");
+        await TvApp.WaitUntilAsync(
+            () => app.Presence.Get(app.Agent.Slug)?.Capabilities.Contains("tv.focus-catalog.v1") == true, "catálogo do Modo Foco anunciado");
         var defaultTv = (await app.Db().Tvs.AsNoTracking().SingleAsync(t => t.IsDefault, Ct)).Id;
         (await PatchAsync(defaultTv, new { focusPackages = Array.Empty<string>() })).Should().Be(HttpStatusCode.OK);
         (await PatchAsync(defaultTv, new { focusPackages = NotAPackage })).Should().Be(HttpStatusCode.BadRequest);
