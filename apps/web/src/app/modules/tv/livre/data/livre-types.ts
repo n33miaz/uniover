@@ -2,6 +2,9 @@ import type { TvSummary } from '../../data/tv-types';
 
 export const TV_LIVRE_CAPABILITY = 'tv.livre.v1';
 
+/** O agente sabe dormir sem instalar o launcher: é o que libera o Modo Dormir para quem não é o dono. */
+export const TV_LIVRE_SLEEP_NO_INSTALL_CAPABILITY = 'tv.livre.sleep-no-install.v1';
+
 /**
  * Tipos escritos à mão das rotas `/v1/tv/livre`: o contrato gerado do OpenAPI ainda não as traz, e a leitura abaixo é
  * tolerante de propósito (um campo que falta ou vem torto volta ao padrão, nunca derruba a tela).
@@ -236,4 +239,16 @@ export function parseLivreView(value: unknown): TvLivreView | null {
 /** A TV declara o TV Livre? Aqui a falta de informação vale "não": não se oferece a instalação no escuro. */
 export function tvHasLivre(tv: TvSummary | null): boolean {
   return tv?.capabilities.includes(TV_LIVRE_CAPABILITY) === true;
+}
+
+/**
+ * O agente desta TV, online e com o TV Livre, é anterior ao dormir sem instalação? Só é verdadeiro quando se sabe: com o
+ * agente fora ou sem a lista de capacidades vale "não", e o pedido segue para a API, que responde o motivo.
+ */
+export function tvNeedsSleepAgentUpdate(tv: TvSummary | null): boolean {
+  return (
+    tv?.online === true &&
+    tv.capabilities.includes(TV_LIVRE_CAPABILITY) &&
+    !tv.capabilities.includes(TV_LIVRE_SLEEP_NO_INSTALL_CAPABILITY)
+  );
 }

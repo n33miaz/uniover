@@ -19,7 +19,13 @@ const SALA: MockTv = {
   agentSlug: 'pc-sala',
   kind: 'android',
   online: true,
-  capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.livre.v1'],
+  capabilities: [
+    'tv.remote',
+    'tv.kind.android',
+    'tv.adb',
+    'tv.livre.v1',
+    'tv.livre.sleep-no-install.v1',
+  ],
 };
 const SAMSUNG: MockTv = {
   ...SALA,
@@ -152,6 +158,24 @@ test.describe('a entrada no menu da TV', () => {
     await expect(sheet.getByText('Agendar')).toHaveCount(0);
     await sleepButton(sheet).click();
     await expect.poll(() => livre.to('POST', '/sleep').length).toBe(1);
+  });
+
+  test('o convidado com um agente antigo vê o Modo Dormir desligado e o aviso, sem pedido', async ({
+    page,
+  }) => {
+    tv.tvs = [
+      {
+        ...SALA,
+        capabilities: SALA.capabilities.filter((c) => c !== 'tv.livre.sleep-no-install.v1'),
+      },
+    ];
+    signInAsGuest(['module:tv', 'tv:control']);
+    await page.goto('/tv');
+    await page.getByRole('button', { name: 'Apagar a tela da TV' }).click();
+    const sheet = page.getByRole('dialog');
+    await expect(sleepButton(sheet)).toBeDisabled();
+    await expect(sheet.getByText('Peça para atualizar o agente do PC.')).toBeVisible();
+    expect(livre.to('POST', '/sleep')).toEqual([]);
   });
 
   test('o Modo Dormir nunca some: sem o TV Livre na TV ele continua na folha e o pedido sai', async ({

@@ -1437,6 +1437,25 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         sent.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
+    [Fact]
+    public async Task GuestSleep_WithTheAgentOffline_Returns503_AndLeavesTheFailedCheckInTheTrail()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        app.PassReconnectGrace();
+        var controller = await app.NewGuestAsync("Sala", ["module:tv", "tv:control"], 66);
+
+        using var refused = await Within(app.SendAsync(
+            HttpMethod.Post, $"{Base}/sleep", null, bearer: controller.Login.AccessToken));
+
+        refused.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await TvApp.JsonAsync(refused)).GetProperty("type").GetString().Should().EndWith("/agent-offline");
+        await using var db = app.Db();
+        var row = await db.CommandAudit.SingleAsync(Ct);
+        row.Command.Should().Be("tv.livre.refresh", "fica a conferência que falhou, não um dormir que nem saiu");
+        row.Detail.Should().StartWith("sleep-check");
+        row.ErrorCode.Should().Be("agent_offline");
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
