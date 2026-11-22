@@ -13,9 +13,7 @@
 #   - workflow_dispatch segue sempre: a execução manual e o ensaio do alerta não dependem do commit.
 #   - push segue só se o assunto do commit de head é exatamente `chore: release x.y.z` (SemVer sem sufixo).
 #   - qualquer outro evento não publica; evento vazio falha.
-#   - no push, a triagem da fila precisa concordar com a regra exata. Release fora da fila falha (publicaria sem esperar
-#     a vez); push sem release dentro da fila também falha, porque pode ter cancelado um release pendente, e a falha
-#     faz o notify avisar em vez de esse release sumir em silêncio.
+#   - no push, um release precisa estar na fila da produção para publicar. Os demais pushes encerram com publish=false.
 # A checagem é só pelo assunto; a validação de VERSION, tags e metadados continua no job version do Deploy.
 set -euo pipefail
 
@@ -45,13 +43,9 @@ case "$event" in
       publish=true
     fi
     case "$publish:$queue" in
-      true:true | false:false) ;;
+      true:true | false:true | false:false) ;;
       true:false)
-        echo "::error::o commit de head é um release, mas o push ficou fora da fila da produção (a mensagem tem '-' ou '+'). Nada é publicado: publique pela execução manual do Deploy."
-        exit 1
-        ;;
-      false:true)
-        echo "::error::o push entrou na fila da produção sem ser um release (chore: release x.y.z). Um release que esperava a vez pode ter sido cancelado: confira as execuções do Deploy."
+        echo "::error::o commit de head é um release, mas o push ficou fora da fila da produção. Confira a triagem do Deploy."
         exit 1
         ;;
       *)

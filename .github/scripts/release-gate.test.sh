@@ -8,13 +8,10 @@ gate="$here/release-gate.sh"
 failures=0
 total=0
 
-# Espelho da triagem do grupo de concorrência do deploy.yml: prefixo `chore: release ` e nenhum `-` nem `+` na
-# mensagem, sem diferenciar maiúsculas (o startsWith e o contains do GitHub ignoram a caixa). Não avalia a expressão
-# do GitHub; se ela mudar, este espelho muda junto.
+# Espelho do startsWith do deploy.yml: confere o prefixo `chore: release ` sem distinguir maiúsculas de minúsculas.
 queue_of() {
   local message="${1,,}"
   case "$message" in
-    *-* | *+*) echo false ;;
     'chore: release '*) echo true ;;
     *) echo false ;;
   esac
@@ -39,7 +36,8 @@ check true push 'chore: release 0.78.4' 'release patch'
 check true push 'chore: release 1.0.0' 'release major'
 check true push 'chore: release 10.20.300' 'release com vários dígitos'
 check true push $'chore: release 0.79.0\n\nCorpo qualquer.' 'release com corpo'
-check true push $'chore: release 0.79.0\r\n\r\nCorpo com CRLF.' 'release com fim de linha CRLF'
+check true push $'chore: release 0.79.0\n\nreviewed-by: someone' 'release com hífen no corpo'
+check true push $'chore: release 0.79.0\r\n\r\nCorpo com CRLF e versão 0.79.0+build.7.' 'release com CRLF e sinal de mais no corpo'
 check true workflow_dispatch '' 'execução manual sem mensagem'
 check true workflow_dispatch 'fix(web): qualquer coisa' 'execução manual com commit comum'
 
@@ -47,6 +45,11 @@ check true workflow_dispatch 'fix(web): qualquer coisa' 'execução manual com c
 check false push 'fix(web): stabilize browser scenarios' 'commit comum'
 check false push 'chore: release 0.78.4-rc.1' 'versão com sufixo de pré-release'
 check false push 'chore: release 0.78.4+build.7' 'versão com metadados de build'
+check false push 'Chore: Release 0.78.4' 'assunto com maiúsculas'
+check false push 'chore: release 0.78' 'versão incompleta'
+check false push 'chore: release v0.78.4' 'versão com prefixo v'
+check false push 'chore: release 0.78.4 ' 'espaço no fim do assunto'
+check false push 'chore: release 0.78.4 extra' 'texto depois da versão'
 check false push ' chore: release 0.78.4' 'espaço no começo do assunto'
 check false push 'chore(web): release 0.78.4' 'tipo com escopo'
 check false push 'chore: releases 0.78.4' 'palavra diferente'
@@ -68,14 +71,7 @@ fails() {
   fi
 }
 
-# A triagem deixa estes entrarem na fila da produção (prefixo certo, sem `-` nem `+`), mas não são release: podem ter
-# cancelado um release pendente, então o gate falha.
-for message in 'chore: release 0.78' 'chore: release v0.78.4' 'chore: release 0.78.4 ' 'chore: release 0.78.4 extra' 'Chore: Release 0.78.4'; do
-  fails "$message" "$(queue_of "$message")" "na fila sem ser release: '$message'"
-done
-# Release que a triagem deixou fora da fila (hífen no corpo) não publica sem esperar a vez.
-body_hyphen=$'chore: release 0.79.0\n\nreviewed-by: alguém'
-fails "$body_hyphen" "$(queue_of "$body_hyphen")" 'release fora da fila: hífen no corpo'
+fails 'chore: release 0.78.4' false 'release fora da fila da produção'
 fails 'chore: release 0.78.4' '' 'push sem PRODUCTION_QUEUE'
 fails 'chore: release 0.78.4' 'sim' 'PRODUCTION_QUEUE inválida'
 
