@@ -829,6 +829,41 @@ async def test_a_reconnect_inside_the_retype_of_an_unowned_field_never_erases_th
     assert editor.last_text == "abd"
 
 
+async def test_a_failed_retype_on_the_same_connection_preserves_the_user_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote = EraseDropRemote()
+    remote.field = "hi"
+    editor, session = await erase_doubt_of_three(remote, owned=False, adb=False)
+    assert remote.field == "hiabc"
+
+    reopened: list[float] = []
+    session.on_session_opened(reopened.append)
+    remote.reset_deletes(lost=set(), drop_at=None)
+    send_key = remote.send_key
+
+    async def reject_first_letter(key: str, direction: str = "SHORT") -> None:
+        if key == "TYPE_A":
+            raise ValueError("tecla desconhecida")
+        await send_key(key, direction)
+
+    # Todos os DEL chegam e a TV recusa a primeira letra sem derrubar a conexão.
+    with monkeypatch.context() as patch:
+        patch.setattr(remote, "send_key", reject_first_letter)
+        with pytest.raises(TvSessionError) as caught:
+            await editor.set_text("abd")
+    assert caught.value.code == "text_key_unsupported"
+    assert remote.keys == ["DEL", "DEL", "DEL"]
+    assert remote.field == "hi"
+
+    remote.keys.clear()
+    await editor.set_text("abd")
+    assert reopened == []
+    assert remote.field == "hiabd"
+    assert "DEL" not in remote.keys
+    assert editor.last_text == "abd"
+
+
 async def test_a_failed_retype_after_a_resumed_erase_never_counts_its_deletes_twice() -> None:
     remote = EraseDropRemote()
     remote.field = "hi"  # do dono, antes do agente; a TV nunca informou o campo
