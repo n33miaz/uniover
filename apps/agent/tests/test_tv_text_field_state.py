@@ -142,7 +142,13 @@ async def test_a_pending_state_is_dropped_when_the_field_is_forgotten() -> None:
 
     rig.remote.send_text = send_text_then_forget  # type: ignore[method-assign]
     await rig.editor.set_text("abcd")
-    assert rig.editor.last_text == "abcd"
+    # O relato da sessão antiga não vira base, mas a troca de foco que ele provou continua valendo:
+    # "abcd" era do campo anterior e não pode guiar apagamentos no campo novo.
+    assert rig.editor.last_text == ""
+    rig.remote.send_text = send_text  # type: ignore[method-assign]
+    rig.reset()
+    await rig.editor.set_text("abc")
+    assert rig.deletions == 0
 
 
 async def test_only_a_real_app_change_forgets_the_field() -> None:
