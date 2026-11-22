@@ -1,8 +1,8 @@
 name: Dependabot coauthor
 
-# Põe o dono do repositório como coautor dos commits de cada PR do Dependabot.
-# Roda depois do CI verde na branch do Dependabot: só a mensagem muda (a árvore é a mesma que o CI aprovou), então o
-# resultado do CI continua valendo para o commit reescrito. O push com o GITHUB_TOKEN não dispara outro CI.
+# Por padrão, o PR conserva o SHA que recebeu os checks. Com a variável de repositório
+# DEPENDABOT_COAUTHOR=true, a coautoria gera outro SHA após o CI. O push com GITHUB_TOKEN
+# deixa as novas execuções do PR aguardando aprovação. Aprove-as e confira os checks antes do merge.
 # Nenhum código do PR é executado aqui: só operações do git sobre a branch.
 # Este arquivo precisa existir na branch padrão do repositório, porque é de lá que o GitHub lê o `workflow_run`.
 on:
@@ -21,6 +21,7 @@ jobs:
   coauthor:
     name: dependabot-coauthor
     if: >-
+      vars.DEPENDABOT_COAUTHOR == 'true' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.actor.login == 'dependabot[bot]' &&
