@@ -323,6 +323,40 @@ function tagCommit(root, tag) {
   return git(root, ['rev-parse', `${tag}^{commit}`]);
 }
 
+/**
+ * As notas da entrada `version` no CHANGELOG, do mesmo jeito que o job de release as extrai (o awk do deploy.yml): a
+ * partir da linha que começa com `## [<versão>]` até a próxima que começa com `## `. Devolve null se o título não existe.
+ * Uma linha que repete o título é pulada sem encerrar a entrada, como no awk.
+ */
+export function releaseNotes(changelog, version) {
+  const heading = `## [${version}]`;
+  const lines = [];
+  let found = false;
+  for (const line of changelog.replace(/\r\n/g, '\n').split('\n')) {
+    if (line.startsWith(heading)) {
+      found = true;
+      continue;
+    }
+    if (found && line.startsWith('## ')) break;
+    if (found) lines.push(line);
+  }
+  return found ? lines.join('\n') : null;
+}
+
+/** Os problemas da entrada de `version` no CHANGELOG: sem ela, ou com ela vazia, o job de release falharia depois. */
+function changelogProblems(root, version) {
+  let changelog;
+  try {
+    changelog = readText(root, 'CHANGELOG.md');
+  } catch {
+    return ['CHANGELOG.md não existe'];
+  }
+  const notes = releaseNotes(changelog, version);
+  if (notes === null) return [`CHANGELOG.md não tem a entrada '## [${version}]': rode --prepare antes de publicar`];
+  if (!/\S/.test(notes)) return [`CHANGELOG.md: a entrada '## [${version}]' está vazia; a Release ficaria sem notas`];
+  return [];
+}
+
 /** Falha (lançando Error) se VERSION não puder ser publicada agora. */
 export function verify(root) {
   const version = readVersion(root);
@@ -333,6 +367,8 @@ export function verify(root) {
     const found = file.read(readText(root, file.path));
     if (found !== version) problems.push(`${label} está em ${found ?? 'sem versão'}, mas VERSION é ${version}`);
   }
+
+  problems.push(...changelogProblems(root, version));
 
   const tag = highestTag(root);
 
