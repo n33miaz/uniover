@@ -90,6 +90,51 @@ public partial class DeployWorkflowTests
     }
 
     [Fact]
+    public void ACommonPush_NeverEntersTheProductionQueue()
+    {
+        var text = Workflow();
+        var start = text.IndexOf("\nconcurrency:\n", StringComparison.Ordinal);
+        start.Should().BeGreaterThan(0);
+        var concurrency = text[start..text.IndexOf("\njobs:\n", StringComparison.Ordinal)];
+
+        concurrency.Should().Contain(
+            $"github.event_name == 'push' && !({QueueTriage}) && format('deploy-skip-{{0}}', github.run_id)",
+            "um push que não é release cancelaria um release pendente na fila e depois pararia no gate");
+        concurrency.Should().Contain("cancel-in-progress: false");
+        Job("gate").Should().Contain($"PRODUCTION_QUEUE: \"${{{{ {QueueTriage} }}}}\"",
+            "o gate recebe a mesma triagem do grupo e falha quando ela diverge da regra exata do release");
+    }
+
+    /// <summary>A triagem do grupo de concorrência, repetida no env do job gate.</summary>
+    private const string QueueTriage =
+        "startsWith(github.event.head_commit.message, 'chore: release ') && !contains(github.event.head_commit.message, '-') && !contains(github.event.head_commit.message, '+')";
+
+    /// <summary>
+    /// Espelho em C# da <see cref="QueueTriage"/> (não avalia a expressão do GitHub; o teste acima prende o texto dela).
+    /// Versão com sufixo fica fora da fila da produção; o release exato entra. O startsWith e o contains do GitHub
+    /// ignoram maiúsculas, então `Chore: Release` entra na fila (e o gate, que diferencia, falha e avisa).
+    /// </summary>
+    [Theory]
+    [InlineData("chore: release 0.78.4", true)]
+    [InlineData("chore: release 10.20.300", true)]
+    [InlineData("chore: release 0.79.0\n\nCorpo qualquer.", true)]
+    [InlineData("chore: release 0.79.0\r\n\r\nCorpo com CRLF.", true)]
+    [InlineData("Chore: Release 0.78.4", true)]
+    [InlineData("chore: release 0.78.4-rc.1", false)]
+    [InlineData("CHORE: RELEASE 0.78.4-RC.1", false)]
+    [InlineData("chore: release 0.78.4+build.7", false)]
+    [InlineData("fix(web): stabilize browser scenarios", false)]
+    [InlineData("chore: releases 0.78.4", false)]
+    public void OnlyAnUnsuffixedReleaseSubject_EntersTheProductionQueue(string message, bool production)
+    {
+        var triage = message.StartsWith("chore: release ", StringComparison.OrdinalIgnoreCase)
+            && !message.Contains('-', StringComparison.Ordinal)
+            && !message.Contains('+', StringComparison.Ordinal);
+
+        triage.Should().Be(production);
+    }
+
+    [Fact]
     public void OnlyTheNoticeJobWritesToIssues_AndOnlyReleaseAndLauncherWriteToContents()
     {
         var text = Workflow();
