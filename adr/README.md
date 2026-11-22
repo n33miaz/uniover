@@ -29,9 +29,10 @@ que o código é como é, sem precisar adivinhar.
 | [0010](0010-eventos-com-outbox.md) | Eventos de integração por porta própria com outbox em Postgres | Aceito |
 | [0011](0011-autenticacao.md) | Autenticação: senha, JWT curto, refresh rotativo, passkey e token de dispositivo | Aceito (exceção em 0015) |
 | [0012](0012-material-de-terceiros.md) | Material de terceiros com licença própria | Aceito |
-| [0013](0013-fluxo-de-git.md) | Fluxo de git: `develop` e `main` protegidas, Conventional Commits | Aceito |
+| [0013](0013-fluxo-de-git.md) | Fluxo de git: `develop` e `main` protegidas, Conventional Commits | Substituído por 0019 |
 | [0014](0014-csp-com-nonce.md) | CSP estrita com nonce por requisição | Aceito |
 | [0015](0015-recuperacao-do-refresh.md) | Recuperação do refresh cuja resposta se perdeu, com prova da chave do aparelho | Aceito |
 | [0016](0016-atualizacao-do-agente.md) | Atualização do agente: canal, pacote conferido, prova antes de confiar | Proposto |
 | [0017](0017-instalacao-por-usuario-no-windows.md) | Instalação por usuário e pastas do agente no Windows | Proposto |
 | [0018](0018-manifesto-assinado-do-agente.md) | Manifesto assinado para atualização do agente | Aceito |
+| [0019](0019-production-flow.md) | Fluxo de produção pela `develop` | Proposto |
