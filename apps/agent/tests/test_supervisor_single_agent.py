@@ -267,6 +267,11 @@ function taskkill.exe {
         release.touch()
 
 
+def ps_quote(value: object) -> str:
+    """O valor como literal de aspas simples do PowerShell (aspas internas dobradas)."""
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def supervisor_routines(base: Path) -> str:
     """As rotinas de parada e as de leitura do ponteiro do supervisor, sem o laço, para uma
     instalação em `base`."""
@@ -281,7 +286,7 @@ def supervisor_routines(base: Path) -> str:
         stopping
         + pointer
         + f"""
-$base = '{base}'
+$base = {ps_quote(base)}
 $runtime = Join-Path $base 'runtime'
 $script:currentSlot = $null
 $script:previousSlot = $null
@@ -291,7 +296,8 @@ $script:previousSlot = $null
 
 def run_routines(tmp_path: Path, name: str, body: str) -> subprocess.CompletedProcess[bytes]:
     script = tmp_path / name
-    script.write_text(supervisor_routines(tmp_path / "UniOver") + body, encoding="ascii")
+    # Com BOM, o Windows PowerShell lê o script como UTF-8 e um caminho acentuado sobrevive.
+    script.write_text(supervisor_routines(tmp_path / "UniOver") + body, encoding="utf-8-sig")
     return subprocess.run(  # noqa: S603 - PowerShell do sistema com as funções do repositório
         [str(POWERSHELL), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
         capture_output=True,
@@ -378,8 +384,8 @@ def test_a_run_still_alive_after_the_tree_stop_delays_the_new_agent(tmp_path: Pa
         "conferencia.ps1",
         FAKE_INVENTORY
         + f"""
-$paths = @('{app}')
-$entries = @(New-Run 4242 '{app}')
+$paths = @({ps_quote(app)})
+$entries = @(New-Run 4242 {ps_quote(app)})
 $roots = @{{}}
 if (Stop-AgentLeftovers $roots $null $paths) {{ throw 'subiu com um agente da instalacao vivo' }}
 if ($stops -ne 1 -or $queries -ne 2) {{ throw "paradas $stops, consultas $queries" }}
@@ -421,7 +427,9 @@ def test_after_a_handover_the_check_covers_the_slot_now_in_use(tmp_path: Path) -
             "venv": f"runtime\\venv-{old_sha}",
         },
     }
-    (base / "runtime" / "current.json").write_text(json.dumps(pointer), encoding="ascii")
+    (base / "runtime" / "current.json").write_text(
+        json.dumps(pointer, ensure_ascii=False), encoding="utf-8"
+    )
     other = tmp_path / "Outra" / "UniOver" / "app.staging" / new_sha
     result = run_routines(
         tmp_path,
@@ -429,19 +437,19 @@ def test_after_a_handover_the_check_covers_the_slot_now_in_use(tmp_path: Path) -
         FAKE_INVENTORY
         + f"""
 $entries = @(
-    (New-Run 5001 '{slot_b}'),
-    (New-Run 5002 '{slot_a}'),
-    (New-Run 5003 '{other}'),
-    (New-Run 5004 '{slot_b}x'),
-    (New-Run 5005 '{venv_b}-old'),
-    (New-Run 5006 '{base / "app.staging"}')
+    (New-Run 5001 {ps_quote(slot_b)}),
+    (New-Run 5002 {ps_quote(slot_a)}),
+    (New-Run 5003 {ps_quote(other)}),
+    (New-Run 5004 {ps_quote(f"{slot_b}x")}),
+    (New-Run 5005 {ps_quote(f"{venv_b}-old")}),
+    (New-Run 5006 {ps_quote(base / "app.staging")})
 )
 $roots = @{{}}
-$null = Stop-AgentLeftovers $roots $null @('{slot_a}', '{venv_a}')
+$null = Stop-AgentLeftovers $roots $null @({ps_quote(slot_a)}, {ps_quote(venv_a)})
 $found = @($roots.Keys | Sort-Object)
 if (($found -join ',') -ne '5001,5002') {{ throw ('encontrados: ' + ($found -join ',')) }}
-$places = @(Get-InstallationAgentPaths @('{slot_a}', '{venv_a}'))
-foreach ($need in @('{slot_b}', '{venv_b}')) {{
+$places = @(Get-InstallationAgentPaths @({ps_quote(slot_a)}, {ps_quote(venv_a)}))
+foreach ($need in @({ps_quote(slot_b)}, {ps_quote(venv_b)})) {{
     if ($places -notcontains $need) {{ throw ('faltou ' + $need) }}
 }}
 """,
