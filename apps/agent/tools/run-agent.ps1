@@ -521,6 +521,142 @@ function Stop-VenvUsers {
     $script:trayWatch = $null
 }
 
+function Get-ProcessTreeItems([hashtable]$Roots, $ExitedParent) {
+    # Registra a raiz e os descendentes antes de encerra-los, enquanto o inventario mostra a cadeia de pais.
+    $items = New-Object System.Collections.ArrayList
+    $all = @(Get-CimInstance Win32_Process -OperationTimeoutSec 30 -ErrorAction Stop)
+    $seen = @{}
+    if ($null -ne $ExitedParent) {
+        $start = Get-CimStartTime $ExitedParent
+        $end = $ExitedParent.ExitTime
+    }
+    foreach ($entry in $all) {
+        $id = [int]$entry.ProcessId
+        # Se o CIM voltou depois da parada pelo handle, o pai ja saiu do inventario. So um filho
+        # criado durante a vida desse pai pode pertencer a ele, mesmo se o PID foi reutilizado.
+        if ($null -ne $ExitedParent -and [int]$entry.ParentProcessId -eq $ExitedParent.Id -and $id -ne $PID) {
+            if ($null -eq $entry.CreationDate) { throw 'descendente sem hora de criacao' }
+            if ($entry.CreationDate -ge $start -and $entry.CreationDate -le $end) { $Roots[$id] = $entry.CreationDate }
+        }
+        if (-not $Roots.ContainsKey($id)) { continue }
+        if ($null -eq $entry.CreationDate -or $null -eq $Roots[$id]) { throw 'processo sem hora de criacao' }
+        if ($entry.CreationDate -eq $Roots[$id]) {
+            $seen[$id] = $true
+            $null = $items.Add($entry)
+        }
+    }
+    for ($index = 0; $index -lt $items.Count; $index++) {
+        $parent = $items[$index]
+        foreach ($entry in $all) {
+            $id = [int]$entry.ProcessId
+            if ([int]$entry.ParentProcessId -ne [int]$parent.ProcessId -or $seen.ContainsKey($id) -or $id -eq $PID) { continue }
+            if ($null -eq $entry.CreationDate) { throw 'descendente sem hora de criacao' }
+            if ($entry.CreationDate -lt $parent.CreationDate) { continue }
+            $seen[$id] = $true
+            $null = $items.Add($entry)
+        }
+    }
+    return $items.ToArray()
+}
+
+function Get-CimStartTime($Process) {
+    # O CIM guarda microssegundos; StartTime tambem traz a fracao de microssegundo.
+    $start = $Process.StartTime
+    return $start.AddTicks(-($start.Ticks % 10))
+}
+
+function Wait-ProcessesGone($Items, [double]$Seconds) {
+    # Espera, no maximo `Seconds`, todos sairem; devolve os que continuam vivos.
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    while ($true) {
+        $alive = @($Items | Where-Object { -not $_.HasExited })
+        if ($alive.Count -eq 0 -or (Get-Date) -ge $deadline) { return $alive }
+        Start-Sleep -Milliseconds 200
+    }
+}
+
+function Stop-ProcessTrees([hashtable]$Roots, [string]$What, $ExitedParent) {
+    # Encerra individualmente os processos identificados no inventario e repete a parada de quem resistir ao prazo.
+    $opened = @{}
+    try {
+        $trees = @(Get-ProcessTreeItems $Roots $ExitedParent)
+        foreach ($entry in $trees) {
+            $id = [int]$entry.ProcessId
+            # Guarda tambem o filho para a proxima tentativa, mesmo que o pai ja tenha saido.
+            $Roots[$id] = $entry.CreationDate
+            try { $proc = [Diagnostics.Process]::GetProcessById($id) }
+            catch [ArgumentException] { continue }
+            $opened[$id] = $proc
+            # Mantem o handle aberto da verificacao ate o fim das duas paradas. Um PID reutilizado
+            # entre a consulta CIM e a abertura deste handle nao autoriza encerrar o processo novo.
+            $null = $proc.Handle
+            if ((Get-CimStartTime $proc) -ne $entry.CreationDate) {
+                $opened.Remove($id)
+                $proc.Dispose()
+            }
+        }
+        foreach ($proc in $opened.Values) {
+            if (-not $proc.HasExited) { & taskkill.exe /PID $proc.Id /F *> $null }
+        }
+        $left = @(Wait-ProcessesGone $opened.Values $stopWaitSeconds)
+        if ($left.Count -gt 0) {
+            Write-SupLog 'WARNING' ($What + ' continua vivo depois de ' + $stopWaitSeconds + ' s; forco o encerramento (pid ' + ($left.Id -join ', ') + ')')
+            foreach ($proc in $left) { if (-not $proc.HasExited) { & taskkill.exe /PID $proc.Id /F *> $null } }
+            $left = @(Wait-ProcessesGone $left $stopWaitSeconds)
+        }
+        return ($left.Count -eq 0)
+    } catch {
+        Write-SupLog 'WARNING' ('nao consegui conferir a arvore de ' + $What + ': ' + $_.Exception.Message)
+        return $false
+    } finally {
+        foreach ($proc in $opened.Values) { $proc.Dispose() }
+    }
+}
+
+function Get-AgentRunLeftovers([string[]]$ProcessPaths) {
+    # Agentes `run` desta instalacao vivos agora: um que escapou da arvore do processo acompanhado ou sobrou de uma volta
+    # anterior. So o `run` (o icone da bandeja, `tray`, e o lancador ficam) e so os da pasta ou do ambiente desta versao,
+    # comparados como componente de caminho (`app` nao pode pegar `app.previous`, nem `venv` pegar `venv-<sha>`).
+    $places = @()
+    foreach ($place in $ProcessPaths) {
+        if ($place) { $places += ('(?i)' + [regex]::Escape($place.TrimEnd('\')) + '(?=["\\\s]|$)') }
+    }
+    Get-CimInstance Win32_Process -OperationTimeoutSec 30 -ErrorAction Stop | Where-Object {
+            $line = $_.CommandLine
+            ($_.ProcessId -ne $PID) -and $line -and ($line -match '(?i)uniover-agent(\.exe)?"?\s+run(\s|"|$)') -and
+                (@($places | Where-Object { $line -match $_ }).Count -gt 0)
+    }
+}
+
+function Stop-AgentLeftovers([hashtable]$Roots, $ExitedParent, [string[]]$ProcessPaths) {
+    try {
+        $current = @(Get-AgentRunLeftovers $ProcessPaths)
+        foreach ($entry in $current) { $Roots[[int]$entry.ProcessId] = $entry.CreationDate }
+    } catch {
+        Write-SupLog 'WARNING' 'nao consegui consultar os agentes antigos desta instalacao'
+        return $false
+    }
+    if ($current.Count -gt 0) {
+        Write-SupLog 'WARNING' ('um agente antigo desta instalacao ainda estava vivo (pid ' + ($current.ProcessId -join ', ') + '); encerro antes de subir o novo')
+    }
+    return (Stop-ProcessTrees $Roots 'o agente antigo' $ExitedParent)
+}
+
+function Stop-TrackedAgent($Process, [hashtable]$Roots) {
+    if ($Process.HasExited) { return }
+    $Roots[[int]$Process.Id] = Get-CimStartTime $Process
+    $null = Stop-ProcessTrees $Roots 'o agente'
+    # O handle veio de Start-Hidden. Mesmo sem CIM ele identifica este processo ate a saida.
+    # Os descendentes conhecidos ficam em Roots para a conferencia antes da proxima partida.
+    while (-not $Process.HasExited) {
+        try { $Process.Kill() }
+        catch {
+            if (-not $Process.HasExited) { Write-SupLog 'WARNING' ('nao consegui encerrar o agente acompanhado: ' + $_.Exception.Message) }
+        }
+        if (-not $Process.HasExited) { Sleep-Beating ([Math]::Max(1, $stopWaitSeconds)) }
+    }
+}
+
 function Get-RunDescription($Run, [double]$Seconds) {
     if ($Run.TimedOut) { return ('passou de ' + [int]$Seconds + ' s e foi interrompido') }
     return ('codigo ' + $Run.ExitCode)
@@ -1753,6 +1889,8 @@ $ownedElsewhereCode = 5
 # minutos: ele ja registrou `agent.duplicate` e saiu para nao disputar. Nao e queda da versao: espera calma, sem contar contra a prova.
 $duplicateCode = 7
 $ownedElsewhereWait = Get-Setting 'UNIOVER_SUPERVISOR_OWNED_WAIT_SECONDS' 60
+# Quanto o supervisor espera o agente encerrado sair de fato (e, de novo, depois do encerramento forcado de quem sobrou).
+$stopWaitSeconds = Get-Setting 'UNIOVER_SUPERVISOR_STOP_WAIT_SECONDS' 10
 # Prazos de tudo que o supervisor espera: nada abaixo roda sem fim. O teto do self-update (2400 s) tem de passar da soma dos
 # limites internos dele (consulta, download, extracao, duas tentativas de uv sync, auto-diagnostico: 1863 s em
 # self_update.WORST_CASE_SECONDS, com folga), para nunca matar uma atualizacao lenta mas legitima, e de acabar antes de o
@@ -1833,6 +1971,7 @@ $updateFailures = 0
 $nextUpdate = [DateTime]::MinValue
 if ($timedOutRecently) { $nextUpdate = (Get-Date).AddMinutes(30); Write-SupLog 'INFO' 'o ultimo update estourou o prazo; a primeira volta sobe o agente sem repeti-lo' }
 $tray = $null
+$pendingRoots = $null
 while ($true) {
     Touch-Alive
     Update-Layout
@@ -1849,6 +1988,15 @@ while ($true) {
     # instalacao (codigo 5) o ambiente acabou de ser preparado e o sync (que antes encerra quem usa o ambiente) nao roda a cada
     # tentativa: so mataria o dono que esta vivo e bem.
     $synced = $true
+    # A saida do processo acompanhado permite concluir a parada. Tanto o reinicio rapido quanto o sync depois de
+    # um travamento precisam conferir os sobreviventes antes de iniciar o substituto.
+    if ($null -ne $pendingRoots) {
+        while (-not (Stop-AgentLeftovers $pendingRoots $process $processPaths)) {
+            Write-SupLog 'WARNING' 'reinicio adiado; vou conferir e tentar a parada de novo'
+            Sleep-Beating ([Math]::Max(1, $stopWaitSeconds))
+        }
+        $pendingRoots = $null
+    }
     # Reinicio pedido pelo dono (bandeja, app ou `uniover-agent restart`) com o ambiente desta versao ja pronto: nada a
     # sincronizar, e o sync encerraria quem usa o ambiente, inclusive o icone. So o agente reinicia; o icone fica.
     $quickRestart = ($script:restartOnly -and (Test-EnvironmentSynced) -and -not $rollbackReady)
@@ -1928,6 +2076,8 @@ while ($true) {
     Update-Tray $uv
     Ensure-AgentPulse
     $arguments = 'run --project "' + $source + '" --no-dev uniover-agent run'
+    # Uma volta de versao pode mudar os caminhos em uso antes da conferencia dos sobreviventes.
+    $processPaths = @($source, $script:agentVenv)
     $process = Start-Hidden $uv $arguments ([bool]$script:noSyncLaunch)
     $started = Get-Date
     Write-SupLog 'INFO' ('agente iniciado (pid ' + $process.Id + ')')
@@ -1978,7 +2128,8 @@ while ($true) {
             Write-SupLog 'ERROR' ('o agente esta vivo (pid ' + $process.Id + ') mas mudo ha cerca de 5 minutos; vou reinicia-lo')
             Add-Diagnostic 'process.unresponsive' 'error' 'o agente parou de dar sinal de vida por 5 minutos e foi reiniciado'
             Set-StopReason 'unresponsive'
-            & taskkill.exe /PID $process.Id /T /F *> $null
+            $pendingRoots = @{}
+            Stop-TrackedAgent $process $pendingRoots
             $hung = $true
             break
         }
@@ -1989,9 +2140,13 @@ while ($true) {
             Remove-Item -LiteralPath (Join-Path $runtime 'restart-now') -Force -ErrorAction SilentlyContinue
             Write-SupLog 'INFO' 'reinicio pedido; reinicio o agente'
             Set-StopReason 'restart'
-            & taskkill.exe /PID $process.Id /T /F *> $null
+            # Espera o agente sair de fato (com prazo, depois o encerramento forcado de quem sobrou) antes de subir o novo, e
+            # sai do laco ja: seguir nesta volta rodaria a checagem de atualizacao com o agente fora do ar.
+            $pendingRoots = @{}
+            Stop-TrackedAgent $process $pendingRoots
             $restartForUpdate = $true
             $script:restartOnly = $true
+            break
         }
         $rollbackFlag = Join-Path $runtime 'rollback-now'
         if (Test-Path -LiteralPath $rollbackFlag) {

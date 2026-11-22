@@ -215,5 +215,6 @@ def test_the_supervisor_restart_signal_stops_only_the_agent() -> None:
     runner = RUNNER.read_text(encoding="ascii")
     start = runner.index("if (Test-Path (Join-Path $runtime 'restart-now'))")
     block = runner[start : runner.index("$rollbackFlag", start)]
-    assert "taskkill.exe /PID $process.Id" in block
+    # Encerra a árvore do agente acompanhado (e espera ela sair); o ícone não entra.
+    assert "Stop-TrackedAgent $process" in block
     assert "$tray" not in block
