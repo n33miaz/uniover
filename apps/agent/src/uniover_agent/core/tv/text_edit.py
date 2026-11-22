@@ -586,15 +586,20 @@ class TextReconciler:
         finally:
             self._validate = upstream
             if focus_changed():
-                # A base e os envios incertos pertencem ao foco antigo. O relato pendente,
-                # inclusive após uma reconexão, vai semear a edição seguinte.
-                self._last = ""
-                self._last_at = None
-                self._field_counter = None
-                self._echo = None
-                self._owns_field = False
-                self._buffered_ime = None
-                self._clear_doubt()
+                self._forget_edit_field()
+
+    def _forget_edit_field(self) -> None:
+        """A base e os envios incertos pertencem ao foco antigo.
+
+        Se houver um relato pendente do campo novo, ele será a base da próxima edição.
+        """
+        self._last = ""
+        self._last_at = None
+        self._field_counter = None
+        self._echo = None
+        self._owns_field = False
+        self._buffered_ime = None
+        self._clear_doubt()
 
     async def set_text(
         self, text: str, *, queued: float = 0.0, validate: Callable[[], None] | None = None
@@ -648,7 +653,15 @@ class TextReconciler:
             self._clear_doubt()
             uncertain = None
         if uncertain is not None and not self._resolve_doubt(self._echo):
-            await self._resync(target, uncertain, trace)
+            counter, generation = self._edit_counter, self._focus_generation
+            try:
+                await self._resync(target, uncertain, trace)
+            except TvSessionError, asyncio.CancelledError:
+                if self._focus_changed(counter, generation):
+                    # Outro app ou outro campo: a dúvida, a limpeza e a base eram do campo antigo
+                    # e não podem mandar `DEL` ao campo que tem o foco agora.
+                    self._forget_edit_field()
+                raise
             return
         if self._field_changed(now, target):
             self._last = ""
