@@ -9,6 +9,7 @@ O laço de verdade, com o `uv` falso de `test_supervisor_guardrails`; e o execut
 verdade, num segundo processo, saindo limpo com o código de "já roda".
 """
 
+import json
 import os
 import re
 import subprocess
@@ -266,18 +267,47 @@ function taskkill.exe {
         release.touch()
 
 
+def supervisor_routines(base: Path) -> str:
+    """As rotinas de parada e as de leitura do ponteiro do supervisor, sem o laço, para uma
+    instalação em `base`."""
+    source = RUNNER.read_text(encoding="ascii")
+    stopping = source[
+        source.index("function Get-ProcessTreeItems") : source.index("function Get-RunDescription")
+    ]
+    pointer = source[
+        source.index("function Read-JsonFile") : source.index("function Update-Layout")
+    ]
+    return (
+        stopping
+        + pointer
+        + f"""
+$base = '{base}'
+$runtime = Join-Path $base 'runtime'
+$script:currentSlot = $null
+$script:previousSlot = $null
+"""
+    )
+
+
+def run_routines(tmp_path: Path, name: str, body: str) -> subprocess.CompletedProcess[bytes]:
+    script = tmp_path / name
+    script.write_text(supervisor_routines(tmp_path / "UniOver") + body, encoding="ascii")
+    return subprocess.run(  # noqa: S603 - PowerShell do sistema com as funções do repositório
+        [str(POWERSHELL), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+        capture_output=True,
+        check=False,
+        timeout=60,
+    )
+
+
 @windows_only
 def test_stop_requires_the_original_pid_and_creation_time_even_if_cim_fails(tmp_path: Path) -> None:
     # Exercita as rotinas de parada sem iniciar o supervisor. O PID existe de verdade, mas
     # pertence a outro processo; toda tentativa de taskkill fica registrada no dublê.
-    source = RUNNER.read_text(encoding="ascii")
-    functions = source[
-        source.index("function Get-ProcessTreeItems") : source.index("function Get-RunDescription")
-    ]
-    script = tmp_path / "parada.ps1"
-    script.write_text(
-        functions
-        + """
+    result = run_routines(
+        tmp_path,
+        "parada.ps1",
+        """
 $ErrorActionPreference = 'Stop'
 function Write-SupLog($Level, $Message) {
     if ($Message -like '*ainda estava vivo*') { $script:falseAlarm = $true }
@@ -308,13 +338,113 @@ if (Stop-ProcessTrees $roots 'teste') { throw 'consulta falha passou por arvore 
 if (Stop-AgentLeftovers @{}) { throw 'consulta falha passou por instalacao vazia' }
 if ($kills -ne 0) { throw 'tentou encerrar um PID sem identidade confirmada' }
 """,
-        encoding="ascii",
     )
-    result = subprocess.run(  # noqa: S603 - PowerShell do sistema com as funções do repositório
-        [str(POWERSHELL), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
-        capture_output=True,
-        check=False,
-        timeout=30,
+    assert result.returncode == 0, result.stderr
+
+
+# Dublês das consultas: o inventário é a lista `$entries` (ou falha a partir da consulta
+# `$failFrom`), e a parada da árvore só conta as vezes em que foi pedida.
+FAKE_INVENTORY = r"""
+$ErrorActionPreference = 'Stop'
+$log = New-Object System.Collections.ArrayList
+function Write-SupLog($Level, $Message) { $null = $log.Add($Message) }
+$queries = 0
+$failFrom = 0
+$entries = @()
+function Get-CimInstance {
+    $script:queries++
+    if ($script:failFrom -and $script:queries -ge $script:failFrom) { throw 'CIM indisponivel' }
+    return $script:entries
+}
+$stops = 0
+function Stop-ProcessTrees($Roots, $What, $ExitedParent) { $script:stops++; return $true }
+$created = (Get-Date).AddMinutes(-5)
+function New-Run([int]$Id, [string]$Place) {
+    return [pscustomobject]@{
+        ProcessId = $Id; ParentProcessId = 0; CreationDate = $created
+        CommandLine = '"C:\uv\uv.exe" run --project "' + $Place + '" --no-dev uniover-agent run'
+    }
+}
+"""
+
+
+@windows_only
+def test_a_run_still_alive_after_the_tree_stop_delays_the_new_agent(tmp_path: Path) -> None:
+    # A árvore parou "com sucesso", mas a conferência seguinte ainda acha um `run` desta
+    # instalação (escapou da árvore ou subiu durante a parada): o novo não pode subir.
+    app = tmp_path / "UniOver" / "app"
+    result = run_routines(
+        tmp_path,
+        "conferencia.ps1",
+        FAKE_INVENTORY
+        + f"""
+$paths = @('{app}')
+$entries = @(New-Run 4242 '{app}')
+$roots = @{{}}
+if (Stop-AgentLeftovers $roots $null $paths) {{ throw 'subiu com um agente da instalacao vivo' }}
+if ($stops -ne 1 -or $queries -ne 2) {{ throw "paradas $stops, consultas $queries" }}
+if (-not $roots.ContainsKey(4242)) {{ throw 'o sobrevivente nao ficou para a proxima tentativa' }}
+if (-not ($log -like '*seguiu de pe depois da parada (pid 4242)*')) {{ throw ($log -join ' | ') }}
+
+$log.Clear(); $queries = 0; $failFrom = 2
+if (Stop-AgentLeftovers @{{}} $null $paths) {{ throw 'conferencia falha liberou a partida' }}
+if (-not ($log -like '*depois da parada: CIM indisponivel*')) {{ throw ($log -join ' | ') }}
+
+$queries = 0; $failFrom = 0; $entries = @()
+if (-not (Stop-AgentLeftovers @{{}} $null $paths)) {{ throw 'sem sobra a partida devia seguir' }}
+if ($queries -ne 2) {{ throw "consultas $queries" }}
+""",
+    )
+    assert result.returncode == 0, result.stderr
+
+
+@windows_only
+def test_after_a_handover_the_check_covers_the_slot_now_in_use(tmp_path: Path) -> None:
+    # A partida acompanhada foi da versão A; a passagem trocou o processo pelo da versão B sem
+    # voltar ao laço. A conferência acha o `run` de B (e o que sobrou de A), mas nada de outra
+    # instalação nem de um nome que só começa igual.
+    base = tmp_path / "UniOver"
+    old_sha, new_sha = "a" * 40, "b" * 40
+    slot_a, venv_a = base / "app.staging" / old_sha, base / "runtime" / f"venv-{old_sha}"
+    slot_b, venv_b = base / "app.staging" / new_sha, base / "runtime" / f"venv-{new_sha}"
+    (base / "runtime").mkdir(parents=True)
+    pointer = {
+        "v": 1,
+        "current": {
+            "sha": new_sha,
+            "app": f"app.staging\\{new_sha}",
+            "venv": f"runtime\\venv-{new_sha}",
+        },
+        "previous": {
+            "sha": old_sha,
+            "app": f"app.staging\\{old_sha}",
+            "venv": f"runtime\\venv-{old_sha}",
+        },
+    }
+    (base / "runtime" / "current.json").write_text(json.dumps(pointer), encoding="ascii")
+    other = tmp_path / "Outra" / "UniOver" / "app.staging" / new_sha
+    result = run_routines(
+        tmp_path,
+        "passagem.ps1",
+        FAKE_INVENTORY
+        + f"""
+$entries = @(
+    (New-Run 5001 '{slot_b}'),
+    (New-Run 5002 '{slot_a}'),
+    (New-Run 5003 '{other}'),
+    (New-Run 5004 '{slot_b}x'),
+    (New-Run 5005 '{venv_b}-old'),
+    (New-Run 5006 '{base / "app.staging"}')
+)
+$roots = @{{}}
+$null = Stop-AgentLeftovers $roots $null @('{slot_a}', '{venv_a}')
+$found = @($roots.Keys | Sort-Object)
+if (($found -join ',') -ne '5001,5002') {{ throw ('encontrados: ' + ($found -join ',')) }}
+$places = @(Get-InstallationAgentPaths @('{slot_a}', '{venv_a}'))
+foreach ($need in @('{slot_b}', '{venv_b}')) {{
+    if ($places -notcontains $need) {{ throw ('faltou ' + $need) }}
+}}
+""",
     )
     assert result.returncode == 0, result.stderr
 

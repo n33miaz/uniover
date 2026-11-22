@@ -628,9 +628,25 @@ function Get-AgentRunLeftovers([string[]]$ProcessPaths) {
     }
 }
 
+function Get-InstallationAgentPaths([string[]]$ProcessPaths) {
+    # De onde um `run` desta instalacao pode estar rodando: os caminhos da partida acompanhada e os de cada versao valida do
+    # ponteiro (a em uso e a anterior, como o laco as resolveu e como o ponteiro diz agora). Depois de uma passagem de versao o
+    # processo acompanhado roda da versao nova, que nao estava nos caminhos da partida. ConvertTo-Slot so aceita caminhos
+    # dentro da pasta da instalacao; a comparacao por componente de caminho fica em Get-AgentRunLeftovers.
+    $slots = @($script:currentSlot, $script:previousSlot)
+    $pointer = Read-JsonFile (Join-Path $runtime 'current.json')
+    if ($pointer -is [System.Collections.IDictionary]) { $slots += @((ConvertTo-Slot $pointer['current']), (ConvertTo-Slot $pointer['previous'])) }
+    $places = @($ProcessPaths | Where-Object { $_ })
+    foreach ($slot in $slots) {
+        if ($null -ne $slot) { $places += @($slot.app, $slot.venv) }
+    }
+    return @($places | Where-Object { $_ } | Sort-Object -Unique)
+}
+
 function Stop-AgentLeftovers([hashtable]$Roots, $ExitedParent, [string[]]$ProcessPaths) {
     try {
-        $current = @(Get-AgentRunLeftovers $ProcessPaths)
+        $places = @(Get-InstallationAgentPaths $ProcessPaths)
+        $current = @(Get-AgentRunLeftovers $places)
         foreach ($entry in $current) { $Roots[[int]$entry.ProcessId] = $entry.CreationDate }
     } catch {
         Write-SupLog 'WARNING' 'nao consegui consultar os agentes antigos desta instalacao'
@@ -639,7 +655,19 @@ function Stop-AgentLeftovers([hashtable]$Roots, $ExitedParent, [string[]]$Proces
     if ($current.Count -gt 0) {
         Write-SupLog 'WARNING' ('um agente antigo desta instalacao ainda estava vivo (pid ' + ($current.ProcessId -join ', ') + '); encerro antes de subir o novo')
     }
-    return (Stop-ProcessTrees $Roots 'o agente antigo' $ExitedParent)
+    if (-not (Stop-ProcessTrees $Roots 'o agente antigo' $ExitedParent)) { return $false }
+    # A arvore parou, mas um `run` desta instalacao pode ter escapado dela ou subido durante a parada: o novo so sobe sem nenhum.
+    try { $survivors = @(Get-AgentRunLeftovers $places) }
+    catch {
+        Write-SupLog 'WARNING' ('nao consegui conferir os agentes desta instalacao depois da parada: ' + $_.Exception.Message)
+        return $false
+    }
+    if ($survivors.Count -gt 0) {
+        foreach ($entry in $survivors) { $Roots[[int]$entry.ProcessId] = $entry.CreationDate }
+        Write-SupLog 'WARNING' ('um agente desta instalacao seguiu de pe depois da parada (pid ' + ($survivors.ProcessId -join ', ') + '); o novo espera')
+        return $false
+    }
+    return $true
 }
 
 function Stop-TrackedAgent($Process, [hashtable]$Roots) {
@@ -2076,7 +2104,8 @@ while ($true) {
     Update-Tray $uv
     Ensure-AgentPulse
     $arguments = 'run --project "' + $source + '" --no-dev uniover-agent run'
-    # Uma volta de versao pode mudar os caminhos em uso antes da conferencia dos sobreviventes.
+    # Os caminhos desta partida; a conferencia dos sobreviventes junta a eles os de cada versao valida do ponteiro, porque uma
+    # passagem de versao troca o processo acompanhado sem passar por aqui.
     $processPaths = @($source, $script:agentVenv)
     $process = Start-Hidden $uv $arguments ([bool]$script:noSyncLaunch)
     $started = Get-Date
