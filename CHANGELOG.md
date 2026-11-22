@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.78.3](https://github.com/n33miaz/uniover/compare/v0.78.2...v0.78.3) (2026-11-22)
+
+
+### Agent 0.63.5
+
+#### Bug Fixes
+
+* **agent:** detect lost remote text
+
 ## [0.78.2](https://github.com/n33miaz/uniover/compare/v0.78.1...v0.78.2) (2026-11-21)
 
 
