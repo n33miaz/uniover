@@ -29,13 +29,7 @@
           Dispensar
         </button>
         @if (dismissFailed()) {
-          <p
-            class="error dismiss-error"
-            role="alert"
-            i18n="@@settings.system.capacity.dismiss-failed"
-          >
-            Não foi possível dispensar os avisos. Tente novamente.
-          </p>
+          <p class="error dismiss-error" role="alert">{{ dismissFailedText }}</p>
         }
       </div>
     }
