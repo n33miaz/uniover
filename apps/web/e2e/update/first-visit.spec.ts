@@ -96,7 +96,8 @@ async function lifecycleSettled(page: Page, mayStayUncontrolled = false): Promis
 
 async function expectNoBanner(page: Page): Promise<void> {
   await page.bringToFront();
-  // O estado do worker já foi publicado. Deixa o Angular pintar uma eventual mudança no aviso.
+  // A instalação já foi liberada e o worker ativo assumiu a aba que o registrou. Em primeiro plano,
+  // dois quadros dão ao Angular oportunidade de pintar o aviso antes da checagem pontual do DOM.
   await page.evaluate(
     () =>
       new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))),
@@ -169,9 +170,22 @@ test.describe('primeira visita com o worker ainda instalando', () => {
       await open.bringToFront();
       if (browserName === 'webkit') {
         // O WebKit pode deixar as abas auxiliares sem controlador nem registro local após clients.claim().
-        // A aba que registrou o worker comprova a ativação; nas outras verificamos o controlador quando existe.
-        const controller = await open.evaluate(() => navigator.serviceWorker.controller?.scriptURL);
+        // A aba principal já comprovou a ativação. Confere também o ciclo nas auxiliares que expõem o registro.
+        const { controller, lifecycle } = await open.evaluate(async () => {
+          const registration = await navigator.serviceWorker.getRegistration();
+          return {
+            controller: navigator.serviceWorker.controller?.scriptURL,
+            lifecycle: registration && {
+              active: registration.active?.state,
+              installing: !!registration.installing,
+              waiting: !!registration.waiting,
+            },
+          };
+        });
         if (controller) expect(controller).toBe(scriptURL);
+        if (lifecycle) {
+          expect(lifecycle).toEqual({ active: 'activated', installing: false, waiting: false });
+        }
       } else {
         await lifecycleSettled(open, true);
       }

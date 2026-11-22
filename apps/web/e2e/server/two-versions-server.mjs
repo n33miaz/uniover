@@ -3,7 +3,8 @@
 //
 //   node e2e/server/two-versions-server.mjs <pasta-do-build> [--first-visit]
 //
-// Na primeira visita só há a versão atual, então o servidor usa o build sem copiar uma segunda versão.
+// Em --first-visit, a e b servem o mesmo build e /use?v=b não troca a versão. /sw-delay também não tem efeito
+// nesse modo. Use /hold-install para controlar quando o worker atual termina de instalar.
 // Escreve uma linha JSON `{ "port": N, "tmp": "<pasta da versão b>" }` quando está pronto. Controle (GET):
 //   /use?v=a|b                 qual versão responde daqui em diante
 //   /sw-delay?ms=N             a versão b só obedece ao SKIP_WAITING depois de N ms (um aparelho lento)

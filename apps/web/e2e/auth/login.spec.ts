@@ -351,6 +351,9 @@ test.describe('tela de entrada: teclado virtual', () => {
     const fieldBottom = await bottomOf(password(page));
     await page.setViewportSize({ width, height });
     await page.evaluate(() => window.scrollTo(0, 0));
+    // Fixa Date.now() e mantém os temporizadores rodando: o segundo resize cai na janela de 700 ms da moldura
+    // mesmo se o executor demorar entre os dois passos.
+    await page.clock.setFixedTime(new Date());
     await password(page).focus();
     // Primeiro passo: só o botão fica 20 px atrás da margem de baixo, então a moldura rola pouco (campo e botão juntos).
     await page.setViewportSize({ width, height: Math.floor(submitBottom) + 24 - 20 });

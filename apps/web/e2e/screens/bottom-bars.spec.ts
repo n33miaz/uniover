@@ -373,9 +373,14 @@ test.describe('com o teclado aberto a área segura não é somada duas vezes', (
     await expect(page.locator('app-tab-bar nav')).toBeHidden();
     const height = page.viewportSize()!.height;
     const barBottom = await bottomOf(page.locator('app-pc-action-bar'));
-    expect(barBottom, 'barra de ações acima do teclado').toBeLessThanOrEqual(height - KEYBOARD + 0.5);
-    // Encosta no teclado: o vão que sobra é menor que a área segura, que não entra na conta com o teclado aberto.
-    expect(barBottom, 'sem o vão da área segura').toBeGreaterThan(height - KEYBOARD - inset);
+    expect(barBottom, 'barra de ações acima do teclado').toBeLessThanOrEqual(
+      height - KEYBOARD + 0.5,
+    );
+    // Com o teclado aberto, sobra a folga normal de 8 px, com tolerância de meio pixel no arredondamento.
+    expect(height - KEYBOARD - barBottom, 'folga entre a barra de ações e o teclado').toBeCloseTo(
+      8,
+      0,
+    );
     expect(await bandIntruders(page, KEYBOARD, true)).toEqual([]);
   });
 

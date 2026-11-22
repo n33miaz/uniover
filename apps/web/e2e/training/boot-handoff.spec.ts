@@ -75,7 +75,8 @@ const sampler = (): void => {
     return false;
   };
   const snap = (src: Sample['src']): void => {
-    // O app-root vem depois do esqueleto no HTML. Antes dele o parser ainda pode estar montando o desenho.
+    // O app-root vem depois do esqueleto no HTML. Descartar amostras anteriores evita contar como vazio o HTML
+    // que o parser ainda está montando. A partir dali, a sonda cobra cobertura já no primeiro quadro amostrado.
     if (!document.querySelector('body > app-root') || probe.samples.length > 20_000) return;
     const cover = [...document.querySelectorAll('.bs-root')].some((root) => {
       for (const bone of root.querySelectorAll('.bone')) {
@@ -297,7 +298,10 @@ test.describe('troca do esqueleto de abertura pelo da tela', () => {
         const styles = /\/styles-[^/]+\.css(\?.*)?$/;
         if (scenario.styles === 'after-screen') {
           await page.route(styles, async (route) => {
-            await page.locator('[data-screen-ready="training"]').waitFor({ state: 'attached' });
+            // A marca precisa entrar no DOM enquanto a folha ainda está retida para exercitar a troca após o CSS.
+            await page
+              .locator('[data-screen-ready="training"]')
+              .waitFor({ state: 'attached', timeout: 25_000 });
             await route.fallback();
           });
         } else {
