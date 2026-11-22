@@ -318,6 +318,10 @@ class TextReconciler:
         self._last_at: float | None = None
         self._field_counter: int | None = None
         self._pending_field: TextFieldStatus | None = None
+        # Relatos descartados por sessões novas no meio da edição: não semeiam base nenhuma (são da
+        # sessão antiga), mas seguem provando que o foco do plano em curso mudou. Todos ficam: um
+        # relato posterior do mesmo campo do plano não apaga a prova de uma troca anterior.
+        self._dropped_fields: list[TextFieldStatus] = []
         self._app: str | None = None
         self._lock = asyncio.Lock()
         # A validade da edicao em curso (so o canal direto a da); lida e escrita sob a trava.
@@ -426,6 +430,9 @@ class TextReconciler:
         emitir seus próprios relatos.
         """
         self._field_counter = None
+        if self._pending_field is not None:
+            # A TV pode não repetir o relato na sessão nova: a troca de foco não pode sumir junto.
+            self._dropped_fields.append(self._pending_field)
         self._pending_field = None
         self._echo = None
         self._owns_field = False
@@ -550,9 +557,9 @@ class TextReconciler:
         )
 
     def _focus_changed(self, counter: int | None, generation: int) -> bool:
-        pending = self._pending_field
-        return self._focus_generation != generation or (
-            pending is not None and pending.counter != counter
+        return self._focus_generation != generation or any(
+            field is not None and field.counter != counter
+            for field in (self._pending_field, *self._dropped_fields)
         )
 
     @contextmanager
@@ -610,6 +617,7 @@ class TextReconciler:
                     await self._reconcile(target, trace)
                 finally:
                     self._validate = None
+                    self._dropped_fields.clear()  # só valiam contra o plano desta edição
                     pending, self._pending_field = self._pending_field, None
                     if pending is not None:
                         self._accept(pending)

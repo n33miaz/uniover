@@ -362,6 +362,93 @@ async def test_edit_preserves_the_new_field_when_focus_changes_during_wake(
     assert adb.typed == ["!"]
 
 
+class FocusMovesThenDropsRemote(FieldRemote):
+    """No segundo `DEL` o foco vai para o campo do dono, o relato do campo novo chega e o socket
+    cai antes de aplicar a tecla: a sessão reabre e a TV não repete o relato do campo."""
+
+    def __init__(self) -> None:
+        super().__init__(lose=set(), fail_on=None)
+        self.dels = 0
+
+    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+        if key == "DEL":
+            self.dels += 1
+            if self.dels == 2:
+                self.field = "dono"
+                self.push_text_field(TextFieldStatus(self.field, 4, 4, "", counter=2))
+                self._connected = False
+                raise TvUnreachable("caiu")
+        await super().send_key(key, direction)
+
+
+async def test_a_new_field_report_dropped_by_a_reconnect_still_stops_the_old_plan() -> None:
+    remote = FocusMovesThenDropsRemote()
+    clock = FakeClock()
+    session = TvSessionManager(clock, remote, backoff=())
+    editor = TextReconciler(session, monotonic=clock.monotonic, keys=True, sleep=clock.sleep)
+    editor.use_adb(FieldAdb(remote))
+    session.on_session_opening(editor.forget_session)
+    remote.on_app(editor.observe_app)
+    remote.on_text_field(editor.observe_field)
+    await session.wake()
+    remote.push_app("app.um")
+    remote.field = "matrix"
+    remote.push_text_field(TextFieldStatus(remote.field, 6, 6, "", counter=1))
+    connects = remote.connects
+
+    with pytest.raises(TvSessionError) as caught:
+        await editor.set_text("mat")
+    assert caught.value.code == "text_resync_abandoned"
+    assert remote.connects == connects + 1  # a sessão reabriu no meio da edição
+    assert remote.field == "dono"  # o plano do campo antigo não chegou ao campo novo
+    assert remote.keys == ["DEL"]
+
+    # Sem relato fresco do campo novo, o comando seguinte não apaga nada do dono: na dúvida, sobra.
+    await editor.set_text("mat")
+    assert remote.field == "donomat"
+    assert remote.keys == ["DEL", "TYPE_M", "TYPE_A", "TYPE_T"]  # nenhum `DEL` no campo do dono
+
+
+class SameFieldDropRemote(FieldRemote):
+    """A cada abertura a TV repete o relato do mesmo campo; o socket cai uma vez no segundo `DEL`,
+    antes de aplicá-lo, sem nenhuma troca de foco."""
+
+    def __init__(self) -> None:
+        super().__init__(lose=set(), fail_on=None)
+        self.dels = 0
+        self.on_connect = lambda: self.push_text_field(
+            TextFieldStatus(self.field, len(self.field), len(self.field), "", counter=1)
+        )
+
+    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+        if key == "DEL":
+            self.dels += 1
+            if self.dels == 2:
+                self._connected = False
+                raise TvUnreachable("caiu")
+        await super().send_key(key, direction)
+
+
+async def test_a_reconnect_that_reports_the_same_field_lets_the_edit_finish() -> None:
+    remote = SameFieldDropRemote()
+    clock = FakeClock()
+    session = TvSessionManager(clock, remote, backoff=())
+    editor = TextReconciler(session, monotonic=clock.monotonic, keys=True, sleep=clock.sleep)
+    editor.use_adb(FieldAdb(remote))
+    session.on_session_opening(editor.forget_session)
+    remote.on_app(editor.observe_app)
+    remote.on_text_field(editor.observe_field)
+    remote.push_app("app.um")
+    remote.field = "matrix"
+    remote.push_text_field(TextFieldStatus(remote.field, 6, 6, "", counter=1))
+
+    # A abertura da própria edição e a reabertura no meio dela repetem o campo do plano.
+    await editor.set_text("mat")
+    assert remote.connects == 2
+    assert remote.field == editor.last_text == "mat"
+    assert remote.keys == ["DEL", "DEL", "DEL"]
+
+
 async def test_a_lost_key_before_the_drop_is_never_completed_by_adb_as_if_it_went() -> None:
     # "b" ficou no socket que caiu e "c" é a primeira tecla a falhar: a TV tem só "a".
     remote = FieldRemote(lose={"TYPE_B"}, fail_on="TYPE_C")
