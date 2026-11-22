@@ -14,6 +14,8 @@ import { TvAccess } from '../data/tv-access';
 import { TvStore } from '../data/tv-store';
 import { TvLivreApi } from '../livre/data/livre-api';
 import { describeLivreFailure } from '../livre/data/livre-errors';
+import { tvNeedsSleepAgentUpdate } from '../livre/data/livre-types';
+import { SessionState } from '../../../core/session/session-state';
 import {
   closeDialog,
   onDialogBackdropClick,
@@ -57,6 +59,15 @@ export class PowerSheet {
    * que não roda o TV Livre, fica sem ele.
    */
   protected readonly showSleep = computed(() => showsSleep(this.store.selectedTv()?.kind));
+  private readonly isGuest = inject(SessionState).isGuest;
+  /**
+   * O convidado com um agente anterior ao dormir sem instalação: a API recusaria o pedido, então o botão fica desligado e
+   * a dica vira o aviso. Só quando se sabe (convidado, agente online, capacidades conhecidas); o dono não passa por aqui.
+   */
+  protected readonly sleepNeedsUpdate = computed(
+    () => this.isGuest() && tvNeedsSleepAgentUpdate(this.store.selectedTv()),
+  );
+  protected readonly sleepUpdateHint = $localize`:@@tv.power.black-out-update:Peça para atualizar o agente do PC.`;
   /** O pedido de dormir está em curso (pode incluir a instalação do TV Livre): o botão se anuncia ocupado. */
   protected readonly sleeping = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -125,7 +136,7 @@ export class PowerSheet {
    * segundos, com o botão ocupado); o de um convidado volta pedindo que o dono prepare a TV. Como o desligamento, fecha a folha se der certo e explica aqui dentro se não der.
    */
   protected async blackOut(): Promise<void> {
-    if (this.busy() || this.leaving) return;
+    if (this.busy() || this.leaving || this.sleepNeedsUpdate()) return;
     this.busy.set(true);
     this.sleeping.set(true);
     this.error.set(null);

@@ -17,11 +17,12 @@
     <!--
       O Modo Dormir vem primeiro, logo abaixo do título: é o que mais se usa à noite e não desliga nada (a tela fica preta,
       o som e o controle continuam). Está sempre aqui numa TV Android: sem o TV Livre na TV, o computador o instala antes.
+      Para o convidado com um agente antigo ele fica desligado e a dica diz o que fazer.
     -->
     <button
       type="button"
       class="sleep"
-      [disabled]="busy() || !store.canSend()"
+      [disabled]="busy() || !store.canSend() || sleepNeedsUpdate()"
       [attr.aria-busy]="sleeping() ? 'true' : null"
       (click)="blackOut()"
     >
@@ -30,9 +31,13 @@
         <span id="power-sleep-title" class="sleep-title" i18n="@@tv.power.black-out"
           >Modo Dormir</span
         >
-        <span id="power-sleep-hint" class="sleep-hint" i18n="@@tv.power.black-out-hint"
-          >Tela preta e TV ligada; qualquer botão acorda.</span
-        >
+        @if (sleepNeedsUpdate()) {
+          <span id="power-sleep-hint" class="sleep-hint">{{ sleepUpdateHint }}</span>
+        } @else {
+          <span id="power-sleep-hint" class="sleep-hint" i18n="@@tv.power.black-out-hint"
+            >Tela preta e TV ligada; qualquer botão acorda.</span
+          >
+        }
       </span>
     </button>
   }

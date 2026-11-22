@@ -211,14 +211,18 @@ internal sealed class TvLivreHandler(
 
         if (!mayInstall)
         {
+            // Sem agente configurado ou com ele fora, a tentativa fica na trilha como a leitura que falhou (a mesma linha
+            // de quando a conferência passava pelo runner): nenhum comando saiu.
             if (string.IsNullOrWhiteSpace(selection.Current.AgentSlug))
             {
-                return LivreStep.Failed(TvSendOutcome.Failed(TvSendStatus.NotConfigured, TvCommandRunner.NotConfiguredCode));
+                return await SleepCheckFailedAsync(
+                    origin, TvSendOutcome.Failed(TvSendStatus.NotConfigured, TvCommandRunner.NotConfiguredCode));
             }
 
             if (AgentInfo() is not { Connected: true } agent)
             {
-                return LivreStep.Failed(TvSendOutcome.Failed(TvSendStatus.AgentOffline, AgentErrors.OfflineCode));
+                return await SleepCheckFailedAsync(
+                    origin, TvSendOutcome.Failed(TvSendStatus.AgentOffline, AgentErrors.OfflineCode));
             }
 
             if (!agent.Capabilities.Contains(TvCapabilities.LivreSleepNoInstall, StringComparer.Ordinal))
@@ -246,8 +250,7 @@ internal sealed class TvLivreHandler(
             if (!status.IsDelivered)
             {
                 // Na trilha fica a leitura que falhou, com o motivo: nenhum dormir chegou a ser enviado.
-                await runner.RecordAsync(origin, TvCommandNames.LivreRefresh, "sleep-check", status);
-                return LivreStep.Failed(status);
+                return await SleepCheckFailedAsync(origin, status);
             }
 
             if (!await LauncherConfirmedAsync(ticket.RequestId, cancellationToken))
@@ -260,6 +263,13 @@ internal sealed class TvLivreHandler(
             ticket, origin, TvCommandNames.LivreSleep, null, TvLivreAction.Sleep, longTimeout: true, cancellationToken,
             waitForState: false, minutes: IsExtended() ? minutes : null, skipInstall: mayInstall ? null : true);
         return !mayInstall && step.Outcome?.ErrorCode == LauncherRequiredCode ? LivreStep.OwnerRequired : step;
+    }
+
+    /// <summary>Registra na trilha a conferência do dormir de um convidado que não chegou à TV e devolve a falha.</summary>
+    private async Task<LivreStep> SleepCheckFailedAsync(TvCommandOrigin origin, TvSendOutcome outcome)
+    {
+        await runner.RecordAsync(origin, TvCommandNames.LivreRefresh, "sleep-check", outcome);
+        return LivreStep.Failed(outcome);
     }
 
     /// <summary>

@@ -1,9 +1,14 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { SessionState } from '../../../core/session/session-state';
 import { TvAccess } from '../data/tv-access';
 import { TvStore } from '../data/tv-store';
 import { TvLivreApi } from '../livre/data/livre-api';
+import {
+  TV_LIVRE_CAPABILITY,
+  TV_LIVRE_SLEEP_NO_INSTALL_CAPABILITY,
+} from '../livre/data/livre-types';
 import { FakeTvStore, createFakeTvStore, makeTv } from '../tv-test-kit';
 import { PowerSheet } from './power-sheet';
 
@@ -586,6 +591,56 @@ describe('PowerSheet, Modo Dormir', () => {
     blackOut()!.click();
     await fixture.whenStable();
     expect(livre.sleep).toHaveBeenCalledWith();
+  });
+
+  describe('for a guest whose computer is too old to sleep without installing', () => {
+    const older = ['tv.remote', 'tv.kind.android', 'tv.adb', TV_LIVRE_CAPABILITY];
+    const hint = () => blackOut()?.querySelector('.sleep-hint')?.textContent?.trim();
+
+    // O papel fica guardado como dica no armazenamento: não pode vazar para os outros testes.
+    afterEach(() => localStorage.clear());
+
+    async function openWith(role: 'guest' | 'owner', tv: Parameters<typeof makeTv>[1]) {
+      await open();
+      TestBed.inject(SessionState).setUser({
+        id: 'conta',
+        email: 'c@exemplo.com',
+        displayName: 'Conta',
+        role,
+      });
+      store.tvs.set([makeTv('sala', { name: 'Sala', ...tv })]);
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
+
+    it('turns the button off with a short notice instead of failing after the tap', async () => {
+      await openWith('guest', { capabilities: older });
+      expect(blackOut()?.disabled).toBe(true);
+      expect(hint()).toBe('Peça para atualizar o agente do PC.');
+      blackOut()!.click();
+      await fixture.whenStable();
+      expect(livre.sleep).not.toHaveBeenCalled();
+    });
+
+    it('keeps the button for a guest whose computer can sleep without installing', async () => {
+      await openWith('guest', { capabilities: [...older, TV_LIVRE_SLEEP_NO_INSTALL_CAPABILITY] });
+      expect(blackOut()?.disabled).toBe(false);
+      expect(hint()).toContain('qualquer botão acorda');
+    });
+
+    it('changes nothing for the owner, who may install', async () => {
+      await openWith('owner', { capabilities: older });
+      expect(blackOut()?.disabled).toBe(false);
+      expect(hint()).toContain('qualquer botão acorda');
+    });
+
+    it('keeps the button when it is not known: agent offline or no capability list', async () => {
+      await openWith('guest', { online: false, capabilities: older });
+      expect(blackOut()?.disabled).toBe(false);
+      TestBed.resetTestingModule();
+      await openWith('guest', { capabilities: [] });
+      expect(blackOut()?.disabled).toBe(false);
+    });
   });
 
   it('says why in the sheet when the TV does not take it, and stays open', async () => {

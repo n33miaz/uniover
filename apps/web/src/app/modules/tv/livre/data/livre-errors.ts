@@ -8,6 +8,12 @@ export const UNSUPPORTED_PROBLEM = 'tv-livre-unsupported';
 /** `type` do 409 com que a API recusa o Modo Dormir de um convidado quando falta o TV Livre na TV: instalar é do dono. */
 export const OWNER_REQUIRED_PROBLEM = 'tv-livre-owner-required';
 
+/**
+ * `type` do 409 com que a API recusa o Modo Dormir de um convidado quando o agente do PC é anterior ao dormir sem
+ * instalação: o dono precisa atualizá-lo.
+ */
+export const SLEEP_AGENT_UPDATE_REQUIRED_PROBLEM = 'tv-livre-sleep-agent-update-required';
+
 /** Os códigos estáveis de falha que o agente devolve (`error.code`); os `adb_*` são tratados à parte, pelo prefixo. */
 export const LIVRE_AGENT_CODES: readonly string[] = [
   'unsupported',
@@ -137,7 +143,7 @@ export function describeLivreFailure(error: unknown): LivreFailure {
       code,
     };
   }
-  if (problem?.status === 409 && problem.kind === 'tv-livre-sleep-agent-update-required') {
+  if (problem?.status === 409 && problem.kind === SLEEP_AGENT_UPDATE_REQUIRED_PROBLEM) {
     return {
       message: $localize`:@@tv-livre.error.sleep-agent-update-required:Peça ao dono para atualizar o UniOver no computador que controla a TV para liberar o Modo Dormir para convidados.`,
       code,

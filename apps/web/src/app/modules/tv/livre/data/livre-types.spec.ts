@@ -2,10 +2,12 @@ import { makeTv } from '../../tv-test-kit';
 import {
   DEFAULT_LIVRE_CONFIG,
   TV_LIVRE_CAPABILITY,
+  TV_LIVRE_SLEEP_NO_INSTALL_CAPABILITY,
   normalizeColor,
   parseLivreConfig,
   parseLivreView,
   tvHasLivre,
+  tvNeedsSleepAgentUpdate,
 } from './livre-types';
 
 describe('normalizeColor', () => {
@@ -146,5 +148,28 @@ describe('tvHasLivre', () => {
     expect(tvHasLivre(makeTv('a', { capabilities: [] }))).toBe(false);
     expect(tvHasLivre(makeTv('a', { capabilities: ['tv.adb'] }))).toBe(false);
     expect(tvHasLivre(makeTv('a', { capabilities: ['tv.adb', TV_LIVRE_CAPABILITY] }))).toBe(true);
+  });
+});
+
+describe('tvNeedsSleepAgentUpdate', () => {
+  const livre = ['tv.adb', TV_LIVRE_CAPABILITY];
+
+  it('is true only for an online agent with the TV Livre that cannot sleep without installing', () => {
+    expect(tvNeedsSleepAgentUpdate(makeTv('a', { capabilities: livre }))).toBe(true);
+    expect(
+      tvNeedsSleepAgentUpdate(
+        makeTv('a', { capabilities: [...livre, TV_LIVRE_SLEEP_NO_INSTALL_CAPABILITY] }),
+      ),
+    ).toBe(false);
+  });
+
+  it('is false when it is not known: no TV, agent offline or no capability list', () => {
+    expect(tvNeedsSleepAgentUpdate(null)).toBe(false);
+    expect(tvNeedsSleepAgentUpdate(makeTv('a', { online: false, capabilities: livre }))).toBe(
+      false,
+    );
+    expect(tvNeedsSleepAgentUpdate(makeTv('a', { capabilities: [] }))).toBe(false);
+    // Sem o TV Livre a API responde que a TV não o suporta: não é caso de atualizar para dormir.
+    expect(tvNeedsSleepAgentUpdate(makeTv('a', { capabilities: ['tv.adb'] }))).toBe(false);
   });
 });

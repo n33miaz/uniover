@@ -2,6 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ApiProblem } from '../../../../core/auth/api-problem';
 import {
   LIVRE_AGENT_CODES,
+  SLEEP_AGENT_UPDATE_REQUIRED_PROBLEM,
   describeLivreFailure,
   livreCodeMessage,
   livreCodeOf,
@@ -65,8 +66,12 @@ describe('livreCodeOf', () => {
 });
 
 describe('describeLivreFailure', () => {
+  it('keeps the type the API sends for a guest sleep on an older agent', () => {
+    expect(SLEEP_AGENT_UPDATE_REQUIRED_PROBLEM).toBe('tv-livre-sleep-agent-update-required');
+  });
+
   it('pede a atualização do agente para liberar o Modo Dormir a convidados', () => {
-    const failure = describeLivreFailure(http(409, 'tv-livre-sleep-agent-update-required'));
+    const failure = describeLivreFailure(http(409, SLEEP_AGENT_UPDATE_REQUIRED_PROBLEM));
     expect(failure.message).toContain('Peça ao dono para atualizar o UniOver');
   });
 
