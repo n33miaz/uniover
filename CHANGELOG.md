@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.78.4](https://github.com/n33miaz/uniover/compare/v0.78.3...v0.78.4) (2026-11-22)
+
+
+### Bug Fixes
+
+* **ci:** clarify repository path guidance
+
+
+### TV 0.54.4
+
+#### Bug Fixes
+
+* **tv:** clarify guest sleep availability
+
+
+### Web 0.73.5
+
+#### Bug Fixes
+
+* **tv:** clarify guest sleep availability
+* **e2e:** stabilize nightly first visit specs
+
+
+### Agent 0.63.6
+
+#### Maintenance
+
+* no user-facing changes
+
 ## [0.78.3](https://github.com/n33miaz/uniover/compare/v0.78.2...v0.78.3) (2026-11-22)
 
 
