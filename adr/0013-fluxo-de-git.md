@@ -1,6 +1,6 @@
 # 0013. Fluxo de git: `develop` e `main` protegidas, Conventional Commits, rebase na `develop`, merge na `main`
 
-- **Status:** Aceito
+- **Status:** Substituído por 0019
 - **Data:** 18/10/2026
 
 ## Contexto

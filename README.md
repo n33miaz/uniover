@@ -92,6 +92,9 @@ cd apps/tv-launcher && ./gradlew testDebugUnitTest assembleRelease
 
 ## Canal de produção
 
+A `develop` é a branch de produção e recebe as entregas por rebase. A `main` fica parada para entregas.
+O [ADR 0019](adr/0019-production-flow.md) descreve a preparação de versão, a Nightly, o Deploy e o Release.
+
 O valor `production_ref` em [apps/agent/tools/update-channel.json](apps/agent/tools/update-channel.json),
 publicado na `main`, escolhe entre `develop`, `main` e `homolog`. O deploy, o instalador do Windows e a
 auto-atualização dos agentes leem essa escolha. O destino de deploy no GitHub continua sendo o ambiente
