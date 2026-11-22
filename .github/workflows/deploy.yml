@@ -1,6 +1,10 @@
 name: Deploy
 
 # Política de publicação
+# - Só publica o merge de release: o push segue apenas quando o assunto do commit de head é exatamente
+#   `chore: release x.y.z` (job gate, regra em .github/scripts/release-gate.sh, testada no CI do PR). Os outros merges
+#   param no gate, com a execução verde, sem migrar nem notificar. A exceção é o push que entra na fila da produção
+#   sem ser release (ver concurrency): o gate falha e o notify avisa. O workflow_dispatch passa sempre pelo gate.
 # - As migrations rodam ANTES do código novo entrar no ar. Por alguns minutos o código antigo roda sobre o schema novo.
 # - Por isso toda migration deve ser retrocompatível com a versão anterior da API: acrescentar primeiro; remover ou
 #   renomear coluna só em duas etapas, depois que nenhum código a usa.
@@ -10,11 +14,12 @@ name: Deploy
 # - O Render deve ficar com o auto-deploy DESLIGADO: quem dispara a troca do código é o deploy hook, depois das
 #   migrations. Sem o segredo RENDER_DEPLOY_HOOK_URL o workflow FALHA, e falha antes de migrar (primeiro passo do job
 #   migrate): o banco nunca avança sem que o código novo possa ser publicado.
-# - Quando version, migrate, deploy, dast, release, launcher ou web-assets falham na branch de produção, o job notify abre (ou comenta) a
+# - Quando gate, version, migrate, deploy, dast, release, launcher ou web-assets falham na branch de produção, o job notify abre (ou comenta) a
 #   issue "Publicação falhou" mencionando o dono (a menção gera notificação e e-mail do GitHub mesmo sem acompanhar o
 #   repositório); a primeira publicação completa que der certo a comenta e a fecha. Só esse job escreve em issues.
-# - Ensaio do alerta: `gh workflow run deploy.yml -f alert_drill=true` não publica nada (version e tudo depois dele ficam
-#   pulados), falha o job alert-drill e o notify abre e fecha uma issue "Ensaio do alerta de publicação" com a menção.
+# - Ensaio do alerta: `gh workflow run deploy.yml -f alert_drill=true` não publica nada (gate e channel rodam, version e
+#   tudo depois dele ficam pulados), falha o job alert-drill e o notify abre e fecha uma issue "Ensaio do alerta de
+#   publicação" com a menção.
 #
 # Smoke autenticado (ainda não existe: precisa de uma conta de teste). Depois do deploy e antes do dast, um job com o ambiente
 # production entraria com uma conta criada só para isso (sem permissão de TV nem de PC, senha em segredo do ambiente) e faria
@@ -23,7 +28,9 @@ name: Deploy
 # passo falha o workflow e cai no notify. Uma entrada por execução cabe no limite de login por IP.
 
 # A branch de produção fica em apps/agent/tools/update-channel.json na main. A lista abaixo
-# permite receber eventos dos ramos elegíveis; o job channel decide qual deles pode publicar.
+# permite receber eventos dos ramos elegíveis; o gate decide se o commit é um release e o job channel decide qual
+# ramo pode publicar. Os dois valem em todos os ramos: se o production_ref voltar para a main, o assunto do merge
+# commit da main também precisa ser `chore: release x.y.z`, senão a publicação para no gate.
 on:
   push:
     branches: [develop, main, homolog]
@@ -39,7 +46,18 @@ permissions:
 
 concurrency:
   # O ensaio tem grupo próprio: nunca toma o lugar de uma publicação na fila.
-  group: ${{ inputs.alert_drill && 'deploy-alert-drill' || 'deploy-production' }}
+  # Só a execução manual e o push com cara de release entram na fila da produção. O GitHub mantém um único pendente por
+  # grupo e cancela o anterior: se um push que não é release entrasse na mesma fila, cancelaria um release que espera a
+  # vez, e como esse push para no gate, aquele release nunca seria publicado. Os demais pushes ganham um grupo só deles
+  # (o id da execução). O ensaio só existe na execução manual, então o push nunca cai no grupo dele.
+  # A expressão do GitHub não tem regex nem recorte de texto, então a triagem não repete a regra do gate: exige o prefixo
+  # `chore: release ` e recusa `-` e `+` em qualquer ponto da mensagem, o que deixa de fora as versões com sufixo
+  # (`0.78.4-rc.1`, `0.78.4+build`). O gate recebe a mesma triagem em PRODUCTION_QUEUE e falha quando ela diverge da
+  # regra exata: um release fora da fila não publica, e um push sem release que entrou na fila vira aviso no notify.
+  # A triagem aparece duas vezes (aqui e no job gate) e as duas precisam ser idênticas.
+  group: >-
+    ${{ github.event_name == 'push' && !(startsWith(github.event.head_commit.message, 'chore: release ') && !contains(github.event.head_commit.message, '-') && !contains(github.event.head_commit.message, '+')) && format('deploy-skip-{0}', github.run_id)
+    || inputs.alert_drill && 'deploy-alert-drill' || 'deploy-production' }}
   cancel-in-progress: false
 
 env:
@@ -47,8 +65,33 @@ env:
   APP_URL: ${{ vars.APP_URL || 'https://uniover.onrender.com' }}
 
 jobs:
+  # Primeiro job: o push só segue se o commit de head é um release (`chore: release x.y.z`); o workflow_dispatch segue
+  # sempre. Todo o resto depende dele pelo channel. A mensagem do commit entra por variável de ambiente, nunca
+  # interpolada no script. Não decide versão: isso continua no job version, a segunda rede.
+  gate:
+    name: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      publish: ${{ steps.gate.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Conferir se o commit de head é um release
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+          # Mesma triagem do grupo de concorrência: diz se este push entrou na fila da produção.
+          PRODUCTION_QUEUE: "${{ startsWith(github.event.head_commit.message, 'chore: release ') && !contains(github.event.head_commit.message, '-') && !contains(github.event.head_commit.message, '+') }}"
+        run: bash .github/scripts/release-gate.sh
+
   channel:
     name: channel
+    needs: gate
+    if: needs.gate.outputs.publish == 'true'
     runs-on: ubuntu-latest
     outputs:
       ref: ${{ steps.ref.outputs.ref }}
@@ -84,9 +127,10 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-      # Um merge sem versão nova (testes, documentação, dependências ainda sem release) não é publicação: a versão
-      # continua a da maior tag, que aponta para outro commit. Isso encerra a execução sem nada a fazer, em vez de
-      # falhar e abrir a issue de publicação. Qualquer outro problema de versão segue barrado pelo --verify abaixo.
+      # Segunda rede, depois do gate: um commit `chore: release x.y.z` que não sobe a versão (ou uma execução manual num
+      # commit comum) não é publicação: a versão continua a da maior tag, que aponta para outro commit. Isso encerra a
+      # execução sem nada a fazer, em vez de falhar e abrir a issue de publicação. Qualquer outro problema de versão
+      # segue barrado pelo --verify abaixo.
       - name: Ver se há versão nova
         id: new
         run: |
@@ -600,18 +644,19 @@ jobs:
           exit 1
 
   # Aviso de falha da publicação, sem serviço externo: uma issue "Publicação falhou" aberta enquanto a produção estiver quebrada.
-  # Falha de version, migrate, deploy, dast, release, sign-agent-manifest, launcher ou web-assets abre a issue (ou comenta na que já está aberta, sem duplicar); a
+  # Falha de gate, version, migrate, deploy, dast, release, sign-agent-manifest, launcher ou web-assets abre a issue (ou comenta na que já está aberta, sem duplicar); a
   # primeira publicação em que todos eles terminam com sucesso comenta e a fecha. Execuções canceladas ou puladas por outro motivo
-  # não mexem na issue. Roda só na branch de produção (a do channel). É o único job com permissão de escrever em issues: sem
+  # não mexem na issue. Roda só na branch de produção (a do channel) e, por depender do channel, só quando o gate deixou
+  # seguir; um merge comum não chega aqui. É o único job com permissão de escrever em issues: sem
   # checkout, sem segredos, sem ação de terceiros; o texto da issue só leva nomes de job, o commit e o link da execução.
   # Cada abertura e cada comentário de falha mencionam o dono (variável ALERT_MENTION do repositório ou, sem ela, o dono do
-  # repositório): é a menção que faz o GitHub mandar notificação e e-mail. Falha do próprio channel também avisa.
+  # repositório): é a menção que faz o GitHub mandar notificação e e-mail. Falha do próprio gate ou do channel também avisa.
   # No ensaio a issue tem outro título ("Ensaio do alerta de publicação"), é aberta e fechada na hora e nunca toca a real.
   # Se as issues estiverem desligadas no repositório o passo falha em silêncio (continue-on-error) e a execução mantém o resultado real.
   notify:
     name: notify
-    needs: [channel, version, migrate, deploy, dast, release, sign_agent_manifest, launcher, web-assets, alert-drill]
-    if: ${{ always() && (needs.channel.outputs.ref == github.ref_name || needs.channel.result == 'failure' || inputs.alert_drill) }}
+    needs: [gate, channel, version, migrate, deploy, dast, release, sign_agent_manifest, launcher, web-assets, alert-drill]
+    if: ${{ always() && (needs.channel.outputs.ref == github.ref_name || needs.gate.result == 'failure' || needs.channel.result == 'failure' || inputs.alert_drill) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -630,6 +675,7 @@ jobs:
           SIGN_AGENT_MANIFEST_RESULT: ${{ needs.sign_agent_manifest.result }}
           LAUNCHER_RESULT: ${{ needs.launcher.result }}
           WEB_ASSETS_RESULT: ${{ needs.web-assets.result }}
+          GATE_RESULT: ${{ needs.gate.result }}
           CHANNEL_RESULT: ${{ needs.channel.result }}
           DRILL_RESULT: ${{ needs.alert-drill.result }}
           DRILL: ${{ inputs.alert_drill && 'true' || 'false' }}
@@ -641,6 +687,7 @@ jobs:
           run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           failed=""
           succeeded=0
+          [ "$GATE_RESULT" = "failure" ] && failed="$failed gate"
           [ "$CHANNEL_RESULT" = "failure" ] && failed="$failed channel"
           [ "$DRILL_RESULT" = "failure" ] && failed="$failed alert-drill"
           for pair in "version:$VERSION_RESULT" "migrate:$MIGRATE_RESULT" "deploy:$DEPLOY_RESULT" "dast:$DAST_RESULT" "release:$RELEASE_RESULT" "sign-agent-manifest:$SIGN_AGENT_MANIFEST_RESULT" "launcher:$LAUNCHER_RESULT" "web-assets:$WEB_ASSETS_RESULT"; do

@@ -28,9 +28,12 @@ produção, enquanto entregas sem incremento de versão podem ser integradas par
   [`modules.json`](../modules.json) e acrescenta a entrada ao [`CHANGELOG.md`](../CHANGELOG.md).
   Valide a preparação com o mesmo script, reúna as alterações em um commit `chore: release x.y.z`
   e integre o PR por rebase.
-- Cada push na `develop`, inclusive o do merge, dispara o [Deploy](../.github/workflows/deploy.yml).
-  Se `VERSION` coincide com a maior tag `v*` e ela aponta para outro commit, o workflow encerra com
-  sucesso, sem publicar nem migrar o banco. Para uma publicação, `version` roda `--verify` antes das
+- O [Deploy](../.github/workflows/deploy.yml) só segue no merge de versão: o job `gate` confere se o
+  assunto do commit de head do push é exatamente `chore: release x.y.z`. Nos outros merges ele encerra
+  a execução com sucesso, sem migrar, publicar nem notificar. A execução manual (`workflow_dispatch`,
+  inclusive o ensaio do alerta) passa sempre pelo `gate`. Como segunda proteção, se `VERSION` coincide
+  com a maior tag `v*` e ela aponta para outro commit, o workflow encerra com sucesso, sem publicar
+  nem migrar o banco. Para uma publicação, `version` roda `--verify` antes das
   migrações. A versão precisa superar a maior tag de versão. A igualdade é permitida para republicar o
   mesmo commit. Versões inválidas, inferiores ou divergentes dos metadados falham nessa etapa.
 - O Deploy aplica migrações retrocompatíveis no Neon antes de acionar o Render para o commit da
