@@ -14,8 +14,8 @@
   </div>
   @if (report(); as data) {
     @if (data.alerts.length > 0) {
-      <div class="ui-notice bad alert" role="status">
-        <p class="alert-text">
+      <div class="ui-notice bad alert">
+        <p class="alert-text" role="status">
           <strong i18n="@@settings.system.capacity.alert-title">Capacidade em Risco</strong>
           <span>{{ alertMetrics() }}</span>
         </p>
@@ -28,6 +28,15 @@
         >
           Dispensar
         </button>
+        @if (dismissFailed()) {
+          <p
+            class="error dismiss-error"
+            role="alert"
+            i18n="@@settings.system.capacity.dismiss-failed"
+          >
+            Não foi possível dispensar os avisos. Tente novamente.
+          </p>
+        }
       </div>
     }
     <ul class="meters ui-plain">

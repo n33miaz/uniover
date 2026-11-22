@@ -41,6 +41,7 @@ export class SystemCapacitySection {
   protected readonly report = signal<CapacityReport | null>(null);
   protected readonly failed = signal(false);
   protected readonly dismissing = signal(false);
+  protected readonly dismissFailed = signal(false);
 
   protected readonly meters = computed<readonly Meter[]>(() => {
     const report = this.report();
@@ -113,12 +114,13 @@ export class SystemCapacitySection {
 
   protected async dismiss(): Promise<void> {
     if (this.dismissing()) return;
+    this.dismissFailed.set(false);
     this.dismissing.set(true);
     try {
       await this.system.dismissCapacityAlerts();
       this.report.update((report) => (report ? { ...report, alerts: [] } : report));
     } catch {
-      // O aviso continua à vista; o dono tenta de novo.
+      this.dismissFailed.set(true);
     } finally {
       this.dismissing.set(false);
     }
