@@ -35,11 +35,11 @@ export const DEFAULT_PAGER_TUNING: StagePagerTuning = {
  *
  * - o ponto de página muda **uma vez**, direto para o destino, quando a troca é pedida por ponto ou tecla (sem
  *   passar pelas páginas do caminho nem voltar enquanto a animação roda);
- * - se o encaixe do navegador não termina (inércia interrompida, rolagem cancelada), a página não fica presa no
- *   meio: passados `settleMs` sem dedo e sem rolar, ela vai para a vizinha se o arrasto passou de `advanceRatio` da
- *   largura, ou volta para a de origem;
+ * - se a rolagem parar entre páginas, passados `settleMs` sem dedo e sem rolar, o pager mede o deslocamento que
+ *   restou desde a página de origem. A partir de `advanceRatio` da largura, inclusive, ele segue para a vizinha
+ *   na direção do deslocamento. Abaixo desse limiar, volta para a origem;
  * - um toque rápido e curto troca a página mesmo sem passar da metade da largura (velocidade ao soltar acima de
- *   `flickSpeed`), como em qualquer carrossel de celular; arrasto lento segue a regra do navegador (passou da metade).
+ *   `flickSpeed`). No arrasto lento, o pager mantém a página em que o navegador terminou o encaixe;
  *   A troca do toque rápido só é pedida **depois** que o navegador termina o encaixe dele: uma rolagem pedida no
  *   instante em que o dedo sai disputa com o encaixe que o navegador já começou (e perde, deixando a página voltar
  *   sozinha), então a decisão espera a rolagem parar. Se o navegador já avançou por conta própria, nada é pedido;
