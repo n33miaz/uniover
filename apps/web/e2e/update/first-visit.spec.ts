@@ -171,21 +171,13 @@ test.describe('primeira visita com o worker ainda instalando', () => {
       if (browserName === 'webkit') {
         // O WebKit pode deixar as abas auxiliares sem controlador nem registro local após clients.claim().
         // A aba principal já comprovou a ativação. Confere também o ciclo nas auxiliares que expõem o registro.
-        const { controller, lifecycle } = await open.evaluate(async () => {
-          const registration = await navigator.serviceWorker.getRegistration();
-          return {
-            controller: navigator.serviceWorker.controller?.scriptURL,
-            lifecycle: registration && {
-              active: registration.active?.state,
-              installing: !!registration.installing,
-              waiting: !!registration.waiting,
-            },
-          };
-        });
+        // Ao voltar ao primeiro plano, a aba pode ainda observar o estado "activating".
+        const hasRegistration = await open.evaluate(async () =>
+          Boolean(await navigator.serviceWorker.getRegistration()),
+        );
+        if (hasRegistration) await lifecycleSettled(open, true);
+        const controller = await open.evaluate(() => navigator.serviceWorker.controller?.scriptURL);
         if (controller) expect(controller).toBe(scriptURL);
-        if (lifecycle) {
-          expect(lifecycle).toEqual({ active: 'activated', installing: false, waiting: false });
-        }
       } else {
         await lifecycleSettled(open, true);
       }
