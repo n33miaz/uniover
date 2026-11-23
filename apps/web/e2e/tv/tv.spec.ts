@@ -474,6 +474,23 @@ test.describe('controle: tela única, sem abas', () => {
     await sendState(page, { volume: 23 });
     await expect(page.getByRole('img', { name: 'Volume 23' })).toBeVisible();
   });
+
+  test('volume sem leitura mostra o incremento sem animação com movimento reduzido', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    tv.state = { ...HOT_STATE, volume: null };
+    await openTv(page);
+    await expect(page.getByRole('img', { name: 'Volume sem leitura' })).toBeVisible();
+
+    await button(page, 'Aumentar o volume').click();
+    await expect.poll(() => tv.keysSent()).toEqual(['VOLUME_UP']);
+    const level = page.getByRole('img', { name: 'Volume +1' });
+    const increment = level.getByText('+1', { exact: true });
+    await expect(level).toBeVisible();
+    await expect(increment).toBeVisible();
+    await expect(increment).toHaveCSS('animation-name', 'none');
+  });
 });
 
 test.describe('controle: fileira de atalhos', () => {
