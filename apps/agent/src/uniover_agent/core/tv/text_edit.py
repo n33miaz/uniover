@@ -129,14 +129,13 @@ CHANNEL_REMOTE: Final = "remote"
 class TextControl(Protocol):
     """O que a digitação pede à sessão da TV (o `TvSessionManager` implementa)."""
 
-    async def send_key(
+    async def send_edit_key(
         self,
         key: str,
-        direction: str = "SHORT",
         *,
-        validate: Callable[[], None] | None = None,
+        validate: Callable[[], None],
         retry_uncertain: bool = True,
-    ) -> object: ...
+    ) -> None: ...
 
     async def send_text(self, text: str, *, validate: Callable[[], None] | None = None) -> None: ...
 
@@ -867,7 +866,7 @@ class TextReconciler:
         sent = 0
         while plan.floor > 0 and sent < MAX_DELETIONS:
             try:
-                await self._tv.send_key(DELETE_KEY, validate=validate, retry_uncertain=False)
+                await self._tv.send_edit_key(DELETE_KEY, validate=validate, retry_uncertain=False)
                 self._socket_keys += 1
                 plan.floor -= 1
                 sent += 1
@@ -954,7 +953,7 @@ class TextReconciler:
                     tv = self._effect()
                     attempted = True
                     try:
-                        await tv.send_key(
+                        await tv.send_edit_key(
                             DELETE_KEY, validate=self._check_effect, retry_uncertain=False
                         )
                     except TvSessionError as exc:
@@ -1113,7 +1112,7 @@ class TextReconciler:
                 await self._sleep(self._key_pause)
             tv = self._effect()
             try:
-                await tv.send_key(key, validate=self._check_effect)
+                await tv.send_edit_key(key, validate=self._check_effect)
             except (ValueError, TvSessionError) as exc:
                 if self._adb is None:
                     if isinstance(exc, TvSessionError):

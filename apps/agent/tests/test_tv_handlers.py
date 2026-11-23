@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -175,11 +176,11 @@ class FlakyTextRemote(FakeTvRemote):
         super().__init__()
         self.attempts = 0
 
-    async def send_text(self, text: str) -> None:
+    async def send_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
         self.attempts += 1
         if self.attempts == 1:
             raise TvUnreachable("a conexão com a TV fechou")
-        await super().send_text(text)
+        await super().send_text(text, before_send=before_send)
 
 
 async def test_text_reaches_the_remote_and_opens_the_session_on_the_first_command() -> None:

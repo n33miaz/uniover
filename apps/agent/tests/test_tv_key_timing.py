@@ -3,6 +3,7 @@ import contextlib
 import logging
 import re
 import time
+from collections.abc import Callable
 
 import pytest
 
@@ -286,9 +287,11 @@ class SlowRemote(FakeTvRemote):
         self._ns = ns
         self.send_ms = 2.0
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         self._ns.advance_ms(self.send_ms)
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
 
 
 def build(ns: NsClock, remote: FakeTvRemote, t: KeyTimings) -> ProcessMessage:

@@ -409,6 +409,16 @@ class TvSessionManager:
             self._schedule_volume_read()
         return True
 
+    async def send_edit_key(
+        self, key: str, *, validate: Callable[[], None], retry_uncertain: bool = True
+    ) -> None:
+        """Entrega uma tecla de edição com a checagem de validade no próprio transporte."""
+        await self._run(
+            lambda remote: remote.send_key(key, before_send=validate),
+            validate=validate,
+            retry_uncertain=retry_uncertain,
+        )
+
     async def power_off(self) -> PowerOffResult:
         """Desliga a TV só depois de ler que ela está ligada; nunca a liga.
 
@@ -663,7 +673,9 @@ class TvSessionManager:
     async def send_text(self, text: str, *, validate: Callable[[], None] | None = None) -> None:
         """Insere o trecho no campo em foco da TV; não substitui o conteúdo."""
         await self._run(
-            lambda remote: remote.send_text(text), validate=validate, retry_uncertain=False
+            lambda remote: remote.send_text(text, before_send=validate),
+            validate=validate,
+            retry_uncertain=False,
         )
 
     async def wake(self) -> None:

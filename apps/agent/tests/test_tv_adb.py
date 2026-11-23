@@ -6,7 +6,7 @@ de processos, que roda o próprio Python para provar tempo esgotado e saída sem
 
 import asyncio
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -435,18 +435,20 @@ class RecoveryRemote(FakeTvRemote):
         self.fail_text = True
         self.erased = asyncio.Event()
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
-        await super().send_key(key, direction)
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        await super().send_key(key, direction, before_send=before_send)
         assert key == "DEL"
         if not self.lose_delete:
             self.field = self.field[:-1]
             if not self.field:
                 self.erased.set()
 
-    async def send_text(self, text: str) -> None:
+    async def send_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
         if self.fail_text:
             raise TvUnreachable("caiu")
-        await super().send_text(text)
+        await super().send_text(text, before_send=before_send)
         self.field += text
 
 

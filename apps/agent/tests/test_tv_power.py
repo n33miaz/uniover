@@ -8,6 +8,7 @@ manda tecla por conta própria.
 """
 
 import asyncio
+from collections.abc import Callable
 
 import pytest
 
@@ -34,8 +35,10 @@ from uniover_agent.ports import TvUnreachable
 class StandbyRemote(FakeTvRemote):
     """A TV que, ao receber `POWER`, avisa que desligou, fecha a sessão e deixa de responder."""
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
-        await super().send_key(key, direction)
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        await super().send_key(key, direction, before_send=before_send)
         if key == "POWER":
             self.connect_errors = [TvUnreachable("sem resposta") for _ in range(1000)]
             self.push_power(False)
@@ -62,12 +65,14 @@ class DropsOnFirstSend(FakeTvRemote):
         super().__init__()
         self.failures = 1
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if self.failures:
             self.failures -= 1
             self._connected = False
             raise TvUnreachable("canal fechado")
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
 
 
 class Rig:

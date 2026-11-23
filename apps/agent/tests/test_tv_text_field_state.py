@@ -1,5 +1,7 @@
 """Digitação com o estado real do campo: a TV informa o valor, e o diff parte dele."""
 
+from collections.abc import Callable
+
 from uniover_agent.adapters.fakes import FakeTvRemote
 from uniover_agent.ports import TextFieldStatus
 
@@ -90,8 +92,10 @@ async def test_an_echo_that_arrives_during_our_own_edit_does_not_rewrite_what_we
     rig.remote.push_text_field(field("abcd", counter=1))
     send_key = rig.remote.send_key
 
-    async def send_key_with_a_late_echo(key: str, direction: str = "SHORT") -> None:
-        await send_key(key, direction)
+    async def send_key_with_a_late_echo(
+        key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        await send_key(key, direction, before_send=before_send)
         rig.remote.push_text_field(field("abcd", counter=1))  # eco atrasado de um passo anterior
 
     rig.remote.send_key = send_key_with_a_late_echo  # type: ignore[method-assign]
@@ -105,8 +109,10 @@ async def test_a_field_change_in_the_middle_of_an_edit_is_applied_when_it_ends()
     rig.remote.push_text_field(field("abc", counter=1))
     send_text = rig.remote.send_text
 
-    async def send_text_while_the_focus_moves(text: str) -> None:
-        await send_text(text)
+    async def send_text_while_the_focus_moves(
+        text: str, *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        await send_text(text, before_send=before_send)
         # A TV passou a outro campo enquanto a edição ainda estava em andamento.
         rig.remote.push_text_field(field("xyz", counter=2))
 
@@ -135,8 +141,10 @@ async def test_a_pending_state_is_dropped_when_the_field_is_forgotten() -> None:
     rig.remote.push_text_field(field("abc", counter=1))
     send_text = rig.remote.send_text
 
-    async def send_text_then_forget(text: str) -> None:
-        await send_text(text)
+    async def send_text_then_forget(
+        text: str, *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        await send_text(text, before_send=before_send)
         rig.remote.push_text_field(field("xyz", counter=2))
         rig.editor.forget_field()
 

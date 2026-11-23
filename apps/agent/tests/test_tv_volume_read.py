@@ -1,6 +1,8 @@
 """Leitura do volume por mais de um caminho: shell da Android TV, reserva do canal remoto e o
 diagnóstico `tv-volume`. Nada de rede nem de TV de verdade: `adb` e UPnP são dublês."""
 
+from collections.abc import Callable
+
 import httpx
 import pytest
 
@@ -143,8 +145,10 @@ class FakeManager:
 class PushOnKey(FakeTvRemote):
     next_level: int | None = None
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
-        await super().send_key(key, direction)
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        await super().send_key(key, direction, before_send=before_send)
         if self.next_level is not None:
             self.push_volume(self.next_level)
             self.next_level = None

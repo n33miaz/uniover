@@ -62,12 +62,14 @@ class GatedRemote(FakeTvRemote):
         self.gate = asyncio.Event()
         self.applied: asyncio.Queue[str] = asyncio.Queue()
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if self.hold:
             self.hold = False
             self.busy.set()
             await self.gate.wait()
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
         self.applied.put_nowait(key)
 
 

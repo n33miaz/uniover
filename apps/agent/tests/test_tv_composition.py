@@ -329,10 +329,16 @@ async def test_only_a_fresh_field_report_during_opening_limits_the_resumed_erase
     class DropOnKey(FakeTvRemote):
         fail: str | None = None
 
-        async def send_key(self, key: str, direction: str = "SHORT") -> None:
+        async def send_key(
+            self,
+            key: str,
+            direction: str = "SHORT",
+            *,
+            before_send: Callable[[], None] | None = None,
+        ) -> None:
             if key == self.fail:
                 raise TvUnreachable("controle indisponível")
-            await super().send_key(key, direction)
+            await super().send_key(key, direction, before_send=before_send)
 
     remote = DropOnKey()
     pair_fake_tv(monkeypatch, remote)
