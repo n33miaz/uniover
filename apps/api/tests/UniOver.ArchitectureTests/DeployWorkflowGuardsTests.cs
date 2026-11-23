@@ -134,19 +134,48 @@ public partial class DeployWorkflowTests
     }
 
     [Fact]
-    public void OnlyTheNoticeJobWritesToIssues_AndOnlyReleaseAndLauncherWriteToContents()
+    public void OnlyTheNoticeJobWritesToIssues_AndOnlyReleaseJobsWriteToContents()
     {
         var text = Workflow();
 
         Regex.Matches(text, "issues: write", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Should().ContainSingle();
-        foreach (var job in new[] { "channel", "version", "migrate", "deploy", "dast", "notify" })
+        foreach (var job in new[] { "channel", "version", "migrate", "deploy", "dast", "launcher", "notify" })
         {
             Job(job).Should().NotContain("contents: write", $"o job {job} não escreve no repositório");
         }
 
         Job("release").Should().Contain("contents: write");
-        Job("launcher").Should().Contain("contents: write");
+        Job("sign_agent_manifest").Should().Contain("contents: write");
+        Job("web-assets").Should().Contain("contents: write");
         text[..text.IndexOf("\njobs:\n", StringComparison.Ordinal)].Should().Contain("contents: read").And.NotContain("write");
+    }
+
+    [Fact]
+    public void TheRelease_StaysDraftUntilBothLauncherAssetsAreUploadedAndVerified()
+    {
+        var release = Job("release");
+        var launcher = Job("launcher");
+
+        launcher.Should().Contain("needs: deploy").And.Contain("needs.deploy.outputs.deployed == 'true'");
+        launcher.Should().Contain("actions/upload-artifact@").And.Contain("name: launcher-assets");
+        release.Should().Contain("needs: [deploy, launcher]").And.Contain("actions/download-artifact@")
+            .And.Contain("name: launcher-assets");
+        string[] commands =
+        [
+            "sha256sum --check --strict uniover-launcher.apk.sha256",
+            "gh release create \"$tag\" \"${target[@]}\" --draft",
+            "gh release upload \"$tag\" launcher-assets/uniover-launcher.apk launcher-assets/uniover-launcher.apk.sha256 --clobber",
+            "gh release download \"$tag\"",
+            "sha256sum uniover-launcher.apk | cmp - uniover-launcher.apk.sha256",
+            "gh release edit \"$tag\" --draft=false",
+        ];
+        var previous = -1;
+        foreach (var command in commands)
+        {
+            var position = release.IndexOf(command, StringComparison.Ordinal);
+            position.Should().BeGreaterThan(previous, $"o comando {command} precisa ocorrer nesta ordem");
+            previous = position;
+        }
     }
 
     [Fact]
