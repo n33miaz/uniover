@@ -41,5 +41,14 @@
       "type": "image/png",
       "purpose": "monochrome"
     }
-  ]
+  ],
+  "share_target": {
+    "action": "/videos/compartilhar",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
 }

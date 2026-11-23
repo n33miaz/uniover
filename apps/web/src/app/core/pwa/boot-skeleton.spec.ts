@@ -318,6 +318,7 @@ describe('boot skeleton', () => {
     ['tv', '/tv/'],
     ['pc', '/pc', 'detail'],
     ['shopping', '/compras', 'detail'],
+    ['videos', '/videos', 'detail'],
     ['training-today', '/treino/', 'training'],
     ['training-session', '/treino/sessao', 'training'],
     ['training-session-exercise', '/treino/sessao/exercicio', 'training'],

@@ -50,6 +50,13 @@ export const routes: Routes = [
       import('./modules/shopping/shopping-join.page').then((m) => m.ShoppingJoinPage),
   },
   {
+    // Ponto de entrada do Web Share Target (Android Chrome). Fica fora da casca para acolher compartilhamento
+    // anônimo (guardando no storage antes de pedir login) e autenticado (salvando direto na caixa).
+    path: 'videos/compartilhar',
+    loadComponent: () =>
+      import('./modules/videos/share-target.page').then((m) => m.ShareTargetPage),
+  },
+  {
     // Primeiro acesso: a pergunta do nome fica fora da casca (e do guarda de boas-vindas, para nunca haver laço), mas
     // exige sessão: quem não entrou vai para a tela de entrada.
     path: 'boas-vindas',
@@ -88,6 +95,11 @@ export const routes: Routes = [
         data: { title: $localize`:@@module.shopping.title:Compras` },
         loadChildren: () =>
           import('./modules/shopping/shopping.routes').then((m) => m.SHOPPING_ROUTES),
+      },
+      {
+        path: 'videos',
+        data: { title: $localize`:@@module.videos.title:Vídeos` },
+        loadChildren: () => import('./modules/videos/videos.routes').then((m) => m.VIDEOS_ROUTES),
       },
       {
         // Como a TV e o Treino, tem manifest e escopo próprios (`public/pc/manifest.webmanifest`).
