@@ -104,6 +104,37 @@ test.describe('Configurações > Sistema > Capacidade', () => {
     await expect(card(page).locator('.when dd')).toHaveText(['Mais de 2 anos', 'Mais de 2 anos']);
   });
 
+  test('mostra a série sem crescimento e as previsões para os dois limites', async ({ page }) => {
+    const base = defaultCapacity();
+    const bytes = 700 * 1024 * 1024;
+    system.capacity = {
+      ...base,
+      database: {
+        ...base.database,
+        bytes,
+        percent: (bytes / base.database.limitBytes) * 100,
+        band: 'amber',
+      },
+      growth: {
+        points: [
+          { day: '2026-10-30', bytes },
+          { day: '2026-10-31', bytes },
+        ],
+        bytesPerDay: 0,
+        daysToAmber: 0,
+        daysToRed: null,
+        state: 'flat',
+      },
+    };
+    await open(page);
+
+    const chart = card(page).locator('svg.spark');
+    await expect(chart).toBeVisible();
+    await expect(chart.locator('polyline')).toHaveAttribute('points', '0.0,20.0 200.0,20.0');
+    await expect(card(page).locator('.rate')).toHaveText('Sem crescimento');
+    await expect(card(page).locator('.when dd')).toHaveText(['Já passou', 'Sem data']);
+  });
+
   test('com poucas amostras pede mais dias em vez de inventar uma tendência', async ({ page }) => {
     system.capacity = {
       ...defaultCapacity(),
