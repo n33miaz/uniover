@@ -1893,6 +1893,21 @@
         ],
         "type": "object"
       },
+      "CapacityMarkSeenRequest": {
+        "properties": {
+          "alertIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "alertIds"
+        ],
+        "type": "object"
+      },
       "CapacityPoint": {
         "properties": {
           "bytes": {
@@ -3708,6 +3723,53 @@
           "id",
           "enabled"
         ],
+        "type": "object"
+      },
+      "HttpValidationProblemDetails": {
+        "properties": {
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "errors": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object"
+          },
+          "instance": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ]
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
         "type": "object"
       },
       "IdentityModuleInfo": {
@@ -11840,9 +11902,29 @@
     },
     "/api/v1/identity/capacity/alerts/seen": {
       "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CapacityMarkSeenRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "204": {
             "description": "No Content"
+          },
+          "400": {
+            "content": {
+              "application/problem\u002Bjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/HttpValidationProblemDetails"
+                }
+              }
+            },
+            "description": "Bad Request"
           },
           "401": {
             "content": {

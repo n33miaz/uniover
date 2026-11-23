@@ -2514,7 +2514,11 @@ export interface paths {
         path?: never;
         cookie?: never;
       };
-      requestBody?: never;
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['CapacityMarkSeenRequest'];
+        };
+      };
       responses: {
         /** @description No Content */
         204: {
@@ -2522,6 +2526,15 @@ export interface paths {
             [name: string]: unknown;
           };
           content?: never;
+        };
+        /** @description Bad Request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/problem+json': components['schemas']['HttpValidationProblemDetails'];
+          };
         };
         /** @description Unauthorized */
         401: {
@@ -15058,6 +15071,9 @@ export interface components {
       points: components['schemas']['CapacityPoint'][];
       state: string;
     };
+    CapacityMarkSeenRequest: {
+      alertIds: string[];
+    };
     CapacityPoint: {
       /** Format: int64 */
       bytes: number | string;
@@ -15485,6 +15501,17 @@ export interface components {
     HomeEntryDto: {
       enabled: boolean;
       id: null | string;
+    };
+    HttpValidationProblemDetails: {
+      detail?: null | string;
+      errors?: {
+        [key: string]: string[];
+      };
+      instance?: null | string;
+      /** Format: int32 */
+      status?: null | number | string;
+      title?: null | string;
+      type?: null | string;
     };
     IdentityModuleInfo: {
       dependsOn: string[];

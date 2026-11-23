@@ -283,7 +283,7 @@ export async function mockSystemApi(
     });
   });
 
-  // A Capacidade: leitura só do dono; dispensar os avisos zera a lista, como a API real.
+  // A Capacidade: leitura só do dono; o descarte remove apenas os avisos solicitados.
   await context.route('**/api/v1/identity/capacity**', async (route) => {
     const request = route.request();
     if (identity.offline) return route.abort('internetdisconnected');
@@ -292,8 +292,12 @@ export async function mockSystemApi(
       return problem(route, 401, 'unauthenticated', 'Sessão inválida.');
     if (identity.role !== 'owner') return route.fulfill({ status: 403 });
     if (request.method() === 'POST') {
+      const alertIds = (request.postDataJSON() as { alertIds?: string[] } | null)?.alertIds;
+      if (!Array.isArray(alertIds)) return route.fulfill({ status: 400 });
       mock.capacityDismissals += 1;
-      if (mock.capacity) mock.capacity.alerts = [];
+      if (mock.capacity) {
+        mock.capacity.alerts = mock.capacity.alerts.filter((alert) => !alertIds.includes(alert.id));
+      }
       return route.fulfill({ status: 204 });
     }
     if (!mock.capacity) return problem(route, 500, 'internal-error', 'Erro.');

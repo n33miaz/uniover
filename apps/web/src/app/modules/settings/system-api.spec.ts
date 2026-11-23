@@ -36,6 +36,15 @@ describe('SystemApi', () => {
 
   afterEach(() => http.verify());
 
+  it('posts the displayed capacity alert IDs', async () => {
+    const dismissal = api.dismissCapacityAlerts(['a1', 'a2']);
+    const request = http.expectOne('/api/v1/identity/capacity/alerts/seen');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ alertIds: ['a1', 'a2'] });
+    request.flush(null, { status: 204, statusText: 'No Content' });
+    await dismissal;
+  });
+
   it('reads the TV configuration', async () => {
     const read = api.tvConfig();
     const request = http.expectOne('/api/v1/tv/config');

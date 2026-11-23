@@ -382,9 +382,9 @@ export class SystemApi {
   }
 
   /** O administrador viu os avisos de capacidade: eles saem do cartão. */
-  async dismissCapacityAlerts(): Promise<void> {
+  async dismissCapacityAlerts(alertIds: readonly string[]): Promise<void> {
     await firstValueFrom(
-      this.http.post<void>(`${APP_CONFIG.apiBase}/v1/identity/capacity/alerts/seen`, null),
+      this.http.post<void>(`${APP_CONFIG.apiBase}/v1/identity/capacity/alerts/seen`, { alertIds }),
     );
   }
 

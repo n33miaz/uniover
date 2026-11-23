@@ -122,7 +122,9 @@ test.describe('Configurações > Sistema > Capacidade', () => {
     await expect(card(page)).not.toContainText('Chega a 50%');
   });
 
-  test('avisa quando passou de 80% e o aviso some ao dispensar', async ({ page }, info) => {
+  test('dispensa os avisos exibidos e mostra um aviso que chegou depois', async ({
+    page,
+  }, info) => {
     system.capacity = {
       ...defaultCapacity(),
       alerts: [
@@ -137,8 +139,14 @@ test.describe('Configurações > Sistema > Capacidade', () => {
     await expect(alert).toContainText('Horas do Mês, Dados');
     await check(page, info, 'capacity-alert', 'light');
 
+    system.capacity.alerts.push({
+      id: 'a3',
+      metric: 'memory',
+      percent: 90,
+      detectedAt: '2026-10-31T09:10:00Z',
+    });
     await alert.getByRole('button', { name: 'Dispensar' }).click();
-    await expect(alert).toHaveCount(0);
+    await expect(alert.locator('.alert-text span')).toHaveText('Memória');
     expect(system.capacityDismissals).toBe(1);
   });
 
