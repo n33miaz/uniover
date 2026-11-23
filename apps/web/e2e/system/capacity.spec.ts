@@ -1,5 +1,5 @@
 import { Page, TestInfo } from '@playwright/test';
-import { IdentityMock, mockIdentityApi } from '../auth/identity-mock';
+import { GUEST, IdentityMock, mockIdentityApi } from '../auth/identity-mock';
 import { expect, expectNoHorizontalScroll, screenshot, test } from '../fixtures';
 import { expectNoA11yViolations, settle, smallTargets } from '../screens/screen-helpers';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
@@ -47,6 +47,29 @@ async function check(page: Page, info: TestInfo, name: string, scheme: Scheme) {
 }
 
 test.describe('Configurações > Sistema > Capacidade', () => {
+  test('não mostra a capacidade nem consulta a API para um convidado', async ({ page }) => {
+    identity.guests.push({
+      ...GUEST,
+      id: '00000000-0000-4000-8000-000000000050',
+      createdAt: '2026-10-31T09:00:00Z',
+      disabledAt: null,
+    });
+    identity.role = 'guest';
+
+    const capacityRequests: string[] = [];
+    page.on('request', (request) => {
+      if (/^\/api\/v1\/identity\/capacity(?:\/|$)/.test(new URL(request.url()).pathname)) {
+        capacityRequests.push(request.url());
+      }
+    });
+
+    await page.goto('/ajustes/sistema');
+    await expect(page).toHaveURL('/');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(GUEST.displayName);
+    await expect(page.getByRole('heading', { level: 2, name: 'Capacidade' })).not.toBeVisible();
+    expect(capacityRequests).toEqual([]);
+  });
+
   for (const scheme of SCHEMES) {
     test(`mostra banco, memória e horas do mês com a faixa e o rótulo Estimado, no tema ${scheme}`, async ({
       page,
