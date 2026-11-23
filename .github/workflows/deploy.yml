@@ -423,13 +423,12 @@ jobs:
           fail_action: true
           artifact_name: zap-baseline-producao
 
-  # Depois do deploy confirmado: a tag v<VERSION> no commit publicado e o GitHub Release com a entrada do CHANGELOG.
-  # Idempotente: se a tag já existe neste mesmo commit só garante o Release; se aponta para outro commit, falha. A tag
-  # nasce do próprio `gh release create --target`, então nada aqui faz push de git e o checkout não guarda credencial.
-  # É o único job com permissão de escrita.
+  # Depois do deploy confirmado e do build do launcher, prepara o Release com a entrada do CHANGELOG.
+  # A tag v<VERSION> nasce na publicação, no commit confirmado. Até a conferência dos anexos do rascunho,
+  # o Release anterior continua disponível em "latest".
   release:
     name: release
-    needs: deploy
+    needs: [deploy, launcher]
     if: needs.deploy.outputs.deployed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -440,12 +439,17 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Criar a tag e o Release da versão publicada
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: launcher-assets
+          path: launcher-assets
+      - name: Publicar o Release com o launcher verificado
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          (cd launcher-assets && sha256sum --check --strict uniover-launcher.apk.sha256)
           version=$(tr -d '\r\n' < VERSION)
           tag="v$version"
           awk -v heading="## [$version]" '
@@ -458,6 +462,7 @@ jobs:
             exit 1
           fi
           # Tag existente: precisa apontar para o commit publicado. Tag nova: o Release a cria neste commit.
+          tagged_sha=""
           if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
             tagged_sha=$(git rev-list -n 1 "$tag")
             if [ "$tagged_sha" != "$GITHUB_SHA" ]; then
@@ -469,11 +474,28 @@ jobs:
           else
             target=(--target "$GITHUB_SHA")
           fi
-          if gh release view "$tag" > /dev/null 2>&1; then
-            echo "O Release $tag já existe; nada a fazer."
+          if release=$(gh release view "$tag" --json isDraft,targetCommitish 2>&1); then
+            draft=$(jq -r '.isDraft' <<< "$release")
+            if [ -z "$tagged_sha" ] && { [ "$draft" != true ] || [ "$(jq -r '.targetCommitish' <<< "$release")" != "$GITHUB_SHA" ]; }; then
+              echo "::error::o Release $tag não aponta para o commit publicado $GITHUB_SHA."
+              exit 1
+            fi
+          elif [ "$release" = "release not found" ]; then
+            gh release create "$tag" "${target[@]}" --draft --title "UniOver $version" --notes-file release-notes.md
+            draft=true
           else
-            gh release create "$tag" "${target[@]}" --title "UniOver $version" --notes-file release-notes.md
-            echo "Release $tag criado."
+            echo "::error::não foi possível consultar o Release $tag: $release"
+            exit 1
+          fi
+          # Em uma retomada, um rascunho pode ter recebido só um dos arquivos. Substitui o par no
+          # rascunho. Se a publicação já ocorreu, confere o par público sem substituir os arquivos.
+          if [ "$draft" = true ]; then
+            gh release upload "$tag" launcher-assets/uniover-launcher.apk launcher-assets/uniover-launcher.apk.sha256 --clobber
+          fi
+          gh release download "$tag" --pattern uniover-launcher.apk --pattern uniover-launcher.apk.sha256 --dir release-launcher
+          (cd release-launcher && sha256sum uniover-launcher.apk | cmp - uniover-launcher.apk.sha256)
+          if [ "$draft" = true ]; then
+            gh release edit "$tag" --draft=false
           fi
 
   # Manifesto Ed25519 do Release para o agente. O agente passa a exigi-lo quando há chave pública
@@ -548,19 +570,15 @@ jobs:
 
   # O módulo TV Livre do agente baixa `uniover-launcher.apk` e `uniover-launcher.apk.sha256` do Release mais recente.
   # Este job monta o APK de release do launcher, assinado com a chave fixa do projeto (a mesma do ci.yml e do build
-  # local, para a TV aceitar a atualização por cima), confere o certificado contra signing-cert.sha256 e anexa os dois
-  # arquivos ao Release criado acima. Sem os segredos de assinatura o job FALHA: um APK de depuração anexado seria
-  # recusado pelo agente (que fixa o certificado do projeto) e ainda ocuparia o endereço "latest".
-  # O token de escrita só entra no passo que anexa; o Gradle roda sem ele. O keystore é apagado ao sair do passo.
-  # Idempotente: `--clobber` troca os anexos de um redeploy do mesmo Release.
+  # local, para a TV aceitar a atualização por cima) e confere o certificado contra signing-cert.sha256.
+  # Sem os segredos de assinatura o job falha, pois o agente exige o certificado do projeto.
+  # O keystore é apagado ao sair do passo. Só o APK e o checksum seguem para o job release.
   launcher:
     name: launcher
-    needs: release
-    if: needs.release.result == 'success'
+    needs: deploy
+    if: needs.deploy.outputs.deployed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -614,15 +632,14 @@ jobs:
           cd "$GITHUB_WORKSPACE/launcher-assets"
           sha256sum uniover-launcher.apk > uniover-launcher.apk.sha256
           cat uniover-launcher.apk.sha256
-      - name: Anexar o launcher ao Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          tag="v$(tr -d '\r\n' < VERSION)"
-          gh release upload "$tag" launcher-assets/uniover-launcher.apk launcher-assets/uniover-launcher.apk.sha256 --clobber
-          echo "Launcher anexado ao Release $tag."
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: launcher-assets
+          path: |
+            launcher-assets/uniover-launcher.apk
+            launcher-assets/uniover-launcher.apk.sha256
+          if-no-files-found: error
+          overwrite: true
 
   # Só no ensaio do alerta (workflow_dispatch com alert_drill): falha de propósito para o notify avisar.
   alert-drill:
