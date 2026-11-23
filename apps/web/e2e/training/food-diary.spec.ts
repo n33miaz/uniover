@@ -21,6 +21,22 @@ test('o diário usa a volta única do cabeçalho', async ({ page, context }) => 
   await expect(page).toHaveURL(/\/treino\/corpo$/);
 });
 
+test('os botões do diário voltam e avançam um dia', async ({ page, context }) => {
+  await startTraining(context, page);
+  await openTraining(page, '/treino/alimentacao');
+
+  const day = page.locator('#diary-day');
+  const initialDay = await day.inputValue();
+  const previousDay = new Date(`${initialDay}T00:00:00Z`);
+  previousDay.setUTCDate(previousDay.getUTCDate() - 1);
+
+  await page.getByRole('button', { name: 'Dia anterior', exact: true }).click();
+  await expect(day).toHaveValue(previousDay.toISOString().slice(0, 10));
+
+  await page.getByRole('button', { name: 'Dia seguinte', exact: true }).click();
+  await expect(day).toHaveValue(initialDay);
+});
+
 test('o diário só mostra o estado vazio depois de ler os lançamentos do dia', async ({
   page,
   context,
