@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -49,11 +50,13 @@ class SlowRemote(FakeTvRemote):
         await self.release.wait()
         await super().connect()
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if self.block_first_send and not self.first_send.is_set():
             self.first_send.set()
             await self.release_first_send.wait()
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
 
 
 def build(

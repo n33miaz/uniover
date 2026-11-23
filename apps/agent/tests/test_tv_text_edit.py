@@ -1,5 +1,7 @@
 """Digitação confiável: só a diferença vai à TV, apagar é `DEL`, o ADB digita o ASCII."""
 
+from collections.abc import Callable
+
 import pytest
 
 from uniover_agent.adapters.fakes import FakeClock, FakeTvAdb, FakeTvRemote
@@ -271,10 +273,12 @@ async def test_an_adb_failure_that_may_have_typed_is_not_repeated_by_the_remote(
 class DropsAfterThree(FakeTvRemote):
     """O canal cai depois de três teclas `DEL`."""
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if len(self.keys) >= 3:
             raise TvUnreachable("caiu")
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
 
 
 async def test_failed_deletions_keep_the_previous_base_without_an_echo() -> None:

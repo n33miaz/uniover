@@ -476,7 +476,11 @@ class SamsungTvDriver:
             except Exception:
                 _log.warning("falha ao fechar o canal Samsung")
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        if before_send is not None:
+            raise ValueError("edição de texto não é suportada pela TV Samsung")
         mapped = SAMSUNG_KEYS.get(key)
         if mapped is None:
             raise ValueError("tecla desconhecida")
@@ -495,9 +499,9 @@ class SamsungTvDriver:
         del link
         raise ValueError("links não são suportados pela TV Samsung")
 
-    async def send_text(self, text: str) -> None:
+    async def send_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
         # O canal remoto desta família não expõe IME. O handler não o chama e devolve unsupported.
-        del text
+        del text, before_send
         raise ValueError("texto não é suportado pela TV Samsung")
 
     async def app_list(self) -> list[dict[str, Any]] | None:

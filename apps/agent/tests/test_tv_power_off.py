@@ -32,8 +32,10 @@ STANDBY = "STANDBY"
 class TurnsOffOnPower(FakeTvRemote):
     """A TV que, ao receber `POWER`, avisa que desligou (a sessão segue aberta)."""
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
-        await super().send_key(key, direction)
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        await super().send_key(key, direction, before_send=before_send)
         if key == "POWER":
             self.push_power(False)
 
@@ -41,8 +43,10 @@ class TurnsOffOnPower(FakeTvRemote):
 class DropsOnPower(FakeTvRemote):
     """A TV que, ao receber `POWER`, fecha a sessão sem avisar nada e deixa de atender."""
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
-        await super().send_key(key, direction)
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        await super().send_key(key, direction, before_send=before_send)
         if key == "POWER":
             self.connect_errors = [TvUnreachable("sem resposta") for _ in range(100)]
             self.drop()
@@ -51,8 +55,10 @@ class DropsOnPower(FakeTvRemote):
 class IgnoresPowerButSleeps(FakeTvRemote):
     """A TV que não reage a `POWER` (nem ao do controle físico) e dorme com a tecla de dormir."""
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
-        await super().send_key(key, direction)
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        await super().send_key(key, direction, before_send=before_send)
         if key == STANDBY:
             self.push_power(False)
 
@@ -65,7 +71,9 @@ class FailsToSend(FakeTvRemote):
         self.error = error
         self.attempts = 0
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         self.attempts += 1
         self._connected = False
         raise self.error

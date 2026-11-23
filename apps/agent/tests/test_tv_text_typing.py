@@ -221,10 +221,12 @@ class DropsAfter(FakeTvRemote):
         super().__init__()
         self.limit = limit
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if len(self.keys) >= self.limit:
             raise TvUnreachable("caiu")
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
 
 
 async def test_last_text_stops_at_the_last_key_that_went_when_the_channel_drops_mid_word() -> None:
@@ -247,10 +249,12 @@ async def test_last_text_stops_at_the_last_key_that_went_when_the_channel_drops_
 class ForgetsTheKey(FakeTvRemote):
     """Adaptador de tabelas fora de sincronia: não conhece a tecla e cita o caractere no erro."""
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if key.startswith("TYPE_"):
             raise ValueError(f"tecla desconhecida: {key}")
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
 
 
 async def test_unknown_key_falls_back_to_adb() -> None:
@@ -290,10 +294,12 @@ class FieldRemote(FakeTvRemote):
         self.fail_on = fail_on
         self.editor: TextReconciler | None = None
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if key == self.fail_on:
             raise TvUnreachable("caiu")
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
         if key in self.lose:
             self.lose.discard(key)
             return
@@ -370,7 +376,9 @@ class FocusMovesThenDropsRemote(FieldRemote):
         super().__init__(lose=set(), fail_on=None)
         self.dels = 0
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if key == "DEL":
             self.dels += 1
             if self.dels == 2:
@@ -378,7 +386,7 @@ class FocusMovesThenDropsRemote(FieldRemote):
                 self.push_text_field(TextFieldStatus(self.field, 4, 4, "", counter=2))
                 self._connected = False
                 raise TvUnreachable("caiu")
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
 
 
 async def test_a_new_field_report_dropped_by_a_reconnect_still_stops_the_old_plan() -> None:
@@ -420,13 +428,15 @@ class SameFieldDropRemote(FieldRemote):
             TextFieldStatus(self.field, len(self.field), len(self.field), "", counter=1)
         )
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if key == "DEL":
             self.dels += 1
             if self.dels == 2:
                 self._connected = False
                 raise TvUnreachable("caiu")
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
 
 
 async def test_a_reconnect_that_reports_the_same_field_lets_the_edit_finish() -> None:
@@ -535,7 +545,9 @@ class EraseDropRemote(FieldRemote):
         self.deletes, self.lost_deletes, self.drop_at = 0, lost, drop_at
         self.keys.clear()
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if key == "DEL":
             self.deletes += 1
             if self.drop_at is not None and self.deletes >= self.drop_at:
@@ -548,7 +560,7 @@ class EraseDropRemote(FieldRemote):
                 raise TvUnreachable("caiu")
             if self.deletes in self.lost_deletes:
                 self.lose.add("DEL")
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
 
 
 async def erase_doubt_of_three(
@@ -629,10 +641,12 @@ async def test_a_reconnect_inside_a_resync_delete_leaves_the_erase_for_the_next_
 class RepeatedUncertainDeleteRemote(EraseDropRemote):
     """Toda tentativa de DEL a partir do segundo chega antes de o canal cair."""
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if key == "DEL" and self.drop_at is not None and self.deletes + 1 >= self.drop_at:
             self.applied_on_drop = True
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
 
 
 async def test_resync_never_retries_an_uncertain_delete_in_an_unowned_field() -> None:
@@ -761,8 +775,10 @@ class AppSwitchRemote(EraseDropRemote):
         self.switch_at: int | None = None
         self.target: TextReconciler | None = None
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
-        await super().send_key(key, direction)
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        await super().send_key(key, direction, before_send=before_send)
         if key == "DEL" and self.deletes == self.switch_at and self.target is not None:
             self.target.observe_app("app.dois")
 
@@ -935,11 +951,13 @@ class LetterDropRemote(EraseDropRemote):
         super().__init__()
         self.drop_letter: str | None = None
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if key == self.drop_letter:
             self.drop_letter = None
             raise TvUnreachable("caiu")
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
 
 
 @pytest.mark.parametrize("adb", [True, False])
@@ -1001,10 +1019,12 @@ async def test_a_failed_retype_on_the_same_connection_preserves_the_user_text(
     remote.reset_deletes(lost=set(), drop_at=None)
     send_key = remote.send_key
 
-    async def reject_first_letter(key: str, direction: str = "SHORT") -> None:
+    async def reject_first_letter(
+        key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if key == "TYPE_A":
             raise ValueError("tecla desconhecida")
-        await send_key(key, direction)
+        await send_key(key, direction, before_send=before_send)
 
     # Todos os DEL chegam e a TV recusa a primeira letra sem derrubar a conexão.
     with monkeypatch.context() as patch:
@@ -1057,8 +1077,10 @@ class StaleEchoRemote(FieldRemote):
         self.trigger = "DEL"
         self.target: TextReconciler | None = None
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
-        await super().send_key(key, direction)
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        await super().send_key(key, direction, before_send=before_send)
         if key == self.trigger and self.stale is not None and self.target is not None:
             self.target.observe_field(TextFieldStatus(self.stale, 0, 0, "", counter=1))
             self.stale = None
@@ -1149,13 +1171,15 @@ class TextDropRemote(FieldRemote):
         self.fail_text: str | None = None
         self.drop_deletes = False
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if self.drop_deletes and key == "DEL":
             self.lose.add(key)
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
 
-    async def send_text(self, text: str) -> None:
-        await super().send_text(text)
+    async def send_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
+        await super().send_text(text, before_send=before_send)
         failure = self.fail_text
         if failure == BEFORE_SEND:
             raise TvUnreachable("a conexão não está aberta")
@@ -1358,7 +1382,11 @@ class Timed:
             rig.adb.typed.append(text)
             rig.adb.events.append(("adb", text))
 
-        async def send_key(key: str, direction: str = "SHORT") -> None:
+        async def send_key(
+            key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+        ) -> None:
+            if before_send is not None:
+                before_send()
             clock.advance(0.002)
             rig.remote.keys.append(key)
             rig.remote.events.append(("tecla", key))

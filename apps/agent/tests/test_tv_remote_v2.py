@@ -40,8 +40,9 @@ from uniover_agent.adapters.tv_remote_v2 import (
 from uniover_agent.contracts.tv_key_v1 import TvKeyV1BodyKey
 from uniover_agent.contracts.tv_key_v2 import TvKeyV2BodyKey
 from uniover_agent.core import SessionState, TvSessionManager
+from uniover_agent.core.tv.handlers import CHANNEL_CLOSED, ValidatedCommand, tv_text_handler
 from uniover_agent.core.tv.session import TvSessionError
-from uniover_agent.core.tv.text_edit import TextReconciler
+from uniover_agent.core.tv.text_edit import RESYNC_ABANDONED, TextReconciler
 from uniover_agent.ports import (
     TextFieldStatus,
     TvCertificateRefused,
@@ -703,6 +704,80 @@ class _ClosingTransport:
 def duplo_adapter(tmp_path: Path, library: FakeLibrary) -> AndroidTvRemoteV2:
     write_certificate(tmp_path, "UniOver")
     return AndroidTvRemoteV2("10.0.0.4", "UniOver", tmp_path, client_factory=lambda *_args: library)
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        pytest.param(("dono", "don", False), id="delete"),
+        pytest.param(("", "abc", True), id="typing-key"),
+        pytest.param(("", "é", False), id="ime"),
+    ],
+)
+@pytest.mark.parametrize("change", ["cancel_during_reconnect", "cancel_at_send", "focus_at_send"])
+async def test_invalid_text_edit_sends_nothing_after_reconnect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    edit: tuple[str, str, bool],
+    change: str,
+) -> None:
+    initial, target, keys = edit
+    library = FakeLibrary()
+    adapter = duplo_adapter(tmp_path, library)
+    manager = TvSessionManager(SystemClock(), adapter)
+    editor = TextReconciler(manager, keys=keys)
+    handler = tv_text_handler(manager, reconciler=editor)
+    editor.observe_field(TextFieldStatus(initial, len(initial), len(initial), "", 1))
+    active = True
+    opening, release = asyncio.Event(), asyncio.Event()
+    connect = library.async_connect
+    require = adapter._require
+
+    async def reconnect() -> None:
+        opening.set()
+        await release.wait()
+        await connect()
+
+    async def finish_reconnect() -> None:
+        nonlocal active
+        await asyncio.wait_for(opening.wait(), 2)
+        if change == "cancel_during_reconnect":
+            active = False
+        release.set()
+
+    def require_client() -> RemoteClient:
+        nonlocal active
+        if not opening.is_set():
+            # O primeiro envio encontra o canal fechado antes de escrever.
+            raise TvUnreachable("canal fechado")
+        client = require()
+        # Na primeira tentativa no canal novo, o gerenciador já revalidou a sessão.
+        if change == "cancel_at_send":
+            active = False
+        elif change == "focus_at_send":
+            editor.observe_field(TextFieldStatus("outro", 5, 5, "", 2))
+        return client
+
+    try:
+        await manager.wake()
+        monkeypatch.setattr(library, "async_connect", reconnect)
+        monkeypatch.setattr(adapter, "_require", require_client)
+        command = ValidatedCommand("edit", "tv.text.v1", {"text": target}, is_valid=lambda: active)
+        async with asyncio.TaskGroup() as tasks:
+            tasks.create_task(finish_reconnect())
+            result = await handler(command)
+
+        assert adapter.connected
+        assert library.sent == []
+        assert library._remote_message_protocol.messages == []
+        if change == "focus_at_send":
+            assert result.code == RESYNC_ABANDONED
+            assert editor.last_text == "outro"
+        else:
+            assert result.code == CHANNEL_CLOSED
+            assert editor.last_text == initial
+    finally:
+        await manager.aclose()
 
 
 class _BufferedTransport(asyncio.Transport):

@@ -3,7 +3,7 @@
 import asyncio
 import threading
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 
 import pytest
@@ -44,8 +44,10 @@ class TimedRemote(FakeTvRemote):
         super().__init__()
         self.arrivals: list[tuple[str, str, float]] = []
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
-        await super().send_key(key, direction)
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        await super().send_key(key, direction, before_send=before_send)
         self.arrivals.append((key, threading.current_thread().name, time.monotonic()))
 
 

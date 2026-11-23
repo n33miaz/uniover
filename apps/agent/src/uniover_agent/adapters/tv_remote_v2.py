@@ -233,10 +233,8 @@ def _install_text_field_hook(
     return True
 
 
-def _send_ime_batch(
-    protocol: Any, text: str, cursor: int, ime_counter: int, field_counter: int
-) -> None:
-    """Envia o único formato de lote IME que o adaptador usa, sem deixar o texto no DEBUG."""
+def _ime_batch(text: str, cursor: int, ime_counter: int, field_counter: int) -> RemoteMessage:
+    """Monta o lote IME com os contadores do campo em foco."""
     message = RemoteMessage()
     edit = RemoteEditInfo(
         insert=1,
@@ -249,10 +247,7 @@ def _send_ime_batch(
             edit_info=[edit],
         )
     )
-    reset_idle = getattr(protocol, "_reset_idle_disconnect_task", None)
-    if callable(reset_idle):
-        reset_idle()
-    protocol._send_message(message, should_debug_log=False)
+    return message
 
 
 def volume_percent(info: VolumeInfo) -> int | None:
@@ -407,7 +402,9 @@ class AndroidTvRemoteV2:
 
     # --- comandos -----------------------------------------------------------------------------
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         code = KEY_CODES.get(key) or AGENT_KEY_CODES.get(key)
         if code is None:
             # Uma tecla `TYPE_*` desconhecida é um caractere do que o dono digita (pode ser uma
@@ -417,6 +414,8 @@ class AndroidTvRemoteV2:
         if direction not in DIRECTIONS:
             raise ValueError(f"direção desconhecida: {direction}")
         client = self._require()
+        if before_send is not None:
+            before_send()
         try:
             client.send_key_command(code, direction)
         except ConnectionClosed:
@@ -429,7 +428,7 @@ class AndroidTvRemoteV2:
         except ConnectionClosed:
             raise TvUnreachable("a conexão com a TV fechou") from None
 
-    async def send_text(self, text: str) -> None:
+    async def send_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
         # A TV **insere** o trecho no campo em foco (observado: reenviar o campo inteiro duplicava
         # as letras), então quem chama manda só o acréscimo. O adaptador devolve ao lote os
         # contadores do eco da TV. Vazio a biblioteca recusava com `ValueError`, e o protocolo não
@@ -469,7 +468,13 @@ class AndroidTvRemoteV2:
             "sim" if blind else "não",
         )
         try:
-            _send_ime_batch(protocol, text, cursor, ime_counter, field_counter)
+            message = _ime_batch(text, cursor, ime_counter, field_counter)
+            reset_idle = getattr(protocol, "_reset_idle_disconnect_task", None)
+            if callable(reset_idle):
+                reset_idle()
+            if before_send is not None:
+                before_send()
+            protocol._send_message(message, should_debug_log=False)
         except ConnectionClosed:
             # Já dentro do envio da biblioteca: não há como provar que nada saiu.
             raise TvSendUncertain("a conexão com a TV fechou durante o envio") from None

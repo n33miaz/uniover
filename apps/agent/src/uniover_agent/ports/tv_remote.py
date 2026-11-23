@@ -1,12 +1,15 @@
 """Compatibilidade de nome para o driver de TV usado pelo Android."""
 
+from collections.abc import Callable
 from typing import Protocol
 
 from uniover_agent.ports.tv_driver import TvDriver
 
 
 class TvRemote(TvDriver, Protocol):
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         """Aperta uma tecla do contrato (`HOME`, `VOLUME_UP`...).
 
         `direction`: `SHORT`, `START_LONG` ou `END_LONG`.
@@ -19,7 +22,7 @@ class TvRemote(TvDriver, Protocol):
         """Abre um link (deep link) na TV."""
         ...
 
-    async def send_text(self, text: str) -> None:
+    async def send_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
         """Digita `text` no campo de texto em foco na TV: a TV **insere** o trecho (não substitui).
 
         Quem chama manda só o acréscimo; reenviar o campo inteiro duplicaria as letras. Texto vazio

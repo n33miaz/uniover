@@ -24,16 +24,21 @@ class TextFieldStatus:
 
 
 class TvDriver(TvChannel, Protocol):
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
-        """Aperta uma tecla do contrato do agente."""
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        """Aperta uma tecla do contrato do agente.
+
+        Se fornecido, `before_send` roda antes da entrega. Se levantar erro, a tecla não sai.
+        """
         ...
 
     async def launch_link(self, link: str) -> None:
         """Abre um link na TV, quando o protocolo a suportar."""
         ...
 
-    async def send_text(self, text: str) -> None:
-        """Insere texto no campo em foco, quando o protocolo a suportar."""
+    async def send_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
+        """Insere texto no campo em foco, com a mesma checagem de entrega de `send_key`."""
         ...
 
     def on_power(self, callback: Callable[[bool], None]) -> None:

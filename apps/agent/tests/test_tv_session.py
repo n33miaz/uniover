@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Callable
 
 import pytest
 
@@ -485,12 +486,14 @@ class FlakyRemote(FakeTvRemote):
         super().__init__()
         self.failures = 1
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if self.failures:
             self.failures -= 1
             self._connected = False
             raise TvUnreachable("canal fechado")
-        await super().send_key(key, direction)
+        await super().send_key(key, direction, before_send=before_send)
 
 
 async def test_key_is_retried_once_when_the_channel_drops_during_the_send() -> None:

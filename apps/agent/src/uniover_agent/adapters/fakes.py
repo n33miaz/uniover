@@ -89,9 +89,13 @@ class FakeTvRemote:
         self.disconnects += 1
         self._connected = False
 
-    async def send_key(self, key: str, direction: str = "SHORT") -> None:
+    async def send_key(
+        self, key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
         if not self._connected:
             raise TvUnreachable("canal fechado")
+        if before_send is not None:
+            before_send()
         self.keys.append(key)
         self.sent.append((key, direction))
         self.events.append(("tecla", key))
@@ -101,9 +105,11 @@ class FakeTvRemote:
             raise TvUnreachable("canal fechado")
         self.links.append(link)
 
-    async def send_text(self, text: str) -> None:
+    async def send_text(self, text: str, *, before_send: Callable[[], None] | None = None) -> None:
         if not self._connected:
             raise TvUnreachable("canal fechado")
+        if before_send is not None:
+            before_send()
         self.texts.append(text)
         self.events.append(("texto", text))
 
