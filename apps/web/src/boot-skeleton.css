@@ -69,6 +69,7 @@ html:not([data-boot]) .bs-boot .bs-home,
 html[data-boot='home'] .bs-boot .bs-home,
 html[data-boot='tv'] .bs-boot .bs-tv,
 html[data-boot='pc'] .bs-boot .bs-detail,
+html[data-boot='videos'] .bs-boot .bs-detail,
 html[data-boot='shopping'] .bs-boot .bs-detail,
 html[data-boot^='training-'] .bs-boot .bs-training,
 html[data-boot='settings'] .bs-boot .bs-settings,
@@ -89,6 +90,14 @@ html[data-boot='devices-connect'] .bs-boot .bs-plain {
 .bs-variant .bs-settings-profile-content,
 .bs-variant .bs-settings-appearance-content {
   display: none;
+}
+
+/* A caixa de vídeos mantém os cartões na mesma coluna de leitura da lista. */
+html[data-boot='videos'] .bs-detail-cards,
+.bs-root[data-boot-variant='videos'] .bs-detail-cards {
+  width: 100%;
+  max-width: var(--col-read);
+  margin-inline: auto;
 }
 
 /* Compras abre na lista da casa: as linhas da lista, sem os cartões nem a moldura genérica. */

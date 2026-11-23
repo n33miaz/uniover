@@ -59,6 +59,8 @@ export const PAGE_ROUTES: readonly string[] = [
   '/compras/historico',
   '/compras/detalhes',
   '/compras/convite',
+  '/videos',
+  '/videos/compartilhar',
   '/ajustes',
   '/ajustes/perfil',
   '/ajustes/aparencia',

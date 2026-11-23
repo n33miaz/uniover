@@ -12,6 +12,7 @@ import { AccountScope } from './core/session/account-scope';
 import { LiveHomeStatus } from './core/status/live-home-status';
 import { HomeStatus } from './core/status/home-status.port';
 import { TRAINING_DB_FACTORY, TrainingDb } from './modules/training/data/training-db';
+import { VIDEO_INBOX_DB_FACTORY, VideoInboxDb } from './modules/videos/video-inbox-db';
 
 /**
  * Os bancos locais da conta (fila offline e Treino) em memória. Sem isto o jsdom, que não tem IndexedDB, deixava a Dexie
@@ -22,6 +23,10 @@ function inMemoryDatabases() {
   return [
     { provide: OFFLINE_DB_FACTORY, useValue: (name: string) => new OfflineDb(name, options) },
     { provide: TRAINING_DB_FACTORY, useValue: (name: string) => new TrainingDb(name, options) },
+    {
+      provide: VIDEO_INBOX_DB_FACTORY,
+      useValue: (name: string) => new VideoInboxDb(name, options),
+    },
   ];
 }
 
@@ -148,6 +153,15 @@ describe('app routes', () => {
     expect(route?.canMatch).toBeUndefined();
     expect(route?.canActivate).toBeUndefined();
   });
+
+  it('serves the share target route outside the shell and without a guard', async () => {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/videos/compartilhar');
+    await vi.waitFor(() => expect(TestBed.inject(Router).url).toBe('/entrar?next=%2Fvideos'));
+    const route = routes.find((candidate) => candidate.path === 'videos/compartilhar');
+    expect(route?.canMatch).toBeUndefined();
+    expect(route?.canActivate).toBeUndefined();
+  });
 });
 
 describe('app routes for a guest', () => {
@@ -222,8 +236,14 @@ describe('app routes for a guest', () => {
 
   afterEach(() => localStorage.clear());
 
+  it('opens the video inbox for a guest with permission', async () => {
+    signInAs(['module:videos']);
+    const { root } = await go('/videos');
+    expect(root.querySelector('app-video-inbox-page')).not.toBeNull();
+  });
+
   describe('who only has the TV', () => {
-    it.each([...OWNER_ONLY, '/treino', '/ajustes/creditos'])(
+    it.each([...OWNER_ONLY, '/treino', '/videos', '/ajustes/creditos'])(
       'sends %s to Início: it is not a screen this guest may use',
       async (url) => {
         const { url: landed, root } = await go(url);
@@ -315,7 +335,7 @@ describe('app routes for a guest', () => {
   });
 
   describe('who has no module at all', () => {
-    it.each([...OWNER_ONLY, '/treino', '/ajustes/creditos'])(
+    it.each([...OWNER_ONLY, '/treino', '/videos', '/ajustes/creditos'])(
       'sends %s to Início, not to a module',
       async (url) => {
         signInAs([]);
