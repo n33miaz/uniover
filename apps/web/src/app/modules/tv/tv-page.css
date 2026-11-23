@@ -51,17 +51,21 @@
   align-items: center;
 }
 
+.circle,
+.scheduled {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--a-surface);
+}
+
 /* Os botões do cabeçalho (voltar, energia e os três pontos) têm o mesmo visual: um círculo de 44 px. */
 .circle {
   position: relative;
-  display: grid;
-  place-items: center;
   width: var(--tap);
   height: var(--tap);
   padding: 0;
   border: 1px solid var(--a-line);
-  border-radius: 50%;
-  background: var(--a-surface);
   color: var(--a-ink);
   text-decoration: none;
   cursor: pointer;
@@ -88,6 +92,11 @@
   outline: 2px solid var(--a-accent);
   outline-offset: 2px;
 }
+.lead,
+.actions {
+  display: flex;
+  gap: 0;
+}
 /*
  * O lado esquerdo espelha o direito: lá o ponto de estado encosta no desligar (folga zero e o ponto puxado 3 px para ele),
  * e a distância desenhada entre o disco e o círculo fica em 11 px. Aqui os três pontos encostam no voltar e o desenho
@@ -95,8 +104,6 @@
  * distâncias desenhadas e exige que sejam iguais.
  */
 .lead {
-  display: flex;
-  gap: 0;
   justify-self: start;
 }
 .lead .circle.bare {
@@ -110,51 +117,54 @@
   position: absolute;
   top: -3px;
   right: -3px;
-  display: grid;
-  place-items: center;
   width: 18px;
   height: 18px;
   border: 1px solid var(--a-accent);
-  border-radius: 50%;
-  background: var(--a-surface);
   color: var(--a-accent);
 }
 .scheduled app-tv-icon {
   width: 12px;
   height: 12px;
 }
+/* Sem folga entre o ponto e o desligar: o alvo de 44 px do ponto já deixa 10 px de ar em volta dos seus 24 px. */
 .actions {
-  display: flex;
-  /* Sem folga entre o ponto e o desligar: o alvo de 44 px do ponto já deixa 10 px de ar em volta dos seus 24 px. */
-  gap: 0;
   align-items: center;
   justify-self: end;
 }
 
-/* A coluna do meio: só o nome (o ponto de estado mora à direita, junto do desligar). */
-.name {
+.name,
+.label {
   position: relative;
-  display: grid;
   min-width: 0;
   max-width: 100%;
+}
+/* A coluna do meio: só o nome (o ponto de estado mora à direita, junto do desligar). */
+.name {
+  display: grid;
   justify-self: center;
 }
-.direct-label {
+.direct-label,
+.chevron {
   position: absolute;
+  pointer-events: none;
+}
+.direct-label {
   inset-inline: 0;
   inset-block-start: calc(100% - 0.45rem);
   text-align: center;
   font-size: 0.65rem;
   line-height: 1;
-  pointer-events: none;
 }
 h1 {
   min-width: 0;
   font-size: 1.35rem;
 }
-.title {
+.title,
+.reason-row {
   display: flex;
   align-items: center;
+}
+.title {
   justify-content: center;
   width: 100%;
   min-width: var(--tap);
@@ -174,20 +184,15 @@ h1 {
  * da coluna, com ou sem seta.
  */
 .label {
-  position: relative;
   display: inline-grid;
-  min-width: 0;
-  max-width: 100%;
 }
 .chevron {
-  position: absolute;
   top: 50%;
   left: calc(100% + 1px);
   width: 0.95rem;
   height: 0.95rem;
   color: var(--a-ink2);
   transform: translateY(-50%);
-  pointer-events: none;
 }
 /* Sem o controle o nome é só texto: a mesma caixa do botão (altura do alvo, centralizado), sem a mão do cursor. */
 .title.plain {
@@ -230,9 +235,7 @@ h1 {
  * faixa de atenção à esquerda) e, com o agente fora do ar, leva a única ação possível ao lado do texto.
  */
 .reason-row {
-  display: flex;
   flex: none;
-  align-items: center;
   gap: 8px;
   padding: 6px 10px;
   border: 1px solid var(--a-line);
@@ -267,25 +270,19 @@ h1 {
 }
 
 /*
- * PC desligado: os controles ficam esmaecidos (e inertes, ver o `inert` da página) e o selo fica no centro da tela, por
- * cima deles. É um estado a mais, só para o PC confirmado desligado; nos outros casos nada disto aparece.
+ * Os controles ficam esmaecidos quando o PC está desligado ou o agente não está pareado. Com o PC desligado,
+ * ficam também inertes (ver o `inert` da página) e o selo aparece por cima, no centro da tela.
  */
-.tv.pc-off app-tv-control,
-.tv.pc-off app-tv-view-only {
+.tv:is(.pc-off, .not-paired) :is(app-tv-control, app-tv-view-only) {
   opacity: 0.32;
   filter: grayscale(1);
   pointer-events: none;
+}
+.tv.pc-off :is(app-tv-control, app-tv-view-only) {
   transition: opacity var(--dur-base) var(--ease-out);
 }
-.tv.not-paired app-tv-control,
-.tv.not-paired app-tv-view-only {
-  opacity: 0.32;
-  filter: grayscale(1);
-  pointer-events: none;
-}
 @media (prefers-reduced-motion: reduce) {
-  .tv.pc-off app-tv-control,
-  .tv.pc-off app-tv-view-only {
+  .tv.pc-off :is(app-tv-control, app-tv-view-only) {
     transition: none;
   }
 }
@@ -309,26 +306,24 @@ h1 {
 .empty {
   gap: 14px;
 }
-.blocked {
+.blocked,
+.empty app-tv-icon,
+.empty p {
   color: var(--a-ink2);
 }
 .empty app-tv-icon {
   width: 3.5rem;
   height: 3.5rem;
-  color: var(--a-ink2);
 }
 .blocked app-tv-icon {
   width: 2.75rem;
   height: 2.75rem;
 }
 .empty h2 {
-  margin: 0;
   font-size: clamp(1.15rem, 5.4vw, 1.5rem);
   white-space: nowrap;
 }
-.empty p {
-  color: var(--a-ink2);
-}
+.empty h2,
 .empty p,
 .blocked p {
   margin: 0;
