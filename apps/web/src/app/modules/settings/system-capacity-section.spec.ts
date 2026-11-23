@@ -78,6 +78,28 @@ describe('SystemCapacitySection', () => {
     return (await renderFixture(role)).nativeElement as HTMLElement;
   }
 
+  it('replaces the accessible loading status with meters when the initial reading resolves', async () => {
+    let finish!: (value: CapacityReport) => void;
+    const reading = new Promise<CapacityReport>((resolve) => (finish = resolve));
+    system.capacity.mockReturnValueOnce(reading);
+
+    const fixture = await renderFixture();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(system.capacity).toHaveBeenCalledTimes(1);
+    expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe(
+      'Carregando a capacidade…',
+    );
+    expect(root.querySelectorAll('[role="meter"]')).toHaveLength(0);
+
+    finish(report());
+    await reading;
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(root.querySelector('[role="status"]')).toBeNull();
+    expect(root.querySelectorAll('[role="meter"]')).toHaveLength(3);
+  });
+
   it('shows database, memory and month hours against their limits, with the band in words', async () => {
     const root = await render();
     const meters = Array.from(root.querySelectorAll<HTMLElement>('.meter'));
