@@ -23,7 +23,7 @@
           type="button"
           class="secondary ui-btn"
           [disabled]="dismissing()"
-          (click)="dismiss()"
+          (click)="dismiss(data.alerts)"
           i18n="@@settings.system.capacity.dismiss"
         >
           Dispensar

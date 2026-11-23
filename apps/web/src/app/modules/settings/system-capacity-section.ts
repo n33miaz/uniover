@@ -38,6 +38,7 @@ const SPARK_HEIGHT = 40;
 export class SystemCapacitySection {
   private readonly system = inject(SystemApi);
   private readonly session = inject(SessionState);
+  private loadSequence = 0;
   protected readonly report = signal<CapacityReport | null>(null);
   protected readonly failed = signal(false);
   protected readonly dismissing = signal(false);
@@ -105,21 +106,23 @@ export class SystemCapacitySection {
   }
 
   protected async load(): Promise<void> {
+    const sequence = ++this.loadSequence;
     this.failed.set(false);
     try {
-      this.report.set(await this.system.capacity());
+      const report = await this.system.capacity();
+      if (sequence === this.loadSequence) this.report.set(report);
     } catch {
-      this.failed.set(true);
+      if (sequence === this.loadSequence) this.failed.set(true);
     }
   }
 
-  protected async dismiss(): Promise<void> {
-    if (this.dismissing()) return;
+  protected async dismiss(alerts: CapacityReport['alerts']): Promise<void> {
+    if (this.dismissing() || alerts.length === 0) return;
     this.dismissFailed.set(false);
     this.dismissing.set(true);
     try {
-      await this.system.dismissCapacityAlerts();
-      this.report.update((report) => (report ? { ...report, alerts: [] } : report));
+      await this.system.dismissCapacityAlerts(alerts.map((alert) => alert.id));
+      await this.load();
     } catch {
       this.dismissFailed.set(true);
     } finally {

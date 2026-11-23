@@ -27,6 +27,8 @@ internal sealed record CapacityServer(
 
 internal sealed record CapacityAlertItem(Guid Id, string Metric, int Percent, DateTimeOffset DetectedAt);
 
+internal sealed record CapacityMarkSeenRequest(Guid[] AlertIds);
+
 /// <summary>O cartão inteiro. <c>MeasuredAt</c> é quando o banco foi medido (pode ter alguns minutos); o servidor é lido na hora.</summary>
 internal sealed record CapacityResponse(
     CapacityDatabase Database, CapacityServer Server, CapacityGrowth Growth, IReadOnlyList<CapacityAlertItem> Alerts,
@@ -89,22 +91,23 @@ internal sealed class CapacityHandler(
     }
 
     /// <summary>
-    /// O dono viu: só os avisos abertos saem do cartão. Um aviso que já fechou fica como está (nada a dispensar), e o próximo
-    /// vermelho, depois de voltar ao normal e do cooldown, abre outro.
+    /// Marca os avisos exibidos que ainda estão abertos e não foram vistos.
     /// </summary>
     /// <remarks>
     /// Pega a mesma trava da amostra diária (esperando, ao contrário da amostra): as duas escrevem nos avisos abertos e,
     /// sem ordem entre elas, poderiam travar uma à outra. O clique espera a trava por até 5 segundos. Se a sonda chegar
     /// enquanto o clique segura a trava, ela pula a execução e só volta no próximo ciclo da limpeza (24 horas por padrão).
     /// </remarks>
-    public async Task MarkSeenAsync(CancellationToken cancellationToken)
+    public async Task MarkSeenAsync(Guid[] alertIds, CancellationToken cancellationToken)
     {
+        if (alertIds.Length == 0) return;
+
         var now = time.GetUtcNow();
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         await db.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '5s'", cancellationToken);
         await db.Database.ExecuteSqlAsync(
             $"SELECT pg_advisory_xact_lock(hashtextextended({CapacitySampling.JobName}, 0))", cancellationToken);
-        await db.CapacityAlerts.Where(a => a.SeenAt == null && a.RecoveredAt == null)
+        await db.CapacityAlerts.Where(a => a.SeenAt == null && a.RecoveredAt == null && alertIds.Contains(a.Id))
             .ExecuteUpdateAsync(s => s.SetProperty(a => a.SeenAt, now), cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
@@ -121,11 +124,20 @@ internal static class CapacityEndpoint
             .RequireRateLimiting(RateLimitPolicies.Capacity)
             .Produces<CapacityResponse>().ProducesProblem(401).ProducesProblem(403);
 
-        group.MapPost("/capacity/alerts/seen", async (CapacityHandler handler, CancellationToken cancellationToken) =>
+        group.MapPost("/capacity/alerts/seen", async (
+                CapacityMarkSeenRequest request, CapacityHandler handler, CancellationToken cancellationToken) =>
             {
+                if (request.AlertIds is null)
+                {
+                    return Results.ValidationProblem(new Dictionary<string, string[]>
+                    {
+                        ["alertIds"] = ["A lista de IDs dos avisos é obrigatória."],
+                    });
+                }
+
                 try
                 {
-                    await handler.MarkSeenAsync(cancellationToken);
+                    await handler.MarkSeenAsync(request.AlertIds, cancellationToken);
                     return Results.NoContent();
                 }
                 catch (PostgresException error) when (error.SqlState == PostgresErrorCodes.LockNotAvailable)
@@ -139,6 +151,7 @@ internal static class CapacityEndpoint
             .RequireAuthorization(UniOverAuth.OwnerPolicy)
             .RequireRateLimiting(RateLimitPolicies.Commands)
             .Produces(StatusCodes.Status204NoContent)
+            .ProducesValidationProblem()
             .ProducesProblem(401).ProducesProblem(403)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }

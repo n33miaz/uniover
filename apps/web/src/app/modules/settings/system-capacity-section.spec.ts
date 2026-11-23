@@ -211,8 +211,8 @@ describe('SystemCapacitySection', () => {
     expect(when).toEqual(['Já passou', 'Sem data']);
   });
 
-  it('shows an open alert and removes it on dismiss', async () => {
-    system.capacity.mockResolvedValue(
+  it('dismisses the displayed IDs and shows an alert from the refreshed report', async () => {
+    system.capacity.mockResolvedValueOnce(
       report({
         alerts: [
           { id: 'a1', metric: 'hours', percent: 81, detectedAt: '2026-10-31T09:00:00Z' },
@@ -226,11 +226,18 @@ describe('SystemCapacitySection', () => {
     expect(alert?.textContent).toContain('Capacidade em Risco');
     expect(alert?.textContent).toContain('Horas do Mês, Dados');
 
+    system.capacity.mockResolvedValueOnce(
+      report({
+        alerts: [{ id: 'a3', metric: 'memory', percent: 88, detectedAt: '2026-10-31T09:10:00Z' }],
+      }),
+    );
     root.querySelector<HTMLButtonElement>('.alert button')?.click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(system.dismissCapacityAlerts).toHaveBeenCalledTimes(1);
-    expect(root.querySelector('.alert')).toBeNull();
+    expect(system.dismissCapacityAlerts).toHaveBeenCalledWith(['a1', 'a2']);
+    expect(system.capacity).toHaveBeenCalledTimes(2);
+    expect(root.querySelector('.alert .alert-text span')?.textContent?.trim()).toBe('Memória');
   });
 
   it('keeps the alerts and lets the owner retry when dismissal fails', async () => {
@@ -263,17 +270,21 @@ describe('SystemCapacitySection', () => {
       'Não foi possível dispensar os avisos. Tente novamente.',
     );
     expect(button.disabled).toBe(false);
+    expect(system.capacity).toHaveBeenCalledTimes(1);
 
+    system.capacity.mockResolvedValueOnce(report());
     button.click();
     fixture.detectChanges();
     expect(root.querySelector('[role="alert"]')).toBeNull();
     expect(root.querySelector('.alert')?.textContent).toContain('Horas do Mês, Dados');
     expect(button.disabled).toBe(true);
 
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(system.dismissCapacityAlerts).toHaveBeenCalledTimes(2);
-    expect(root.querySelector('.alert')).toBeNull();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(root.querySelector('.alert')).toBeNull();
+    });
+    expect(system.dismissCapacityAlerts.mock.calls).toEqual([[['a1', 'a2']], [['a1', 'a2']]]);
+    expect(system.capacity).toHaveBeenCalledTimes(2);
   });
 
   it('shows an error when the reading fails, and no alert block', async () => {

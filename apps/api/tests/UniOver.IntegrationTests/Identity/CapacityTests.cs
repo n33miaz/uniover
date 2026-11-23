@@ -20,6 +20,7 @@ namespace UniOver.IntegrationTests.Identity;
 public sealed class CapacityTests(PostgresFixture postgres)
 {
     private const string Route = "/api/v1/identity/capacity";
+    private const string SeenRoute = Route + "/alerts/seen";
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private static IdentityAppOptions With(params (string Key, string Value)[] settings) => new()
@@ -83,8 +84,9 @@ public sealed class CapacityTests(PostgresFixture postgres)
 
         using var anonymous = await app.SendAsync(HttpMethod.Get, Route);
         using var asGuest = await app.SendAsync(HttpMethod.Get, Route, bearer: guest.Login.AccessToken);
-        using var markAnonymous = await app.SendAsync(HttpMethod.Post, Route + "/alerts/seen");
-        using var markGuest = await app.SendAsync(HttpMethod.Post, Route + "/alerts/seen", bearer: guest.Login.AccessToken);
+        var payload = new { alertIds = new[] { Guid.NewGuid() } };
+        using var markAnonymous = await app.SendAsync(HttpMethod.Post, SeenRoute, payload);
+        using var markGuest = await app.SendAsync(HttpMethod.Post, SeenRoute, payload, guest.Login.AccessToken);
         using var asOwner = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
 
         anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -230,7 +232,8 @@ public sealed class CapacityTests(PostgresFixture postgres)
         var listedAlerts = (await IdentityApp.JsonAsync(listed)).GetProperty("alerts").EnumerateArray().ToList();
         listedAlerts.Select(a => a.GetProperty("metric").GetString()).Should().Contain("database");
 
-        using var seen = await app.SendAsync(HttpMethod.Post, Route + "/alerts/seen", bearer: owner.AccessToken);
+        var alertIds = listedAlerts.Select(a => a.GetProperty("id").GetGuid()).ToArray();
+        using var seen = await app.SendAsync(HttpMethod.Post, SeenRoute, new { alertIds }, owner.AccessToken);
         seen.StatusCode.Should().Be(HttpStatusCode.NoContent);
         using var after = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
         (await IdentityApp.JsonAsync(after)).GetProperty("alerts").GetArrayLength().Should().Be(0);
@@ -239,6 +242,54 @@ public sealed class CapacityTests(PostgresFixture postgres)
         await RunJobAsync(app);
         await using var check = app.Db();
         (await check.CapacityAlerts.AsNoTracking().CountAsync(a => a.Metric == "database", Ct)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DismissingShownAlerts_LeavesAnAlertOpenedAfterTheRead()
+    {
+        await using var app = await IdentityApp.StartAsync(postgres);
+        var owner = await app.LoginAsync();
+        var now = app.Time.GetUtcNow();
+        await using (var seed = app.Db())
+        {
+            await CapacitySampling.EvaluateAlertsAsync(seed, new Dictionary<string, double> { ["database"] = 85 }, now, Ct);
+        }
+
+        using var listed = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
+        listed.StatusCode.Should().Be(HttpStatusCode.OK);
+        var shown = (await IdentityApp.JsonAsync(listed)).GetProperty("alerts").EnumerateArray().Single();
+        var shownId = shown.GetProperty("id").GetGuid();
+
+        app.Time.Advance(TimeSpan.FromMinutes(1));
+        await using (var seed = app.Db())
+        {
+            await CapacitySampling.EvaluateAlertsAsync(
+                seed, new Dictionary<string, double> { ["memory"] = 90 }, app.Time.GetUtcNow(), Ct);
+        }
+
+        using var missing = await app.SendAsync(HttpMethod.Post, SeenRoute, new { }, owner.AccessToken);
+        missing.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (missing.Content.Headers.ContentType?.MediaType).Should().Be("application/problem+json");
+
+        using var empty = await app.SendAsync(HttpMethod.Post, SeenRoute, new { alertIds = Array.Empty<Guid>() }, owner.AccessToken);
+        empty.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await using var db = app.Db();
+        (await db.CapacityAlerts.AsNoTracking().CountAsync(a => a.SeenAt != null, Ct)).Should().Be(0);
+
+        var payload = new { alertIds = new[] { shownId, shownId, Guid.NewGuid() } };
+        var seenAt = app.Time.GetUtcNow();
+        using var seen = await app.SendAsync(HttpMethod.Post, SeenRoute, payload, owner.AccessToken);
+        seen.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        app.Time.Advance(TimeSpan.FromMinutes(1));
+        using var retry = await app.SendAsync(HttpMethod.Post, SeenRoute, payload, owner.AccessToken);
+        retry.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await db.CapacityAlerts.AsNoTracking().SingleAsync(a => a.Id == shownId, Ct)).SeenAt.Should().Be(seenAt);
+
+        using var refreshed = await app.SendAsync(HttpMethod.Get, Route, bearer: owner.AccessToken);
+        refreshed.StatusCode.Should().Be(HttpStatusCode.OK);
+        var remaining = (await IdentityApp.JsonAsync(refreshed)).GetProperty("alerts").EnumerateArray().Single();
+        remaining.GetProperty("metric").GetString().Should().Be("memory");
     }
 
     [Fact]
@@ -287,15 +338,17 @@ public sealed class CapacityTests(PostgresFixture postgres)
         await using var app = await IdentityApp.StartAsync(postgres);
         var owner = await app.LoginAsync();
         var now = app.Time.GetUtcNow();
+        var recoveredId = Guid.NewGuid();
+        var openId = Guid.NewGuid();
         await using (var seed = app.Db())
         {
             seed.CapacityAlerts.AddRange(
-                new CapacityAlert { Id = Guid.NewGuid(), Metric = "memory", Percent = 90, DetectedAt = now.AddDays(-2), RecoveredAt = now.AddDays(-1) },
-                new CapacityAlert { Id = Guid.NewGuid(), Metric = "database", Percent = 85, DetectedAt = now.AddHours(-1) });
+                new CapacityAlert { Id = recoveredId, Metric = "memory", Percent = 90, DetectedAt = now.AddDays(-2), RecoveredAt = now.AddDays(-1) },
+                new CapacityAlert { Id = openId, Metric = "database", Percent = 85, DetectedAt = now.AddHours(-1) });
             await seed.SaveChangesAsync(Ct);
         }
 
-        using var seen = await app.SendAsync(HttpMethod.Post, Route + "/alerts/seen", bearer: owner.AccessToken);
+        using var seen = await app.SendAsync(HttpMethod.Post, SeenRoute, new { alertIds = new[] { recoveredId, openId } }, owner.AccessToken);
 
         seen.StatusCode.Should().Be(HttpStatusCode.NoContent);
         await using var db = app.Db();
@@ -421,11 +474,12 @@ public sealed class CapacityTests(PostgresFixture postgres)
     {
         await using var app = await IdentityApp.StartAsync(postgres);
         var owner = await app.LoginAsync();
+        var alertId = Guid.NewGuid();
         await using (var seed = app.Db())
         {
             seed.CapacityAlerts.Add(new CapacityAlert
             {
-                Id = Guid.NewGuid(), Metric = "database", Percent = 85, DetectedAt = app.Time.GetUtcNow().AddHours(-1),
+                Id = alertId, Metric = "database", Percent = 85, DetectedAt = app.Time.GetUtcNow().AddHours(-1),
             });
             await seed.SaveChangesAsync(Ct);
         }
@@ -435,7 +489,7 @@ public sealed class CapacityTests(PostgresFixture postgres)
         await using (connection)
         await using (transaction)
         {
-            seen = app.SendAsync(HttpMethod.Post, Route + "/alerts/seen", bearer: owner.AccessToken);
+            seen = app.SendAsync(HttpMethod.Post, SeenRoute, new { alertIds = new[] { alertId } }, owner.AccessToken);
 
             // Parado na fila da trava, sem ter tocado no aviso.
             await WaitForAnAdvisoryWaiterAsync(app.Database);
@@ -459,20 +513,22 @@ public sealed class CapacityTests(PostgresFixture postgres)
     {
         await using var app = await IdentityApp.StartAsync(postgres);
         var owner = await app.LoginAsync();
+        var alertId = Guid.NewGuid();
         await using (var seed = app.Db())
         {
             seed.CapacityAlerts.Add(new CapacityAlert
             {
-                Id = Guid.NewGuid(), Metric = "database", Percent = 85, DetectedAt = app.Time.GetUtcNow().AddHours(-1),
+                Id = alertId, Metric = "database", Percent = 85, DetectedAt = app.Time.GetUtcNow().AddHours(-1),
             });
             await seed.SaveChangesAsync(Ct);
         }
 
+        var payload = new { alertIds = new[] { alertId } };
         var (connection, transaction) = await HoldTheLockAsync(app.Database);
         await using (connection)
         await using (transaction)
         {
-            using var response = await app.SendAsync(HttpMethod.Post, Route + "/alerts/seen", bearer: owner.AccessToken)
+            using var response = await app.SendAsync(HttpMethod.Post, SeenRoute, payload, owner.AccessToken)
                 .WaitAsync(TimeSpan.FromSeconds(15), Ct);
 
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -484,7 +540,7 @@ public sealed class CapacityTests(PostgresFixture postgres)
             await transaction.RollbackAsync(Ct);
         }
 
-        using var retry = await app.SendAsync(HttpMethod.Post, Route + "/alerts/seen", bearer: owner.AccessToken);
+        using var retry = await app.SendAsync(HttpMethod.Post, SeenRoute, payload, owner.AccessToken);
         retry.StatusCode.Should().Be(HttpStatusCode.NoContent);
         await using var check = app.Db();
         (await check.CapacityAlerts.AsNoTracking().SingleAsync(Ct)).SeenAt.Should().NotBeNull();
