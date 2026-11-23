@@ -1,7 +1,12 @@
 import { join } from 'node:path';
 import { expect, screenshot, test } from '../fixtures';
 import type { Page, TestInfo } from '@playwright/test';
-import { expectSynced, openTraining, startTraining } from './support/training-pages';
+import {
+  expectSynced,
+  openTraining,
+  startTraining,
+  trainingDbName,
+} from './support/training-pages';
 
 test.use({ serviceWorkers: 'block', timezoneId: 'America/Sao_Paulo', locale: 'pt-BR' });
 
@@ -14,6 +19,63 @@ test('o diário usa a volta única do cabeçalho', async ({ page, context }) => 
   await expect(page.locator('app-food-diary-page .back')).toHaveCount(0);
   await back.click();
   await expect(page).toHaveURL(/\/treino\/corpo$/);
+});
+
+test('o diário só mostra o estado vazio depois de ler os lançamentos do dia', async ({
+  page,
+  context,
+}) => {
+  await startTraining(context, page);
+
+  let markReadPending!: () => void;
+  const readPending = new Promise<void>((resolve) => (markReadPending = resolve));
+  let releaseRead!: () => void;
+  const readGate = new Promise<void>((resolve) => (releaseRead = resolve));
+  await page.exposeFunction('waitForDiaryDayRead', () => {
+    markReadPending();
+    return readGate;
+  });
+  await page.addInitScript((dbName) => {
+    const browser = window as Window & {
+      waitForDiaryDayRead: () => Promise<void>;
+    };
+    const original = Object.getOwnPropertyDescriptor(IDBRequest.prototype, 'onsuccess')!;
+    Object.defineProperty(IDBRequest.prototype, 'onsuccess', {
+      ...original,
+      set(this: IDBRequest, handler: IDBRequest['onsuccess']) {
+        const source = this.source;
+        // Só a entrega do resultado da consulta por dia fica pendente. O banco abre e os outros pedidos seguem.
+        if (
+          handler &&
+          source instanceof IDBIndex &&
+          source.name === 'eatenOn' &&
+          source.objectStore.name === 'meals' &&
+          source.objectStore.transaction.db.name === dbName
+        ) {
+          original.set!.call(this, async (event: Event) => {
+            await browser.waitForDiaryDayRead();
+            handler.call(this, event);
+          });
+        } else {
+          original.set!.call(this, handler);
+        }
+      },
+    });
+  }, trainingDbName());
+
+  const diary = page.locator('app-food-diary-page');
+  const loading = diary.getByRole('status').filter({ hasText: /^Carregando lançamentos…$/ });
+  const empty = diary.getByRole('heading', { name: 'Nada Registrado Neste Dia' });
+  try {
+    await openTraining(page, '/treino/alimentacao');
+    await readPending;
+    await expect(loading).toBeVisible();
+    await expect(empty).toBeHidden();
+  } finally {
+    releaseRead();
+  }
+  await expect(empty).toBeVisible();
+  await expect(loading).toBeHidden();
 });
 
 // O envio pendente e a passada de atualização passam dos 5 s de uma verificação comum quando a máquina está ocupada.
