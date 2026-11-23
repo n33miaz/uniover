@@ -72,6 +72,19 @@ class ConfigStoreTest {
     }
 
     @Test
+    fun `a truncated external file previously chosen for higher revision falls back to valid internal config`() {
+        val store = store()
+        write(internal, 2)
+        write(external, 5)
+        assertEquals(5, store.load().revision)
+
+        File(external, ConfigStore.CONFIG_NAME).writeText("""{ "schema": 1, "revision": 5, "clock": { "si""")
+        val config = store.load()
+        assertEquals(2, config.revision)
+        assertTrue(store.warnings.any { "recusado" in it })
+    }
+
+    @Test
     fun `a garbage file on first read gives the defaults`() {
         File(external, ConfigStore.CONFIG_NAME).writeText("lixo")
         assertEquals(LauncherConfig.DEFAULT, store().load())
