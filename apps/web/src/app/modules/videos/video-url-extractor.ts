@@ -8,13 +8,19 @@ export function extractVideoUrl(payload: RawSharePayload | null | undefined): st
   for (const field of [payload?.url, payload?.text, payload?.title]) {
     if (typeof field !== 'string') continue;
     for (const match of field.matchAll(LINK)) {
-      const candidate = match[0]
-        .replace(/[.,!?;:"'\]}>]+$/, '')
-        .replace(/\)+$/, (end, offset, input: string) => {
-          const open = (input.slice(0, offset).match(/\(/g) ?? []).length;
-          const closed = (input.slice(0, offset).match(/\)/g) ?? []).length;
-          return end.slice(0, Math.max(0, open - closed));
-        });
+      let candidate = match[0];
+      let extraClosing =
+        (candidate.match(/\)/g)?.length ?? 0) - (candidate.match(/\(/g)?.length ?? 0);
+      let previous: string;
+      do {
+        previous = candidate;
+        if (/[.,!?;:"'\]}>]/.test(candidate.charAt(candidate.length - 1))) {
+          candidate = candidate.slice(0, -1);
+        } else if (extraClosing > 0 && candidate.endsWith(')')) {
+          candidate = candidate.slice(0, -1);
+          extraClosing--;
+        }
+      } while (candidate !== previous);
       try {
         return new URL(/^https?:\/\//i.test(candidate) ? candidate : 'https://' + candidate).href;
       } catch {

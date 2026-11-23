@@ -68,6 +68,15 @@ describe('extractVideoUrl', () => {
     );
   });
 
+  it('strips punctuation exposed by closing parentheses and keeps balanced path parentheses', () => {
+    expect(extractVideoUrl({ text: '(https://youtu.be/dQw4w9WgXcQ.)' })).toBe(
+      'https://youtu.be/dQw4w9WgXcQ',
+    );
+    expect(extractVideoUrl({ text: '(https://example.org/a_(b).)' })).toBe(
+      'https://example.org/a_(b)',
+    );
+  });
+
   it('detects and adds https protocol to domain-prefixed URLs without protocol', () => {
     expect(extractVideoUrl({ text: 'Acesse www.youtube.com/watch?v=123' })).toBe(
       'https://www.youtube.com/watch?v=123',

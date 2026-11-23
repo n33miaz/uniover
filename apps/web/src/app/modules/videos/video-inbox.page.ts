@@ -1,9 +1,20 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import {
+  Component,
+  LOCALE_ID,
+  OnInit,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
+import { SessionState } from '../../core/session/session-state';
 import { VideoInboxService } from './video-inbox.service';
 import {
   type VideoInboxItem,
   type VideoPlatform,
+  canAccessVideoInbox,
   platformLabel,
   statusLabel,
   viaLabel,
@@ -31,14 +42,14 @@ import {
             (input)="onInput($event)"
             placeholder="Cole um link ou texto com vídeo…"
             i18n-placeholder="@@videos.inbox.add.placeholder"
-            [disabled]="adding()"
+            [disabled]="adding() || !activeAccountId()"
             aria-label="Link do vídeo"
             i18n-aria-label="@@videos.inbox.add.aria-label"
           />
           <button
             type="submit"
             class="add-btn"
-            [disabled]="adding() || !inputUrl().trim()"
+            [disabled]="adding() || !activeAccountId() || !inputUrl().trim()"
             i18n="@@videos.inbox.add.button"
           >
             Salvar
@@ -420,6 +431,13 @@ export class VideoInboxPage implements OnInit {
   private readonly inboxService = inject(VideoInboxService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly session = inject(SessionState);
+  private readonly locale = inject(LOCALE_ID, { optional: true }) ?? 'pt-BR';
+  protected readonly activeAccountId = computed(() =>
+    canAccessVideoInbox(this.session.role(), this.session.knownPermissions())
+      ? this.session.accountId()
+      : null,
+  );
 
   protected readonly items = signal<VideoInboxItem[]>([]);
   protected readonly loading = signal(true);
@@ -428,20 +446,43 @@ export class VideoInboxPage implements OnInit {
   protected readonly adding = signal(false);
   protected readonly copiedId = signal<string | null>(null);
 
+  constructor() {
+    let previousAccount = this.activeAccountId();
+    effect(() => {
+      const accountId = this.activeAccountId();
+      if (accountId === previousAccount) return;
+      previousAccount = accountId;
+      this.items.set([]);
+      this.feedback.set(null);
+      this.copiedId.set(null);
+      this.inputUrl.set('');
+      this.adding.set(false);
+      if (accountId) untracked(() => void this.loadItems());
+      else this.loading.set(false);
+    });
+  }
+
   async ngOnInit(): Promise<void> {
+    const accountId = this.activeAccountId();
+    if (!accountId) {
+      this.loading.set(false);
+      return;
+    }
     try {
-      await this.processIncomingOrPending();
+      await this.processIncomingOrPending(accountId);
     } catch {
+      if (this.activeAccountId() !== accountId) return;
       this.showFeedback(
         $localize`:@@videos.inbox.save-error:Não foi possível salvar o link. Tente novamente.`,
       );
     }
-    await this.loadItems();
+    if (this.activeAccountId() === accountId) await this.loadItems();
   }
 
-  private async processIncomingOrPending(): Promise<void> {
+  private async processIncomingOrPending(accountId: string): Promise<void> {
     // 1. Processa compartilhamento pendente (ex: vindo antes do login)
     const pendingItem = await this.inboxService.processPendingShare();
+    if (this.activeAccountId() !== accountId) return;
     if (pendingItem) {
       this.showFeedback($localize`:@@videos.inbox.feedback.saved:Link salvo com sucesso!`);
     }
@@ -458,6 +499,7 @@ export class VideoInboxPage implements OnInit {
       (title && title.trim().length > 0)
     ) {
       const captured = await this.inboxService.captureShare({ url, text, title });
+      if (this.activeAccountId() !== accountId) return;
       if (captured) {
         this.showFeedback($localize`:@@videos.inbox.feedback.saved:Link salvo com sucesso!`);
       }
@@ -471,26 +513,31 @@ export class VideoInboxPage implements OnInit {
   }
 
   protected async loadItems(): Promise<void> {
+    const accountId = this.activeAccountId();
+    if (!accountId) return;
     this.loading.set(true);
     try {
       const list = await this.inboxService.list();
-      this.items.set(list);
+      if (this.activeAccountId() === accountId) this.items.set(list);
     } catch {
+      if (this.activeAccountId() !== accountId) return;
       this.showFeedback(
         $localize`:@@videos.inbox.load-error:Não foi possível carregar os links salvos.`,
       );
     } finally {
-      this.loading.set(false);
+      if (this.activeAccountId() === accountId) this.loading.set(false);
     }
   }
 
   protected async addManual(): Promise<void> {
+    const accountId = this.activeAccountId();
     const raw = this.inputUrl().trim();
-    if (!raw) return;
+    if (!accountId || !raw) return;
 
     this.adding.set(true);
     try {
       const item = await this.inboxService.captureShare({ text: raw }, 'manual');
+      if (this.activeAccountId() !== accountId) return;
       if (item) {
         this.inputUrl.set('');
         this.showFeedback($localize`:@@videos.inbox.feedback.saved:Link salvo com sucesso!`);
@@ -501,11 +548,12 @@ export class VideoInboxPage implements OnInit {
         );
       }
     } catch {
+      if (this.activeAccountId() !== accountId) return;
       this.showFeedback(
         $localize`:@@videos.inbox.save-error:Não foi possível salvar o link. Tente novamente.`,
       );
     } finally {
-      this.adding.set(false);
+      if (this.activeAccountId() === accountId) this.adding.set(false);
     }
   }
 
@@ -515,26 +563,34 @@ export class VideoInboxPage implements OnInit {
   }
 
   protected async deleteItem(id: string): Promise<void> {
+    const accountId = this.activeAccountId();
+    if (!accountId) return;
     try {
       await this.inboxService.delete(id);
     } catch {
+      if (this.activeAccountId() !== accountId) return;
       this.showFeedback($localize`:@@videos.inbox.delete-error:Não foi possível excluir o link.`);
       return;
     }
+    if (this.activeAccountId() !== accountId) return;
     this.items.update((prev) => prev.filter((item) => item.id !== id));
     this.showFeedback($localize`:@@videos.inbox.feedback.deleted:Link removido da caixa.`);
   }
 
   protected async copyLink(item: VideoInboxItem): Promise<void> {
+    const accountId = this.activeAccountId();
+    if (!accountId) return;
     try {
       await navigator.clipboard.writeText(item.canonical_url);
+      if (this.activeAccountId() !== accountId) return;
       this.copiedId.set(item.id);
       setTimeout(() => {
-        if (this.copiedId() === item.id) {
+        if (this.activeAccountId() === accountId && this.copiedId() === item.id) {
           this.copiedId.set(null);
         }
       }, 2000);
     } catch {
+      if (this.activeAccountId() !== accountId) return;
       this.showFeedback(
         $localize`:@@videos.inbox.feedback.copy-error:Não foi possível copiar o link.`,
       );
@@ -569,13 +625,13 @@ export class VideoInboxPage implements OnInit {
     try {
       const d = new Date(iso);
       return (
-        d.toLocaleDateString('pt-BR', {
+        d.toLocaleDateString(this.locale, {
           day: '2-digit',
           month: '2-digit',
           year: 'numeric',
         }) +
         ' ' +
-        d.toLocaleTimeString('pt-BR', {
+        d.toLocaleTimeString(this.locale, {
           hour: '2-digit',
           minute: '2-digit',
         })
@@ -586,9 +642,10 @@ export class VideoInboxPage implements OnInit {
   }
 
   private showFeedback(message: string): void {
+    const accountId = this.activeAccountId();
     this.feedback.set(message);
     setTimeout(() => {
-      if (this.feedback() === message) {
+      if (this.activeAccountId() === accountId && this.feedback() === message) {
         this.feedback.set(null);
       }
     }, 3500);

@@ -148,6 +148,22 @@ describe('ShareTargetPage', () => {
     expect(peekPendingShare()).toBeNull();
   });
 
+  it('preserves the share until account permissions are known', async () => {
+    accountRole = null;
+    await open('/videos/compartilhar?url=https%3A%2F%2Fyoutu.be%2Fabc');
+
+    const router = TestBed.inject(Router);
+    expect(router.url).toBe('/');
+    expect(peekPendingShare()?.url).toBe('https://youtu.be/abc');
+
+    accountRole = 'guest';
+    accountPermissions = ['module:videos'];
+    await router.navigateByUrl('/videos');
+    const service = TestBed.inject(VideoInboxService);
+    await vi.waitFor(async () => expect(await service.list()).toHaveLength(1));
+    expect(peekPendingShare()).toBeNull();
+  });
+
   it('blocks guest without module:videos permission and redirects to home', async () => {
     authStatus = 'authenticated';
     accountRole = 'guest';
