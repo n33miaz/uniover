@@ -292,3 +292,22 @@ for (const scheme of ['light', 'dark'] as const) {
     });
   });
 }
+
+test('o diário mostra um aviso quando a busca remota falha', async ({ page, context }) => {
+  await startTraining(context, page);
+  const searchRoute = '**/api/v1/training/foods/off/search**';
+  await page.route(searchRoute, (route) => route.fulfill({ status: 500 }));
+  await openTraining(page, '/treino/alimentacao');
+
+  const searchButton = page.getByRole('button', { name: 'Buscar', exact: true });
+  await page.getByRole('searchbox', { name: 'Buscar alimento' }).fill('banana');
+  const [response] = await Promise.all([page.waitForResponse(searchRoute), searchButton.click()]);
+
+  expect(response.status()).toBe(500);
+  await expect(searchButton).toBeEnabled();
+  const notice = page.locator('.search-field').getByRole('status');
+  await expect(notice).toBeVisible();
+  await expect(notice).toHaveText(
+    'Não foi possível consultar o catálogo externo. Os alimentos locais continuam disponíveis.',
+  );
+});
