@@ -118,18 +118,34 @@ async function setDay(page: Page, value: string): Promise<void> {
   await day.blur();
 }
 
-async function useOffFixture(page: Page): Promise<() => string[]> {
+async function useOffFixture(page: Page, foods = [sampleOffFood]): Promise<() => string[]> {
   const queries: string[] = [];
   await page.route('**/api/v1/training/foods/off/search**', (route) => {
     queries.push(new URL(route.request().url()).searchParams.get('q') ?? '');
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([sampleOffFood]),
+      body: JSON.stringify(foods),
     });
   });
   return () => queries;
 }
+
+test('a busca sem resultados termina sem mostrar aviso de erro', async ({ page, context }) => {
+  await startTraining(context, page);
+  const offSearchQueries = await useOffFixture(page, []);
+  await openTraining(page, '/treino/alimentacao');
+
+  const query = 'alimento inexistente de demonstração';
+  const searchButton = page.getByRole('button', { name: 'Buscar', exact: true });
+  await page.getByRole('searchbox', { name: 'Buscar alimento' }).fill(query);
+  await searchButton.click();
+
+  await expect.poll(offSearchQueries).toContain(query);
+  await expect(searchButton).toBeEnabled();
+  await expect(page.getByRole('list', { name: 'Resultados de alimentos' })).toBeHidden();
+  await expect(page.locator('.search-field').getByRole('status')).toBeHidden();
+});
 
 for (const scheme of ['light', 'dark'] as const) {
   test.describe(`diário alimentar, tema ${scheme}`, () => {
