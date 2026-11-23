@@ -3,24 +3,29 @@
   display: grid;
   flex: 1 1 0;
   grid-template-rows: minmax(0, 1fr);
-  grid-auto-rows: auto;
   gap: var(--space-2);
   min-height: 0;
 }
 
 /* A superfície com o botão de ajustes no canto: o botão é irmão do touchpad (um toque nele não vira gesto). */
-.stage {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
+.stage,
 .pad {
   position: relative;
   display: flex;
-  flex: 1;
   flex-direction: column;
+}
+.stage {
+  min-height: 0;
+}
+
+.pad,
+.settings,
+.echo {
+  color: var(--a-ink2);
+}
+
+.pad {
+  flex: 1;
   align-items: center;
   justify-content: center;
   gap: var(--space-1);
@@ -28,44 +33,36 @@
   border: 2px solid transparent;
   border-radius: 24px;
   background:
-    linear-gradient(var(--a-surface), var(--a-surface)) padding-box,
-    linear-gradient(135deg, var(--a-accent), var(--a-accent-soft)) border-box;
-  color: var(--a-ink2);
+    linear-gradient(var(--pad-fill, var(--a-surface)) 0 0) padding-box,
+    linear-gradient(135deg, var(--a-accent), var(--pad-edge, var(--a-accent-soft))) border-box;
   /* Sem isto o navegador rola ou dá zoom em vez de entregar o deslize. */
   touch-action: none;
   overflow: hidden;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
   cursor: pointer;
 }
-.pad.active {
-  background:
-    linear-gradient(var(--a-accent-soft), var(--a-accent-soft)) padding-box,
-    linear-gradient(135deg, var(--a-accent), var(--a-accent-soft)) border-box;
+.pad.active,
+.pad.holding {
+  --pad-fill: var(--a-accent-soft);
 }
 /* Botão esquerdo apertado (arrastando): contorno cheio e grosso, fundo de destaque e um pulso curto ao começar. O iOS não
    vibra, então o aviso tem de ser visto de relance. */
 .pad.holding {
+  --pad-edge: var(--a-accent);
   border-width: 4px;
-  background:
-    linear-gradient(var(--a-accent-soft), var(--a-accent-soft)) padding-box,
-    linear-gradient(135deg, var(--a-accent), var(--a-accent)) border-box;
   box-shadow: 0 0 0 5px var(--a-accent-soft);
   color: var(--a-accent-ink);
   animation: pad-grab var(--dur-base) var(--ease-out);
 }
 /* Vazia, a região segue na árvore de acessibilidade (o leitor de tela só anuncia o texto novo), mas não ocupa lugar. */
-.holding-label:empty {
+.holding-label:empty,
+.sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
   margin: -1px;
-  padding: 0;
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-  border: 0;
 }
 .holding-label {
   font-size: var(--fs-title);
@@ -75,35 +72,20 @@
   from {
     transform: scale(0.97);
   }
-  to {
-    transform: scale(1);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .pad.holding {
-    animation: none;
-  }
 }
 .pad:focus-visible {
-  outline: 3px solid var(--a-accent);
   outline-offset: 3px;
 }
 
 /* Os três gestos, só desenhados: somem ao primeiro toque. */
-.hints {
+.hints,
+.armed {
   display: flex;
-  gap: var(--space-5, 24px);
-  color: var(--a-ink3);
   pointer-events: none;
 }
-.hints svg {
-  width: 40px;
-  height: 40px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.hints {
+  gap: var(--space-5, 24px);
+  color: var(--a-ink3);
 }
 
 /* As teclas armadas, no canto da superfície (não recebem toque: o painel de teclas é quem as liga e desliga). */
@@ -111,49 +93,56 @@
   position: absolute;
   top: var(--space-2);
   left: var(--space-3);
-  display: flex;
   gap: var(--space-1);
-  pointer-events: none;
+}
+.armed-key,
+.buttons .on {
+  background: var(--a-accent-soft);
+  color: var(--a-accent-ink);
 }
 .armed-key {
   padding: 2px var(--space-2);
   border: 1px solid var(--a-accent);
   border-radius: var(--radius-pill);
-  background: var(--a-accent-soft);
-  color: var(--a-accent-ink);
   font-size: var(--fs-small);
   font-weight: 650;
 }
 
-.settings {
-  position: absolute;
-  top: var(--space-1);
-  right: var(--space-1);
+.settings,
+.echo-toggle {
   display: grid;
   place-items: center;
   width: var(--tap);
   height: var(--tap);
   padding: 0;
   border: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.settings {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
   border-radius: 50%;
   /* Sobre a área de toque o cinza-claro sem fundo sumia: o disco de superfície e o tom do texto de apoio a destacam. */
   background: color-mix(in srgb, var(--a-surface) 88%, transparent);
   box-shadow: inset 0 0 0 1px var(--a-line);
-  color: var(--a-ink2);
-  cursor: pointer;
-  touch-action: manipulation;
+}
+svg {
+  width: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+.hints svg {
+  width: 40px;
+  stroke-width: 1.5;
 }
 .settings svg {
   width: 22px;
-  height: 22px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-}
-.settings:focus-visible {
-  outline: 3px solid var(--a-accent);
-  outline-offset: 2px;
+  stroke-linejoin: miter;
 }
 @media (hover: hover) {
   .settings:hover {
@@ -162,18 +151,16 @@
 }
 
 /* O painel de teclas abre sobre a parte de baixo da superfície; o aviso de falha, logo acima da barra de ações. */
-.overlay {
+.overlay,
+.toast {
   position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
+}
+.overlay {
+  inset: auto 0 0;
   z-index: 2;
 }
 .toast {
-  position: absolute;
-  right: var(--space-3);
-  bottom: calc(var(--space-3) + var(--pc-bar));
-  left: var(--space-3);
+  inset: auto var(--space-3) calc(var(--space-3) + var(--pc-bar));
   z-index: 3;
   justify-content: center;
   padding: var(--space-2) var(--space-3);
@@ -201,22 +188,18 @@
   padding-inline-start: var(--space-3);
   border-radius: var(--radius);
   background: var(--a-surface);
-  color: var(--a-ink2);
   font-size: var(--fs-small);
 }
 .echo-line {
   display: flex;
   flex: 1;
   align-items: center;
-  justify-content: flex-start;
   gap: 2px;
-  min-width: 0;
   margin: 0;
   overflow: hidden;
   white-space: pre;
 }
-.echo-text,
-.echo-key {
+.echo-line > span {
   flex: none;
 }
 .echo-text {
@@ -226,36 +209,17 @@
   padding: 0 var(--space-1);
   border: 1px solid var(--a-line);
   border-radius: var(--radius-sm);
-  color: var(--a-ink2);
   font-size: 0.85em;
   line-height: 1.5;
 }
 .echo-toggle {
-  display: grid;
   flex: none;
-  place-items: center;
-  width: var(--tap);
-  height: var(--tap);
   margin-inline-start: auto;
-  padding: 0;
-  border: 0;
   border-radius: var(--radius);
   background: transparent;
   color: var(--a-ink3);
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.echo-toggle svg {
-  width: 20px;
-  height: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 .echo-toggle:focus-visible {
-  outline: 3px solid var(--a-accent);
   outline-offset: -3px;
 }
 
@@ -264,45 +228,31 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
 }
-.buttons .ui-btn {
+.buttons > button {
   min-height: var(--key);
   padding: 0 var(--space-2);
 }
-.buttons .ui-btn.on {
+.buttons .on {
   border-color: var(--a-accent);
-  background: var(--a-accent-soft);
-  color: var(--a-accent-ink);
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
 }
 
 /* O anel de cada toque: nasce no ponto do dedo e some. Direito tem dois anéis; o do meio é cheio. Sem movimento, só esmaece. */
-.ring {
+.ring,
+.ring::after {
   position: absolute;
+  border: 3px solid var(--a-accent);
+  border-radius: 50%;
+}
+.ring {
   width: 56px;
   height: 56px;
   margin: -28px 0 0 -28px;
-  border: 3px solid var(--a-accent);
-  border-radius: 50%;
   pointer-events: none;
   animation: ring-pop 420ms var(--ease-out) forwards;
 }
 .ring[data-kind='right']::after {
   content: '';
-  position: absolute;
   inset: -12px;
-  border: 3px solid var(--a-accent);
-  border-radius: 50%;
   opacity: 0.6;
 }
 .ring[data-kind='middle'] {
@@ -327,13 +277,17 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .pad.holding {
+    animation: none;
+  }
+
   .ring {
     animation: ring-fade 300ms linear forwards;
   }
 }
 
-:host(.screen-probe) app-pc-screen-probe {
-  flex: 0 0 auto;
+app-pc-screen-probe {
+  flex: none;
   max-height: 65%;
 }
 
@@ -342,7 +296,7 @@
     flex-direction: row;
   }
 
-  :host(.screen-probe) app-pc-screen-probe {
+  app-pc-screen-probe {
     width: 55%;
     max-height: 100%;
   }
