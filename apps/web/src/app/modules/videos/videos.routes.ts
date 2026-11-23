@@ -1,9 +1,10 @@
 import { inject } from '@angular/core';
 import { type CanActivateFn, Router, type Routes } from '@angular/router';
 import { AuthService } from '../../core/auth/auth.service';
-import { homeFor, modulePermission } from '../../core/auth/guest-home';
+import { homeFor } from '../../core/auth/guest-home';
 import { SessionState } from '../../core/session/session-state';
 import { clearPendingShare } from './pending-share-storage';
+import { canAccessVideoInbox } from './video-inbox.model';
 
 // A caixa é local. Só se abre o IndexedDB quando há uma conta e permissão conhecidas.
 const videoInboxGuard: CanActivateFn = () => {
@@ -15,13 +16,11 @@ const videoInboxGuard: CanActivateFn = () => {
       ? router.createUrlTree([homeFor()])
       : auth.loginUrlTree('/videos');
   }
-  if (
-    session.role() === 'owner' ||
-    session.knownPermissions()?.includes(modulePermission('videos'))
-  ) {
+  const permissions = session.knownPermissions();
+  if (canAccessVideoInbox(session.role(), permissions)) {
     return true;
   }
-  clearPendingShare();
+  if (permissions != null) clearPendingShare();
   return router.createUrlTree([homeFor()]);
 };
 

@@ -1,3 +1,6 @@
+import { modulePermission } from '../../core/auth/guest-home';
+import type { AccountRole } from '../../core/session/session-state';
+
 export type VideoPlatform = 'instagram' | 'youtube' | 'tiktok' | 'twitter' | 'other';
 
 export interface VideoInboxItem {
@@ -18,16 +21,23 @@ export interface RawSharePayload {
   readonly timestamp?: number;
 }
 
+export function canAccessVideoInbox(
+  role: AccountRole | null,
+  permissions: readonly string[] | null,
+): boolean {
+  return role === 'owner' || !!permissions?.includes(modulePermission('videos'));
+}
+
 export function platformLabel(platform: VideoPlatform): string {
   switch (platform) {
     case 'instagram':
-      return 'Instagram';
+      return $localize`:@@videos.platform.instagram:Instagram`;
     case 'youtube':
-      return 'YouTube';
+      return $localize`:@@videos.platform.youtube:YouTube`;
     case 'tiktok':
-      return 'TikTok';
+      return $localize`:@@videos.platform.tiktok:TikTok`;
     case 'twitter':
-      return 'X (Twitter)';
+      return $localize`:@@videos.platform.twitter:X (Twitter)`;
     case 'other':
       return $localize`:@@videos.platform.other:Outros`;
   }

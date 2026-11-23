@@ -1,4 +1,6 @@
+import { LOCALE_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { clearTranslations, loadTranslations } from '@angular/localize';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { IDBFactory as FakeIDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
@@ -6,13 +8,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionState } from '../../core/session/session-state';
 import { clearPendingShare, stashPendingShare } from './pending-share-storage';
 import { VIDEO_INBOX_DB_FACTORY, VideoInboxDb } from './video-inbox-db';
-import type { VideoInboxItem } from './video-inbox.model';
+import { platformLabel, type VideoInboxItem } from './video-inbox.model';
 import { VideoInboxPage } from './video-inbox.page';
 import { VideoInboxService } from './video-inbox.service';
 
 describe('VideoInboxPage', () => {
   let fakeIdb: IDBFactory;
   let inboxService: VideoInboxService;
+  let session: SessionState;
+  const user = {
+    id: 'inbox-page-account',
+    displayName: 'Teste',
+    email: 'teste@example.org',
+    role: 'guest',
+    permissions: ['module:videos'],
+  };
 
   beforeEach(() => {
     fakeIdb = new FakeIDBFactory();
@@ -21,14 +31,7 @@ describe('VideoInboxPage', () => {
       providers: [
         provideRouter([{ path: 'videos', component: VideoInboxPage }]),
         VideoInboxService,
-        {
-          provide: SessionState,
-          useValue: {
-            role: () => 'owner',
-            knownPermissions: () => null,
-            accountId: () => 'inbox-page-account',
-          },
-        },
+        { provide: LOCALE_ID, useValue: 'en-US' },
         {
           provide: VIDEO_INBOX_DB_FACTORY,
           useValue: (accountId: string) =>
@@ -41,6 +44,8 @@ describe('VideoInboxPage', () => {
     });
 
     inboxService = TestBed.inject(VideoInboxService);
+    session = TestBed.inject(SessionState);
+    session.setUser(user);
   });
 
   async function open(
@@ -57,6 +62,7 @@ describe('VideoInboxPage', () => {
   }
 
   afterEach(() => {
+    session.clear();
     clearPendingShare();
     vi.restoreAllMocks();
   });
@@ -96,6 +102,78 @@ describe('VideoInboxPage', () => {
     );
     expect(el.querySelector('.status-tag')?.textContent?.trim()).toBe('Apenas link');
     expect(el.querySelector('.via-tag')?.textContent?.trim()).toBe('Compartilhamento');
+    const captured = new Date(fakeItem.captured_at);
+    const date = captured.toLocaleDateString('en-US', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+    const time = captured.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    expect(el.querySelector('.item-date')?.textContent?.trim()).toBe(`${date} ${time}`);
+  });
+
+  it('clears the previous account links and feedback on silent token replacement', async () => {
+    stashPendingShare({ url: 'https://youtu.be/previous' });
+    const { harness, el } = await open();
+    expect(el.querySelector('.item-url')?.textContent).toContain('previous');
+    expect(el.querySelector('.notice')).not.toBeNull();
+
+    session.setToken(`header.${btoa(JSON.stringify({ sub: 'next-account' }))}.signature`, 600);
+    harness.detectChanges();
+    expect(el.querySelector('.item-card')).toBeNull();
+    expect(el.querySelector('.notice')).toBeNull();
+    expect(el.querySelector('.count-badge')?.textContent?.trim()).toBe('0');
+
+    await inboxService.captureShare({ url: 'https://youtu.be/current' });
+    session.setUser({ ...user, id: 'next-account' });
+    await vi.waitFor(() => {
+      harness.detectChanges();
+      expect(el.querySelector('.item-url')?.textContent).toContain('current');
+      expect(el.textContent).not.toContain('previous');
+    });
+  });
+
+  it('discards an earlier account list that resolves after the current list', async () => {
+    await inboxService.captureShare({ url: 'https://youtu.be/previous' });
+    const previousItems = await inboxService.list();
+    let resolvePrevious!: (items: VideoInboxItem[]) => void;
+    const list = vi.spyOn(inboxService, 'list').mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePrevious = resolve;
+        }),
+    );
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/videos');
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+
+    session.setToken(`header.${btoa(JSON.stringify({ sub: 'next-account' }))}.signature`, 600);
+    await inboxService.captureShare({ url: 'https://youtu.be/current' });
+    session.setUser({ ...user, id: 'next-account' });
+    const el = harness.fixture.nativeElement as HTMLElement;
+    await vi.waitFor(() => {
+      harness.detectChanges();
+      expect(el.querySelector('.item-url')?.textContent).toContain('current');
+    });
+
+    resolvePrevious(previousItems);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(el.querySelector('.item-url')?.textContent).toContain('current');
+    expect(el.textContent).not.toContain('previous');
+  });
+
+  it('resolves platform labels using their translation IDs', () => {
+    const platforms = ['instagram', 'youtube', 'tiktok', 'twitter'] as const;
+    try {
+      loadTranslations(
+        Object.fromEntries(platforms.map((id) => [`videos.platform.${id}`, `Plataforma ${id}`])),
+      );
+      for (const platform of platforms)
+        expect(platformLabel(platform)).toBe(`Plataforma ${platform}`);
+    } finally {
+      clearTranslations();
+    }
   });
 
   it('processes pending share automatically when page initializes', async () => {
