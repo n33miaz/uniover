@@ -1,7 +1,7 @@
 # 0019. Fluxo de produção pela `develop`
 
-- **Status:** Proposto
-- **Data:** 21/11/2026
+- **Status:** Aceito
+- **Data:** 23/11/2026
 - **Substitui:** [ADR 0013](0013-fluxo-de-git.md)
 
 ## Contexto
