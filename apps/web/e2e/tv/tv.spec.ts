@@ -491,6 +491,29 @@ test.describe('controle: tela única, sem abas', () => {
     await expect(increment).toBeVisible();
     await expect(increment).toHaveCSS('animation-name', 'none');
   });
+
+  test('a indicação temporária do volume expira com a TV conectada e sem leitura', async ({
+    page,
+  }) => {
+    await page.clock.install();
+    tv.state = { ...HOT_STATE, volume: null };
+    await openTv(page);
+
+    const connected = statusDot(page, 'Conectada');
+    const unreadVolume = page.getByRole('img', { name: 'Volume sem leitura', exact: true });
+    const volumeStep = page.getByRole('img', { name: 'Volume +1', exact: true });
+    await expect(connected).toBeVisible();
+    await expect(unreadVolume).toBeVisible();
+
+    await button(page, 'Aumentar o volume').click();
+    await expect.poll(() => tv.keysSent()).toEqual(['VOLUME_UP']);
+    await expect(volumeStep.getByText('+1', { exact: true })).toBeVisible();
+
+    await page.clock.fastForward(2_500);
+    await expect(unreadVolume).toBeVisible();
+    await expect(unreadVolume.getByText('+1', { exact: true })).toBeHidden();
+    await expect(connected).toBeVisible();
+  });
 });
 
 test.describe('controle: fileira de atalhos', () => {
