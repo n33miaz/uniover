@@ -17,6 +17,7 @@ import subprocess
 import sys
 import uuid
 from contextlib import ExitStack
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -178,18 +179,24 @@ def test_restart_waits_and_retries_while_an_old_agent_resists(
         assert not any(i["kind"] == "process.exited" for i in pc.diagnostics())
 
 
-@windows_only
-@pytest.mark.parametrize("reason", ["restart", "unresponsive"])
-def test_a_cim_outage_stops_only_the_tracked_process_and_delays_relaunch(
-    pc: Pc, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reason: str
-) -> None:
-    # No reinício pedido, o agente sai por conta própria durante a primeira consulta falha.
-    # No travamento, só o handle do supervisor pode pará-lo. O filho fica até o CIM voltar.
-    unavailable = tmp_path / "sem-cim"
-    restored = tmp_path / "cim-restaurado"
-    attempted_kill = tmp_path / "parada-por-pid"
-    release = tmp_path / "sair"
-    child_pid = tmp_path / "filho.pid"
+@dataclass(frozen=True)
+class CimSignals:
+    unavailable: Path
+    restored: Path
+    attempted_kill: Path
+    release: Path
+    child_pid: Path
+
+
+@pytest.fixture
+def cim_signals(pc: Pc, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> CimSignals:
+    signals = CimSignals(
+        unavailable=tmp_path / "sem-cim",
+        restored=tmp_path / "cim-restaurado",
+        attempted_kill=tmp_path / "parada-por-pid",
+        release=tmp_path / "sair",
+        child_pid=tmp_path / "filho.pid",
+    )
     child = tmp_path / "filho.py"
     child.write_text(
         "import os, sys, time\nfrom pathlib import Path\n"
@@ -199,8 +206,8 @@ def test_a_cim_outage_stops_only_the_tracked_process_and_delays_relaunch(
     )
     pc.uv(
         [
-            f'if exist "{child_pid}" goto stay',
-            f'"{sys.executable}" "{child}" "{child_pid}" "{release}"',
+            f'if exist "{signals.child_pid}" goto stay',
+            f'"{sys.executable}" "{child}" "{signals.child_pid}" "{signals.release}"',
             "exit /b 0",
             ":stay",
             "ping -n 300 127.0.0.1 > nul",
@@ -233,13 +240,24 @@ function taskkill.exe {
         encoding="ascii",
     )
     monkeypatch.setattr(guardrails, "RUNNER", wrapper)
+    return signals
+
+
+@windows_only
+@pytest.mark.parametrize("reason", ["restart", "unresponsive"])
+def test_a_cim_outage_stops_only_the_tracked_process_and_delays_relaunch(
+    pc: Pc, cim_signals: CimSignals, reason: str
+) -> None:
+    # No reinício pedido, o agente sai por conta própria durante a primeira consulta falha.
+    # No travamento, só o handle do supervisor pode pará-lo. O filho fica até o CIM voltar.
+    child_pid = cim_signals.child_pid
     try:
         with pc.running(
             TEST_RUNNER=str(RUNNER),
-            CIM_DOWN=str(unavailable),
-            CIM_BACK=str(restored),
-            KILL_ATTEMPT=str(attempted_kill),
-            EXIT_DURING_QUERY=str(release) if reason == "restart" else "",
+            CIM_DOWN=str(cim_signals.unavailable),
+            CIM_BACK=str(cim_signals.restored),
+            KILL_ATTEMPT=str(cim_signals.attempted_kill),
+            EXIT_DURING_QUERY=str(cim_signals.release) if reason == "restart" else "",
             UNIOVER_SUPERVISOR_HANG_GRACE_SECONDS="600" if reason == "restart" else "1",
             UNIOVER_SUPERVISOR_STOP_WAIT_SECONDS="1",
         ):
@@ -249,7 +267,7 @@ function taskkill.exe {
                 assert match, pc.supervisor_log()
                 tracked = int(match[1])
                 child_id = int(child_pid.read_text("ascii"))
-                unavailable.touch()
+                cim_signals.unavailable.touch()
                 if reason == "restart":
                     (pc.runtime / "restart-now").touch()
             assert wait_for(lambda: pc.supervisor_log().count("reinicio adiado") >= 2, 60), (
@@ -258,15 +276,15 @@ function taskkill.exe {
             assert (pc.runtime / "stop-reason.txt").read_text("ascii") == reason
             assert not process_alive(tracked)
             assert process_alive(child_id) == (reason == "unresponsive")
-            assert not attempted_kill.exists()
+            assert not cim_signals.attempted_kill.exists()
             if reason == "restart":
-                assert release.read_text("ascii") == "saiu"
+                assert cim_signals.release.read_text("ascii") == "saiu"
             assert pc.starts() == 1
-            restored.touch()
+            cim_signals.restored.touch()
             assert wait_for(lambda: pc.starts() == 2, 60), pc.supervisor_log()
             assert not process_alive(child_id)
     finally:
-        release.touch()
+        cim_signals.release.touch()
 
 
 def ps_quote(value: object) -> str:
