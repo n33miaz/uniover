@@ -102,6 +102,39 @@ describe('FoodDiaryPage', () => {
     expect(fixture.nativeElement.textContent).toContain('Iogurte natural');
   });
 
+  it('clears the remote search warning and shows the result when retrying the same query', async () => {
+    const fixture = await open();
+    const root = fixture.nativeElement as HTMLElement;
+    const input = root.querySelector('#food-search') as HTMLInputElement;
+    const query = 'iogurte';
+    foods.searchLocal.mockResolvedValue([]);
+    foods.searchOnline
+      .mockResolvedValueOnce({ status: 'unavailable', foods: [] })
+      .mockResolvedValueOnce({ status: 'ok', foods: [food] });
+
+    input.value = query;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    button(fixture, 'Buscar').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(root.querySelector('.search-field [role="status"]')?.textContent).toContain(
+      'Não foi possível consultar o catálogo externo.',
+    );
+    expect(root.querySelector('.food-results')).toBeNull();
+
+    button(fixture, 'Buscar').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(foods.searchOnline.mock.calls).toEqual([[query], [query]]);
+    expect(root.querySelector('.search-field [role="status"]')).toBeNull();
+    expect(root.querySelector('.food-results')?.textContent).toContain(food.name);
+  });
+
   it('keeps a long food name available in its title in the diary and search results', async () => {
     const fixture = await open();
     const name = 'Iogurte Natural Integral Sem Lactose com Granola de Castanhas e Frutas Vermelhas';
