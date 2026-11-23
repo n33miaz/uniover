@@ -12,9 +12,11 @@ verdade, num segundo processo, saindo limpo com o código de "já roda".
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import uuid
+from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
@@ -455,6 +457,53 @@ foreach ($need in @({ps_quote(slot_b)}, {ps_quote(venv_b)})) {{
 """,
     )
     assert result.returncode == 0, result.stderr
+
+
+@windows_only
+def test_leftover_search_only_stops_the_executable_from_its_own_install(tmp_path: Path) -> None:
+    venv = tmp_path / "UniOver" / "runtime" / "venv"
+    other_venv = tmp_path / "outra pasta" / "UniOver" / "runtime" / "venv"
+    with ExitStack() as stack:
+        agents = []
+        for directory in (venv, other_venv):
+            executable = directory / "Scripts" / "uniover-agent.exe"
+            executable.parent.mkdir(parents=True)
+            shutil.copyfile(SYSTEM32 / "cmd.exe", executable)
+            # Cada cópia espera pela entrada padrão, com o mesmo nome e o mesmo argumento run.
+            agent = stack.enter_context(
+                subprocess.Popen(  # noqa: S603 - cópia do cmd do sistema na instalação de teste
+                    [str(executable), "run", "/d", "/q"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=0x08000000,
+                )
+            )
+            stack.callback(agent.kill)
+            agents.append(agent)
+        own, other = agents
+        result = run_routines(
+            tmp_path,
+            "instalacoes.ps1",
+            rf"""
+$ErrorActionPreference = 'Stop'
+$filter = 'ProcessId = {own.pid} OR ProcessId = {other.pid}'
+function Write-SupLog($Level, $Message) {{ [Console]::Error.WriteLine($Message) }}
+function Get-CimInstance {{
+    CimCmdlets\Get-CimInstance Win32_Process -Filter $filter -ErrorAction Stop
+}}
+if (@(Get-CimInstance).Count -ne 2) {{ throw 'inventario incompleto' }}
+$stopWaitSeconds = 5
+$roots = @{{}}
+if (-not (Stop-AgentLeftovers $roots $null @({ps_quote(venv)}))) {{ throw 'falha na parada' }}
+if ($roots.Count -ne 1 -or -not $roots.ContainsKey({own.pid})) {{
+    throw ('selecionados: ' + ($roots.Keys -join ','))
+}}
+""",
+        )
+        assert result.returncode == 0, (result.stdout, result.stderr)
+        assert own.poll() is not None
+        assert other.poll() is None
 
 
 @windows_only
