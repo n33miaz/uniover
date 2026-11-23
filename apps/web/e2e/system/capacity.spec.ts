@@ -182,4 +182,22 @@ test.describe('Configurações > Sistema > Capacidade', () => {
     );
     await expect(page.getByRole('heading', { level: 2, name: 'Saúde' })).toBeVisible();
   });
+
+  test('mostra os dados ao atualizar após uma falha na leitura', async ({ page }) => {
+    system.capacity = null;
+    await open(page);
+
+    const error = card(page).getByRole('alert');
+    await expect(error).toHaveText('Não foi possível carregar a capacidade.');
+    await expect(meters(page)).toHaveCount(0);
+
+    system.capacity = defaultCapacity();
+    await card(page).getByRole('button', { name: 'Atualizar', exact: true }).click();
+
+    await expect(error).toHaveCount(0);
+    await expect(meters(page)).toHaveCount(3);
+    await expect(meters(page).nth(0)).toContainText('14,7 MB de 1 GB');
+    await expect(meters(page).nth(1)).toContainText('180 MB de 512 MB');
+    await expect(meters(page).nth(2)).toContainText('684 h de 750 h');
+  });
 });
