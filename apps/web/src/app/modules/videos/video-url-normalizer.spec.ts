@@ -144,8 +144,10 @@ describe('normalizeVideoUrl', () => {
     ])('does not mutate the original URL object for %s', (_platform, rawUrl) => {
       const original = new URL(rawUrl);
       const snapshotBefore = original.toString();
-      normalizeVideoUrl(rawUrl);
+      const paramsBefore = Array.from(original.searchParams.entries());
+      expect(normalizeVideoUrl(original)).toEqual(normalizeVideoUrl(rawUrl));
       expect(original.toString()).toBe(snapshotBefore);
+      expect(Array.from(original.searchParams.entries())).toEqual(paramsBefore);
     });
   });
 });

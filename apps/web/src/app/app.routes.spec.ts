@@ -1,6 +1,6 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter, Router } from '@angular/router';
+import { provideRouter, RouteConfigLoadStart, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { IDBFactory as FakeIDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
 import { routes } from './app.routes';
@@ -162,13 +162,6 @@ describe('app routes', () => {
     expect(route?.canMatch).toBeUndefined();
     expect(route?.canActivate).toBeUndefined();
   });
-
-  it('protects /videos with moduleGuard at the route level', () => {
-    const shell = routes.find((r) => r.path === '' && r.children);
-    const videosRoute = shell?.children?.find((r) => r.path === 'videos');
-    expect(videosRoute?.canMatch).toBeDefined();
-    expect(videosRoute!.canMatch!.length).toBeGreaterThanOrEqual(1);
-  });
 });
 
 describe('app routes for a guest', () => {
@@ -245,8 +238,27 @@ describe('app routes for a guest', () => {
 
   it('opens the video inbox for a guest with permission', async () => {
     signInAs(['module:videos']);
-    const { root } = await go('/videos');
+    const { url, root } = await go('/videos');
+    expect(url).toBe('/videos');
     expect(root.querySelector('app-video-inbox-page')).not.toBeNull();
+  });
+
+  it('redirects a training-only guest before loading the videos module', async () => {
+    signInAs(TRAINING);
+    const loadedPaths: string[] = [];
+    const subscription = TestBed.inject(Router).events.subscribe((event) => {
+      if (event instanceof RouteConfigLoadStart && event.route.path) {
+        loadedPaths.push(event.route.path);
+      }
+    });
+    try {
+      const { url, root } = await go('/videos');
+      expect(url).toBe('/');
+      expect(root.querySelector('app-home-page')).not.toBeNull();
+      expect(loadedPaths).not.toContain('videos');
+    } finally {
+      subscription.unsubscribe();
+    }
   });
 
   describe('who only has the TV', () => {

@@ -57,6 +57,35 @@ describe('pending-share-storage', () => {
     expect(peekPendingShare()).toBeNull();
   });
 
+  it('removes the stale session entry when the next write falls back to localStorage', () => {
+    stashPendingShare({ url: 'https://example.org/first' });
+    expect(sessionStorage.getItem(PENDING_SHARE_STORAGE_KEY)).not.toBeNull();
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+      throw new DOMException('Storage is full', 'QuotaExceededError');
+    });
+
+    stashPendingShare({ url: 'https://example.org/second' });
+
+    expect(sessionStorage.getItem(PENDING_SHARE_STORAGE_KEY)).toBeNull();
+    expect(JSON.parse(localStorage.getItem(PENDING_SHARE_STORAGE_KEY)!)).toMatchObject({
+      url: 'https://example.org/second',
+    });
+  });
+
+  it('preserves a newer share in memory and sessionStorage when clearing an older local copy', () => {
+    const older = { id: 'older', timestamp: 1, url: 'https://example.org/first' };
+    localStorage.setItem(PENDING_SHARE_STORAGE_KEY, JSON.stringify(older));
+    stashPendingShare({ url: 'https://example.org/second' });
+    const newer = peekPendingShare();
+
+    clearPendingShare(older.id);
+
+    expect(localStorage.getItem(PENDING_SHARE_STORAGE_KEY)).toBeNull();
+    expect(JSON.parse(sessionStorage.getItem(PENDING_SHARE_STORAGE_KEY)!)).toEqual(newer);
+    sessionStorage.removeItem(PENDING_SHARE_STORAGE_KEY);
+    expect(peekPendingShare()?.url).toBe('https://example.org/second');
+  });
+
   it('falls back to memory when storage throws errors (e.g. private mode quota)', () => {
     vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => {
       throw new Error('QuotaExceededError');

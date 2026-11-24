@@ -2,7 +2,11 @@ import { TestBed } from '@angular/core/testing';
 import { IDBFactory as FakeIDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SessionState } from '../../core/session/session-state';
-import { clearPendingShare, stashPendingShare } from './pending-share-storage';
+import {
+  clearPendingShare,
+  PENDING_SHARE_STORAGE_KEY,
+  stashPendingShare,
+} from './pending-share-storage';
 import { VIDEO_INBOX_DB_FACTORY, VideoInboxDb } from './video-inbox-db';
 import type { VideoInboxItem } from './video-inbox.model';
 import { VideoInboxService } from './video-inbox.service';
@@ -146,5 +150,19 @@ describe('VideoInboxService', () => {
 
     const secondCall = await service.processPendingShare();
     expect(secondCall).toBeNull();
+  });
+
+  it('keeps a share written by another tab while capturing the current share', async () => {
+    stashPendingShare({ url: 'https://example.org/first' });
+    const capturing = service.processPendingShare();
+    const other = { id: 'other-tab', timestamp: 1, url: 'https://example.org/second' };
+    localStorage.setItem(PENDING_SHARE_STORAGE_KEY, JSON.stringify(other));
+
+    expect((await capturing)?.canonical_url).toBe('https://example.org/first');
+    expect(await service.processPendingShare()).toMatchObject({
+      id: other.id,
+      canonical_url: other.url,
+    });
+    expect(await service.processPendingShare()).toBeNull();
   });
 });

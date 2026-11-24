@@ -15,6 +15,7 @@ export function stashPendingShare(payload: RawSharePayload): void {
   try {
     sessionStorage.setItem(PENDING_SHARE_STORAGE_KEY, json);
   } catch {
+    removeStoredShare('sessionStorage');
     // sessionStorage indisponível (modo privado restrito ou cota): tenta localStorage para sobreviver a reloads.
     try {
       localStorage.setItem(PENDING_SHARE_STORAGE_KEY, json);
@@ -40,16 +41,21 @@ export function peekPendingShare(): PendingShare | null {
   }
 }
 
-export function clearPendingShare(): void {
-  fallback = null;
+function removeStoredShare(name: 'sessionStorage' | 'localStorage', id?: string): void {
   try {
-    sessionStorage.removeItem(PENDING_SHARE_STORAGE_KEY);
+    const storage = globalThis[name];
+    if (id !== undefined) {
+      const raw = storage.getItem(PENDING_SHARE_STORAGE_KEY);
+      if (!raw || (JSON.parse(raw) as PendingShare | null)?.id !== id) return;
+    }
+    storage.removeItem(PENDING_SHARE_STORAGE_KEY);
   } catch {
-    // sessionStorage indisponível.
+    // Uma entrada ilegível ou um storage bloqueado não impede o uso do outro.
   }
-  try {
-    localStorage.removeItem(PENDING_SHARE_STORAGE_KEY);
-  } catch {
-    // localStorage indisponível.
-  }
+}
+
+export function clearPendingShare(id?: string): void {
+  if (id === undefined || fallback?.id === id) fallback = null;
+  removeStoredShare('sessionStorage', id);
+  removeStoredShare('localStorage', id);
 }
