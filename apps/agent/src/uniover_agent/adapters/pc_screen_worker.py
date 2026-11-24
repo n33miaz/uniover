@@ -136,7 +136,8 @@ def encode_frame(
         height = max(1, round(image.height * request.width / image.width))
         image = image.resize((request.width, height), Image.Resampling.BOX)
     # O CRC cobre só o recorte, antes da marca de medição, que muda a cada pedido.
-    crc = zlib.crc32(image.tobytes())
+    # As dimensões entram na semente: os mesmos bytes em 1920x1080 e 1080x1920 diferem.
+    crc = zlib.crc32(image.tobytes(), zlib.crc32(struct.pack(">HH", image.width, image.height)))
     if request.marker == 0 and not request.reset and crc == previous_crc:
         return Capture(crc, image.width, image.height, None)
     if request.marker:
@@ -222,6 +223,7 @@ class ScreenSession:
         self.crc: int | None = None
         self.sequence = 0
         self.state = STATE_OK
+        self.locked_notice = asyncio.Event()
 
     async def answer(self, sdp: str) -> str:
         prepared = prepare_offer(sdp)
@@ -311,15 +313,22 @@ class ScreenSession:
     async def report_state(self, state: str) -> None:
         """Avisa só quando o estado muda; o bloqueio encerra a sessão depois do aviso sair."""
         if state == self.state:
+            if state == STATE_LOCKED:
+                # Outro chamador já enviou o aviso: espera a drenagem dele terminar.
+                await self.locked_notice.wait()
             return
         self.state = state
-        self.send_json({"k": "s.state", "state": state})
-        if state == STATE_LOCKED:
-            # O fechamento do SCTP só pode ocorrer após o envio da notificação.
-            with contextlib.suppress(TimeoutError):
-                async with asyncio.timeout(1):
-                    await self.wait_buffer(0)
-            self.closed.set()
+        try:
+            self.send_json({"k": "s.state", "state": state})
+            if state == STATE_LOCKED:
+                # O fechamento do SCTP só pode ocorrer após o envio da notificação.
+                with contextlib.suppress(TimeoutError):
+                    async with asyncio.timeout(1):
+                        await self.wait_buffer(0)
+                self.closed.set()
+        finally:
+            if state == STATE_LOCKED:
+                self.locked_notice.set()
 
     async def watch_state(self, read: Callable[[], str]) -> None:
         while not self.closed.is_set():
@@ -383,7 +392,8 @@ class ScreenSession:
                 except DesktopLockedError:
                     await self.report_state(STATE_LOCKED)
                     return
-                self.crc = shot.crc
+                # Com marca, o receptor exibe pixels diferentes do recorte: não serve de base.
+                self.crc = None if request.marker else shot.crc
                 peak = max(peak, memory())
                 if self.closed.is_set():
                     return
