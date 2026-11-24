@@ -3,7 +3,7 @@ import { SessionState } from '../../core/session/session-state';
 import { VIDEO_INBOX_DB_FACTORY, VideoInboxDb } from './video-inbox-db';
 import type { RawSharePayload, VideoInboxItem } from './video-inbox.model';
 import { extractVideoUrl } from './video-url-extractor';
-import { normalizeVideoUrl } from './video-url-normalizer';
+import { isHttpUrl, normalizeVideoUrl } from './video-url-normalizer';
 import { clearPendingShare, peekPendingShare } from './pending-share-storage';
 
 @Injectable({ providedIn: 'root' })
@@ -61,6 +61,9 @@ export class VideoInboxService {
     if (!extractedUrl) return null;
 
     const normalized = normalizeVideoUrl(extractedUrl);
+    // Só persiste links http/https; javascript:, data:, blob:, file: e afins são descartados.
+    if (!isHttpUrl(normalized.canonical_url)) return null;
+
     const originalText = payload.text?.trim() || payload.url?.trim() || payload.title?.trim() || '';
 
     const item: VideoInboxItem = {

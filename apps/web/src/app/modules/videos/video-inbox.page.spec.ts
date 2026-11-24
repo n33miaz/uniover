@@ -292,4 +292,62 @@ describe('VideoInboxPage', () => {
     expect(writeTextMock).toHaveBeenCalledWith('https://www.youtube.com/watch?v=123');
     expect(copyBtn.textContent?.trim()).toBe('Copiado!');
   });
+
+  describe('unsafe protocol items in the DOM', () => {
+    async function addItemWithUrl(url: string): Promise<HTMLElement> {
+      await inboxService.add({
+        id: 'unsafe-item',
+        canonical_url: url,
+        platform: 'other',
+        captured_at: new Date().toISOString(),
+        raw_text: url,
+        captured_via: 'share_target',
+        status: 'link_only',
+      });
+      const { el } = await open();
+      return el;
+    }
+
+    it('does not render a clickable anchor for items with javascript: protocol', async () => {
+      const el = await addItemWithUrl('javascript:alert(1)');
+      const anchor = el.querySelector('.item-url-row a');
+      expect(anchor).toBeNull();
+      const span = el.querySelector('.item-url-row .item-url--unsafe');
+      expect(span).not.toBeNull();
+      expect(span?.textContent?.trim()).toContain('javascript:alert(1)');
+    });
+
+    it('does not render a clickable anchor for items with data: protocol', async () => {
+      const el = await addItemWithUrl('data:text/html,<script>alert(1)</script>');
+      expect(el.querySelector('.item-url-row a')).toBeNull();
+      expect(el.querySelector('.item-url-row .item-url--unsafe')).not.toBeNull();
+    });
+
+    it('does not render a clickable anchor for items with blob: protocol', async () => {
+      const el = await addItemWithUrl('blob:https://example.com/uuid');
+      expect(el.querySelector('.item-url-row a')).toBeNull();
+      expect(el.querySelector('.item-url-row .item-url--unsafe')).not.toBeNull();
+    });
+
+    it('does not render a clickable anchor for items with file: protocol', async () => {
+      const el = await addItemWithUrl('file:///etc/passwd');
+      expect(el.querySelector('.item-url-row a')).toBeNull();
+      expect(el.querySelector('.btn-open')).toBeNull();
+      expect(el.querySelector('.item-url-row .item-url--unsafe')).not.toBeNull();
+    });
+
+    it('does not render an open-action anchor for items with javascript: protocol', async () => {
+      const el = await addItemWithUrl('javascript:alert(1)');
+      const openBtn = el.querySelector('.btn-open');
+      expect(openBtn).toBeNull();
+    });
+
+    it('renders a normal clickable anchor for items with https: protocol', async () => {
+      const el = await addItemWithUrl('https://www.youtube.com/watch?v=abc');
+      const anchor = el.querySelector('.item-url-row a') as HTMLAnchorElement | null;
+      expect(anchor).not.toBeNull();
+      expect(anchor?.getAttribute('href')).toBe('https://www.youtube.com/watch?v=abc');
+      expect(el.querySelector('.item-url-row .item-url--unsafe')).toBeNull();
+    });
+  });
 });

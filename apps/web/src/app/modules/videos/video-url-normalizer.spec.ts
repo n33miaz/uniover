@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeVideoUrl } from './video-url-normalizer';
+import { isHttpUrl, normalizeVideoUrl } from './video-url-normalizer';
 
 describe('normalizeVideoUrl', () => {
   describe('Instagram', () => {
@@ -149,5 +149,68 @@ describe('normalizeVideoUrl', () => {
       expect(original.toString()).toBe(snapshotBefore);
       expect(Array.from(original.searchParams.entries())).toEqual(paramsBefore);
     });
+  });
+
+  describe('unsafe protocol handling', () => {
+    it('returns platform other and preserves raw value for javascript: scheme', () => {
+      const result = normalizeVideoUrl('javascript:alert(1)');
+      expect(result.platform).toBe('other');
+      expect(result.canonical_url).toBe('javascript:alert(1)');
+    });
+
+    it('returns platform other and preserves raw value for data: scheme', () => {
+      const result = normalizeVideoUrl('data:text/html,<script>alert(1)</script>');
+      expect(result.platform).toBe('other');
+      expect(result.canonical_url).toBe('data:text/html,<script>alert(1)</script>');
+    });
+
+    it('returns platform other and preserves raw value for blob: scheme', () => {
+      const result = normalizeVideoUrl('blob:https://example.com/some-uuid');
+      expect(result.platform).toBe('other');
+      expect(result.canonical_url).toBe('blob:https://example.com/some-uuid');
+    });
+
+    it('returns platform other and preserves raw value for file: scheme', () => {
+      const result = normalizeVideoUrl('file:///etc/passwd');
+      expect(result.platform).toBe('other');
+      expect(result.canonical_url).toBe('file:///etc/passwd');
+    });
+
+    it('does not rewrite protocol to https when input is javascript:', () => {
+      const result = normalizeVideoUrl('javascript:void(0)');
+      expect(result.canonical_url).not.toContain('https:');
+      expect(result.canonical_url).toBe('javascript:void(0)');
+    });
+  });
+
+  it('keeps host:port input without scheme working', () => {
+    expect(normalizeVideoUrl('example.com:8080/video').canonical_url).toBe(
+      'https://example.com:8080/video',
+    );
+  });
+});
+
+describe('isHttpUrl', () => {
+  it('accepts absolute http and https URLs', () => {
+    expect(isHttpUrl('https://youtu.be/abc')).toBe(true);
+    expect(isHttpUrl('http://example.com/')).toBe(true);
+  });
+
+  it.each([
+    'javascript:alert(1)',
+    'JavaScript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'blob:https://example.com/uuid',
+    'file:///etc/passwd',
+    'vbscript:MsgBox(1)',
+    'youtu.be/abc',
+    '',
+  ])('rejects %s', (value) => {
+    expect(isHttpUrl(value)).toBe(false);
+  });
+
+  it('rejects null and undefined', () => {
+    expect(isHttpUrl(null)).toBe(false);
+    expect(isHttpUrl(undefined)).toBe(false);
   });
 });

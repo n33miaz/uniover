@@ -208,4 +208,46 @@ describe('ShareTargetPage', () => {
     const router = TestBed.inject(Router);
     expect(router.url).toBe('/videos');
   });
+
+  describe('unsafe protocol rejection in share target', () => {
+    it('does not stash pending share when url has javascript: scheme', async () => {
+      authStatus = 'anonymous';
+      await open('/videos/compartilhar?url=javascript%3Aalert(1)');
+      expect(peekPendingShare()).toBeNull();
+    });
+
+    it('does not stash pending share when text has javascript: scheme', async () => {
+      authStatus = 'anonymous';
+      await open('/videos/compartilhar?text=javascript%3Aalert(document.cookie)');
+      expect(peekPendingShare()).toBeNull();
+    });
+
+    it('does not stash pending share when url has data: scheme', async () => {
+      authStatus = 'anonymous';
+      await open(
+        '/videos/compartilhar?url=data%3Atext%2Fhtml%2C%3Cscript%3Ealert(1)%3C%2Fscript%3E',
+      );
+      expect(peekPendingShare()).toBeNull();
+    });
+
+    it('does not stash pending share when url has blob: scheme', async () => {
+      authStatus = 'anonymous';
+      await open('/videos/compartilhar?url=blob%3Ahttps%3A%2F%2Fexample.com%2Fuuid');
+      expect(peekPendingShare()).toBeNull();
+    });
+
+    it('does not stash pending share when url has file: scheme', async () => {
+      authStatus = 'anonymous';
+      await open('/videos/compartilhar?url=file%3A%2F%2F%2Fetc%2Fpasswd');
+      expect(peekPendingShare()).toBeNull();
+    });
+
+    it('does not save to storage when authenticated and url has javascript: scheme', async () => {
+      authStatus = 'authenticated';
+      accountRole = 'owner';
+      await open('/videos/compartilhar?url=javascript%3Aalert(1)');
+      const inboxService = TestBed.inject(VideoInboxService);
+      expect(await inboxService.list()).toHaveLength(0);
+    });
+  });
 });
