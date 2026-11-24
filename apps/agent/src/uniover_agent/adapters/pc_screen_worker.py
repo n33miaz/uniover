@@ -1,11 +1,14 @@
 """Processo de medição de fotos JPEG pela rede local."""
 
 import asyncio
+import contextlib
 import ctypes
 import hmac
 import json
 import os
+import struct
 import sys
+import zlib
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from ctypes import wintypes
@@ -20,6 +23,7 @@ from PIL import Image, ImageDraw, ImageGrab
 from uniover_agent.adapters.pc_direct_aiortc import _load, prepare_offer
 from uniover_agent.adapters.pc_direct_network import is_lan_address
 from uniover_agent.adapters.pc_screen_presence import screen_indicator
+from uniover_agent.adapters.pc_screen_probes import STATE_LOCKED, STATE_OK, read_cursor, read_state
 from uniover_agent.adapters.pc_windows import USER_DESKTOP
 from uniover_agent.ports.pc_direct import SCREEN_MAX_LIFETIME_SECONDS
 
@@ -34,6 +38,12 @@ MAX_FPS = 10
 MARKER_BITS = 16
 MARKER_CELL = 8
 MAX_MARKER = (1 << MARKER_BITS) - 1
+CURSOR_INTERVAL = 1 / 30
+STATE_INTERVAL = 0.25
+FRAME_MAGIC = b"UOSF"
+FRAME_VERSION = 1
+# Cabeçalho de 16 bytes: magic, versão, flags (reservado), largura, altura, sequência, tamanho.
+FRAME_HEADER = struct.Struct(">4sBBHHHI")
 
 
 def _integer(value: Any, minimum: int, maximum: int) -> int:
@@ -94,22 +104,53 @@ class DesktopLockedError(RuntimeError):
     """O desktop de entrada deixou de ser o do usuário."""
 
 
-def encode_frame(image: Image.Image, request: FrameRequest) -> bytes:
+@dataclass(frozen=True)
+class Capture:
+    """Um recorte já reduzido. `jpeg` é `None` quando o CRC32 é igual ao do quadro anterior."""
+
+    crc: int
+    width: int
+    height: int
+    jpeg: bytes | None
+
+
+def frame_header(capture: Capture, sequence: int) -> bytes:
+    if capture.jpeg is None:
+        raise ValueError("Quadro sem imagem.")
+    return FRAME_HEADER.pack(
+        FRAME_MAGIC,
+        FRAME_VERSION,
+        0,
+        capture.width,
+        capture.height,
+        sequence & 0xFFFF,
+        len(capture.jpeg),
+    )
+
+
+def encode_frame(
+    image: Image.Image, request: FrameRequest, previous_crc: int | None = None
+) -> Capture:
     image = image.convert("RGB")
     if image.width > request.width:
         height = max(1, round(image.height * request.width / image.width))
-        image = image.resize((request.width, height), Image.Resampling.LANCZOS)
-    marker = ImageDraw.Draw(image)
-    for bit in range(MARKER_BITS):
-        x = bit * MARKER_CELL
-        tone = 255 if request.marker & (1 << bit) else 0
-        marker.rectangle((x, 0, x + MARKER_CELL - 1, MARKER_CELL - 1), fill=(tone, tone, tone))
+        image = image.resize((request.width, height), Image.Resampling.BOX)
+    # O CRC cobre só o recorte, antes da marca de medição, que muda a cada pedido.
+    crc = zlib.crc32(image.tobytes())
+    if request.marker == 0 and not request.reset and crc == previous_crc:
+        return Capture(crc, image.width, image.height, None)
+    if request.marker:
+        marker = ImageDraw.Draw(image)
+        for bit in range(MARKER_BITS):
+            x = bit * MARKER_CELL
+            tone = 255 if request.marker & (1 << bit) else 0
+            marker.rectangle((x, 0, x + MARKER_CELL - 1, MARKER_CELL - 1), fill=(tone, tone, tone))
     with BytesIO() as output:
         image.save(output, format="JPEG", quality=60)
-        return output.getvalue()
+        return Capture(crc, image.width, image.height, output.getvalue())
 
 
-def capture_frame(request: FrameRequest) -> bytes:
+def capture_frame(request: FrameRequest, previous_crc: int | None = None) -> Capture:
     from uniover_agent.adapters.pc_windows import _input_desktop_name  # noqa: PLC0415
 
     desktop = _input_desktop_name()
@@ -118,7 +159,12 @@ def capture_frame(request: FrameRequest) -> bytes:
     # O monitor principal sempre começa em (0, 0). O modo DPI do processo fornece pixels físicos.
     metrics = ctypes.windll.user32.GetSystemMetrics
     with ImageGrab.grab(bbox=(0, 0, metrics(0), metrics(1))) as image:
-        return encode_frame(image, request)
+        return encode_frame(image, request, previous_crc)
+
+
+def monitor_size() -> tuple[int, int]:
+    metrics = ctypes.windll.user32.GetSystemMetrics
+    return metrics(0), metrics(1)
 
 
 class _MemoryCounters(ctypes.Structure):
@@ -150,6 +196,15 @@ def _remote_is_lan(peer: Any) -> bool:
         return False
 
 
+@dataclass(frozen=True)
+class Probes:
+    """Leituras opcionais do desktop; sem elas a sessão só envia quadros."""
+
+    monitor: Callable[[], tuple[int, int]] | None = None
+    cursor: Callable[[], tuple[int, int] | None] | None = None
+    state: Callable[[], str] | None = None
+
+
 class ScreenSession:
     def __init__(self, offer: Offer) -> None:
         started = monotonic()
@@ -164,6 +219,9 @@ class ScreenSession:
         self.ready = asyncio.Event()
         self.buffer_low = asyncio.Event()
         self.requests: asyncio.Queue[FrameRequest] = asyncio.Queue(maxsize=1)
+        self.crc: int | None = None
+        self.sequence = 0
+        self.state = STATE_OK
 
     async def answer(self, sdp: str) -> str:
         prepared = prepare_offer(sdp)
@@ -233,23 +291,84 @@ class ScreenSession:
         self.token = ""
         self.ready.set()
 
+    def send_json(self, data: dict[str, Any]) -> None:
+        self.channel.send(json.dumps(data))
+
     async def stream(
         self,
-        capture: Callable[[FrameRequest], bytes],
+        capture: Callable[[FrameRequest, int | None], Capture],
         memory: Callable[[], int],
         viewing: Callable[[], AbstractContextManager[None]],
+        probes: Probes | None = None,
     ) -> None:
         async with asyncio.timeout_at(min(self.auth_deadline, monotonic() + FRAME_TIMEOUT)):
             await self.ready.wait()
         if self.closed.is_set():
             return
         with viewing():
-            await self.send_frames(capture, memory)
+            await self.send_frames(capture, memory, probes or Probes())
+
+    async def report_state(self, state: str) -> None:
+        """Avisa só quando o estado muda; o bloqueio encerra a sessão depois do aviso sair."""
+        if state == self.state:
+            return
+        self.state = state
+        self.send_json({"k": "s.state", "state": state})
+        if state == STATE_LOCKED:
+            # O fechamento do SCTP só pode ocorrer após o envio da notificação.
+            with contextlib.suppress(TimeoutError):
+                async with asyncio.timeout(1):
+                    await self.wait_buffer(0)
+            self.closed.set()
+
+    async def watch_state(self, read: Callable[[], str]) -> None:
+        while not self.closed.is_set():
+            await self.report_state(read())
+            await asyncio.sleep(STATE_INTERVAL)
+
+    async def watch_cursor(self, read: Callable[[], tuple[int, int] | None]) -> None:
+        last = None
+        while not self.closed.is_set():
+            position = read()
+            # Com o canal cheio de quadro, a posição é descartada: a próxima leitura é mais nova.
+            if (
+                position is not None
+                and position != last
+                and self.channel.bufferedAmount <= 4 * CHUNK_BYTES
+            ):
+                last = position
+                self.send_json({"k": "s.cur", "x": position[0], "y": position[1]})
+            await asyncio.sleep(CURSOR_INTERVAL)
 
     async def send_frames(
-        self, capture: Callable[[FrameRequest], bytes], memory: Callable[[], int]
+        self,
+        capture: Callable[[FrameRequest, int | None], Capture],
+        memory: Callable[[], int],
+        probes: Probes | None = None,
     ) -> None:
-        self.channel.send(json.dumps({"k": "ready"}))
+        probes = probes or Probes()
+        mon: dict[str, Any] = {"k": "s.mon"}
+        if probes.monitor is not None:
+            mon["width"], mon["height"] = probes.monitor()
+        self.send_json(mon)
+        watchers = [
+            asyncio.create_task(watcher)
+            for watcher in (
+                self.watch_state(probes.state) if probes.state else None,
+                self.watch_cursor(probes.cursor) if probes.cursor else None,
+            )
+            if watcher is not None
+        ]
+        try:
+            await self.frame_loop(capture, memory)
+        finally:
+            for watcher in watchers:
+                watcher.cancel()
+            await asyncio.gather(*watchers, return_exceptions=True)
+
+    async def frame_loop(
+        self, capture: Callable[[FrameRequest, int | None], Capture], memory: Callable[[], int]
+    ) -> None:
         start, cpu, peak = monotonic(), process_time(), 0
         last_capture = 0.0
         while not self.closed.is_set():
@@ -260,28 +379,33 @@ class ScreenSession:
                 if request.reset:
                     start, cpu, peak = last_capture, process_time(), 0
                 try:
-                    jpeg = await asyncio.to_thread(capture, request)
+                    shot = await asyncio.to_thread(capture, request, self.crc)
                 except DesktopLockedError:
-                    self.channel.send(json.dumps({"k": "s.state", "state": "locked"}))
-                    # O fechamento do SCTP só pode ocorrer após o envio da notificação.
-                    await self.wait_buffer(0)
+                    await self.report_state(STATE_LOCKED)
                     return
+                self.crc = shot.crc
                 peak = max(peak, memory())
                 if self.closed.is_set():
                     return
-                elapsed = monotonic() - start
-                self.channel.send(
-                    json.dumps(
+                if shot.jpeg is None:
+                    self.send_json({"k": "s.same", "crc": shot.crc})
+                    continue
+                self.sequence += 1
+                payload = frame_header(shot, self.sequence) + shot.jpeg
+                if request.marker:
+                    # Só a medição pede a marca; ela também recebe o custo do processo.
+                    elapsed = monotonic() - start
+                    self.send_json(
                         {
-                            "bytes": len(jpeg),
+                            "k": "s.stat",
+                            "bytes": len(payload),
                             "cpu": 100 * (process_time() - cpu) / elapsed if elapsed > 0 else None,
                             "privateMB": peak / 1_000_000,
                         }
                     )
-                )
-                for offset in range(0, len(jpeg), CHUNK_BYTES):
+                for offset in range(0, len(payload), CHUNK_BYTES):
                     await self.wait_buffer(4 * CHUNK_BYTES - 1)
-                    self.channel.send(jpeg[offset : offset + CHUNK_BYTES])
+                    self.channel.send(payload[offset : offset + CHUNK_BYTES])
                 await self.wait_buffer(0)
 
     async def wait_buffer(self, threshold: int) -> None:
@@ -296,6 +420,7 @@ class ScreenSession:
         pipe_closed: asyncio.Event,
         reply: Callable[[dict[str, str]], None],
         viewing: Callable[[], AbstractContextManager[None]],
+        probes: Probes | None = None,
     ) -> None:
         async def connect_and_stream() -> None:
             async with asyncio.timeout_at(self.deadline):
@@ -304,7 +429,12 @@ class ScreenSession:
                 except Exception:
                     reply({"error": "Não foi possível aceitar a oferta da tela."})
                     return
-                await self.stream(capture_frame, private_bytes, viewing)
+                await self.stream(
+                    capture_frame,
+                    private_bytes,
+                    viewing,
+                    Probes(monitor_size, read_cursor, read_state) if probes is None else probes,
+                )
 
         tasks = [
             asyncio.create_task(connect_and_stream()),

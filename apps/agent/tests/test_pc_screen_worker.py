@@ -14,9 +14,13 @@ from PIL import Image
 from uniover_agent.adapters import pc_screen_worker
 from uniover_agent.adapters.pc_screen_worker import (
     CHUNK_BYTES,
+    FRAME_HEADER,
+    FRAME_MAGIC,
     FRAME_TIMEOUT,
+    Capture,
     FrameRequest,
     Offer,
+    Probes,
     ScreenSession,
     encode_frame,
 )
@@ -70,9 +74,9 @@ async def test_auth_then_frame_with_marker_and_metrics() -> None:
     measure, channel = session("192.168.1.6")
     captured: list[FrameRequest] = []
 
-    def capture(request: FrameRequest) -> bytes:
+    def capture(request: FrameRequest, _previous: int | None) -> Capture:
         captured.append(request)
-        return b"x" * (CHUNK_BYTES + 1)
+        return Capture(7, 1280, 720, b"x" * (CHUNK_BYTES + 1))
 
     task = asyncio.create_task(measure.stream(capture, lambda: 40_000_000, nullcontext))
     try:
@@ -84,12 +88,24 @@ async def test_auth_then_frame_with_marker_and_metrics() -> None:
         channel.message(k="auth", token="bilhete-de-teste")
         channel.message(k="s.get", width=1280, fps=8, marker=42, reset=True)
         await asyncio.wait_for(channel.complete.wait(), timeout=1)
-        ready, header, first, second = channel.sent
-        assert json.loads(ready) == {"k": "ready"}
-        assert json.loads(header)["bytes"] == CHUNK_BYTES + 1
-        assert json.loads(header)["privateMB"] == 40
-        assert first == b"x" * CHUNK_BYTES
-        assert second == b"x"
+        monitor, stats, first, second = channel.sent
+        assert json.loads(monitor) == {"k": "s.mon"}
+        assert json.loads(stats)["bytes"] == FRAME_HEADER.size + CHUNK_BYTES + 1
+        assert json.loads(stats)["privateMB"] == 40
+        assert isinstance(first, bytes) and isinstance(second, bytes)
+        assert len(first) == CHUNK_BYTES
+        assert FRAME_HEADER.size == 16
+        magic, _version, _flags, width, height, sequence, size = FRAME_HEADER.unpack(
+            first[: FRAME_HEADER.size]
+        )
+        assert (magic, width, height, sequence, size) == (
+            FRAME_MAGIC,
+            1280,
+            720,
+            1,
+            CHUNK_BYTES + 1,
+        )
+        assert (first + second)[FRAME_HEADER.size :] == b"x" * (CHUNK_BYTES + 1)
         assert captured == [FrameRequest(1280, 8, 42, True)]
     finally:
         task.cancel()
@@ -114,8 +130,9 @@ async def test_rejects_non_lan_expired_and_wrong_token() -> None:
 def test_jpeg_contains_all_marker_bits_at_requested_width() -> None:
     value = 0xB739
     with Image.new("RGB", (512, 288), "#887799") as image:
-        jpeg = encode_frame(image, FrameRequest(128, 5, value, False))
-    with Image.open(BytesIO(jpeg)) as decoded:
+        shot = encode_frame(image, FrameRequest(128, 5, value, False))
+    assert shot.jpeg is not None
+    with Image.open(BytesIO(shot.jpeg)) as decoded:
         assert decoded.size == (128, 72)
         rgb = decoded.convert("RGB")
         decoded_value = 0
@@ -147,7 +164,9 @@ async def test_closing_parent_pipe_closes_peer() -> None:
         replies.append(data)
         pipe_closed.set()
 
-    await asyncio.wait_for(Session(offer).run(offer, pipe_closed, reply, nullcontext), timeout=1)
+    await asyncio.wait_for(
+        Session(offer).run(offer, pipe_closed, reply, nullcontext, Probes()), timeout=1
+    )
     assert peer_closed.is_set()
     assert replies == [{"sdp": "resposta"}]
 
@@ -163,18 +182,18 @@ async def test_capture_respects_requested_frame_period(monkeypatch: pytest.Monke
         nonlocal now
         now += delay
 
-    async def capture_in_thread(_capture: Any, request: FrameRequest) -> bytes:
+    async def capture_in_thread(_capture: Any, request: FrameRequest, _previous: Any) -> Capture:
         captures.append(now)
         if len(captures) == 1:
             measure.requests.put_nowait(request)
         else:
             measure.closed.set()
-        return b"jpeg"
+        return Capture(1, 1, 1, b"jpeg")
 
     monkeypatch.setattr(pc_screen_worker, "monotonic", lambda: now)
     monkeypatch.setattr(f"{WORKER}.asyncio.sleep", sleep)
     monkeypatch.setattr(f"{WORKER}.asyncio.to_thread", capture_in_thread)
-    await measure.send_frames(lambda _request: b"", lambda: 40_000_000)
+    await measure.send_frames(lambda _request, _previous: Capture(0, 1, 1, b""), lambda: 40_000_000)
     assert captures == [100.0, 100.125]
 
 
@@ -206,13 +225,15 @@ async def test_worker_closes_when_the_screen_deadline_expires(
     monkeypatch.setattr(measure.peer, "close", close_peer, raising=False)
     monkeypatch.setattr(measure, "answer", answer)
 
-    async def capture_in_thread(_capture: Any, _request: FrameRequest) -> bytes:
-        return b"jpeg"
+    async def capture_in_thread(_capture: Any, _request: FrameRequest, _previous: Any) -> Capture:
+        return Capture(1, 1, 1, b"jpeg")
 
     monkeypatch.setattr(f"{WORKER}.asyncio.to_thread", capture_in_thread)
     monkeypatch.setattr(pc_screen_worker, "private_bytes", lambda: 0)
     channel.message(k="auth", token=offer.token)
-    task = asyncio.create_task(measure.run(offer, asyncio.Event(), lambda _reply: None, viewing))
+    task = asyncio.create_task(
+        measure.run(offer, asyncio.Event(), lambda _reply: None, viewing, Probes())
+    )
     try:
         await viewing_started.wait()
         if keep_requesting:
@@ -260,3 +281,68 @@ async def test_pipe_ignores_bytes_after_the_offer_until_eof(
     assert await offer == b'{"sdp":"oferta"}'
     assert reads[-2:] == [b"mais bytes", b""]
     assert closed.is_set()
+
+
+def test_same_crop_skips_the_jpeg_but_not_a_marked_or_reset_request() -> None:
+    with Image.new("RGB", (256, 144), "#336699") as image:
+        first = encode_frame(image, FrameRequest(128, 5, 0, False))
+        same = encode_frame(image, FrameRequest(128, 5, 0, False), first.crc)
+        reset = encode_frame(image, FrameRequest(128, 5, 0, True), first.crc)
+        marked = encode_frame(image, FrameRequest(128, 5, 3, False), first.crc)
+        other = encode_frame(image, FrameRequest(64, 5, 0, False), first.crc)
+    assert first.jpeg is not None
+    assert (same.jpeg, same.crc) == (None, first.crc)
+    assert reset.jpeg is not None and marked.jpeg is not None
+    assert marked.crc == first.crc
+    assert other.jpeg is not None
+
+
+async def test_unchanged_screen_answers_s_same_and_cursor_is_throttled() -> None:
+    measure, channel = session("192.168.1.6")
+    measure.authorized = True
+    measure.ready.set()
+    positions = iter([(1, 2), (1, 2), (3, 4)])
+    calls = 0
+
+    def capture(_request: FrameRequest, previous: int | None) -> Capture:
+        nonlocal calls
+        calls += 1
+        return Capture(9, 10, 10, None if previous == 9 else b"jpeg")
+
+    def cursor() -> tuple[int, int] | None:
+        return next(positions, (3, 4))
+
+    probes = Probes(monitor=lambda: (1920, 1080), cursor=cursor)
+    task = asyncio.create_task(measure.stream(capture, lambda: 0, nullcontext, probes))
+    try:
+        channel.message(k="s.get")
+        await asyncio.sleep(0.2)
+        channel.message(k="s.get")
+        await asyncio.sleep(0.3)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    texts = [json.loads(item) for item in channel.sent if isinstance(item, str)]
+    assert texts[0] == {"k": "s.mon", "width": 1920, "height": 1080}
+    assert {"k": "s.same", "crc": 9} in texts
+    cursors = [item for item in texts if item["k"] == "s.cur"]
+    assert [(item["x"], item["y"]) for item in cursors] == [(1, 2), (3, 4)]
+    assert sum(isinstance(item, bytes) for item in channel.sent) == 1
+
+
+async def test_locked_screen_is_reported_while_idle_and_ends_the_session() -> None:
+    measure, channel = session("192.168.1.6")
+    measure.authorized = True
+    measure.ready.set()
+    states = iter(["ok", "elevated", "elevated", "locked"])
+    probes = Probes(state=lambda: next(states, "locked"))
+    task = asyncio.create_task(
+        measure.stream(lambda _r, _p: Capture(0, 1, 1, b""), lambda: 0, nullcontext, probes)
+    )
+    try:
+        await asyncio.wait_for(measure.closed.wait(), timeout=2)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    reported = [json.loads(item)["state"] for item in channel.sent if "state" in str(item)]
+    assert reported == ["elevated", "locked"]
