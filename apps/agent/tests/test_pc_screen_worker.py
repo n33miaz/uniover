@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
 from io import BytesIO
@@ -490,13 +491,18 @@ def test_capture_uses_the_virtual_rectangle_and_the_width_limit_applies_to_it(
         return Image.new("RGB", (1280, 1024), "#112233")
 
     monkeypatch.setattr(f"{WORKER}.ImageGrab.grab", grab)
-    monkeypatch.setattr("uniover_agent.adapters.pc_windows._input_desktop_name", lambda: "default")
+    monkeypatch.setattr(
+        "uniover_agent.adapters.pc_windows._input_desktop_name",
+        lambda: "default",
+        raising=False,
+    )
     request = FrameRequest(640, 5, 0, False, 1, LEFT.area)
     shot = capture_frame(request)
     assert grabbed == [{"bbox": (-1280, -200, 0, 824), "all_screens": True}]
     assert (shot.width, shot.height) == (640, 512)
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="usa a API real de monitores do Windows")
 def test_list_monitors_reads_the_real_layout() -> None:
     monitors = list_monitors()
     assert monitors

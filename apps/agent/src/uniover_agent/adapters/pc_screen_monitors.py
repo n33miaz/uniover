@@ -1,6 +1,7 @@
 """Enumeração dos monitores físicos para a tela ao vivo."""
 
 import ctypes
+import sys
 from ctypes import wintypes
 from dataclasses import dataclass
 
@@ -34,6 +35,8 @@ class _MonitorInfo(ctypes.Structure):
 
 def list_monitors() -> list[Monitor]:
     """Monitores ativos, numerados pela ordem da enumeração do Windows (pixels físicos)."""
+    if sys.platform != "win32":
+        raise OSError("A enumeração de monitores só existe no Windows.")
     user = ctypes.windll.user32
     user.GetMonitorInfoW.argtypes = (wintypes.HANDLE, ctypes.POINTER(_MonitorInfo))
     user.GetMonitorInfoW.restype = wintypes.BOOL
