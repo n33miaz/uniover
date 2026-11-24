@@ -40,6 +40,7 @@ MARKER_BITS = 16
 MARKER_CELL = 8
 MAX_MARKER = (1 << MARKER_BITS) - 1
 MAX_MONITOR = 2**31 - 1
+MONITOR_RECHECK_FRAMES = 30
 CURSOR_INTERVAL = 1 / 30
 STATE_INTERVAL = 0.25
 FRAME_MAGIC = b"UOSF"
@@ -234,6 +235,8 @@ class ScreenSession:
         self.state = STATE_OK
         self.locked_notice = asyncio.Event()
         self.monitors: list[Monitor] = []
+        self.read_monitors: Callable[[], list[Monitor]] | None = None
+        self.frames_since_refresh = 0
 
     async def answer(self, sdp: str) -> str:
         prepared = prepare_offer(sdp)
@@ -364,17 +367,10 @@ class ScreenSession:
         probes: Probes | None = None,
     ) -> None:
         probes = probes or Probes()
-        # Os ids valem durante a sessão: a lista é lida uma vez, antes de qualquer quadro.
+        # A lista é lida antes do primeiro quadro e relida de tempos em tempos (frame_loop).
+        self.read_monitors = probes.monitors
         self.monitors = probes.monitors() if probes.monitors else []
-        self.send_json(
-            {
-                "k": "s.mon",
-                "monitors": [
-                    {"id": m.id, "width": m.width, "height": m.height, "primary": m.primary}
-                    for m in self.monitors
-                ],
-            }
-        )
+        self.announce_monitors()
         watchers = [
             asyncio.create_task(watcher)
             for watcher in (
@@ -390,15 +386,39 @@ class ScreenSession:
                 watcher.cancel()
             await asyncio.gather(*watchers, return_exceptions=True)
 
+    def announce_monitors(self) -> None:
+        self.send_json(
+            {
+                "k": "s.mon",
+                "monitors": [
+                    {"id": m.id, "width": m.width, "height": m.height, "primary": m.primary}
+                    for m in self.monitors
+                ],
+            }
+        )
+
+    async def refresh_monitors(self) -> None:
+        """Relê o layout; se mudou, troca a lista e avisa o receptor."""
+        if self.read_monitors is None:
+            return
+        try:
+            current = await asyncio.to_thread(self.read_monitors)
+        except OSError:
+            return
+        self.frames_since_refresh = 0
+        if current != self.monitors:
+            self.monitors = current
+            self.announce_monitors()
+
     def resolve_monitor(self, request: FrameRequest) -> FrameRequest | None:
-        """Preenche o retângulo do monitor pedido; `None` se o id não foi anunciado."""
+        """Preenche o retângulo do monitor pedido; `None` se o id não foi anunciado.
+
+        Sem monitor pedido a captura segue no caminho do monitor principal, sem área.
+        """
         if request.monitor is None:
-            chosen = next((m for m in self.monitors if m.primary), None)
-        else:
-            chosen = next((m for m in self.monitors if m.id == request.monitor), None)
-            if chosen is None:
-                return None
-        return request if chosen is None else replace(request, area=chosen.area)
+            return request
+        chosen = next((m for m in self.monitors if m.id == request.monitor), None)
+        return None if chosen is None else replace(request, area=chosen.area)
 
     def reject_request(self) -> None:
         self.invalid += 1
@@ -413,7 +433,13 @@ class ScreenSession:
         while not self.closed.is_set():
             async with asyncio.timeout(FRAME_TIMEOUT):
                 request = await self.requests.get()
-                if (resolved := self.resolve_monitor(request)) is None:
+                self.frames_since_refresh += 1
+                resolved = self.resolve_monitor(request)
+                if resolved is None or self.frames_since_refresh >= MONITOR_RECHECK_FRAMES:
+                    # Id desconhecido ou layout possivelmente antigo: relê antes de decidir.
+                    await self.refresh_monitors()
+                    resolved = self.resolve_monitor(request)
+                if resolved is None:
                     self.reject_request()
                     continue
                 request = resolved
