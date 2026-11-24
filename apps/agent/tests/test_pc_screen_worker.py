@@ -346,3 +346,59 @@ async def test_locked_screen_is_reported_while_idle_and_ends_the_session() -> No
         await asyncio.gather(task, return_exceptions=True)
     reported = [json.loads(item)["state"] for item in channel.sent if "state" in str(item)]
     assert reported == ["elevated", "locked"]
+
+
+def test_same_pixels_with_swapped_dimensions_are_not_the_same_frame() -> None:
+    data = bytes(range(256)) * 576
+    with (
+        Image.frombytes("RGB", (192, 256), data) as tall,
+        Image.frombytes("RGB", (256, 192), data) as wide,
+    ):
+        first = encode_frame(tall, FrameRequest(1920, 5, 0, False))
+        second = encode_frame(wide, FrameRequest(1920, 5, 0, False), first.crc)
+    assert second.jpeg is not None
+    assert second.crc != first.crc
+
+
+async def test_frame_after_a_marked_one_is_never_answered_with_s_same() -> None:
+    measure, channel = session("192.168.1.6")
+    measure.authorized = True
+    measure.ready.set()
+    bases: list[int | None] = []
+
+    def capture(request: FrameRequest, previous: int | None) -> Capture:
+        bases.append(previous)
+        return Capture(7, 10, 10, None if previous == 7 and not request.marker else b"jpeg")
+
+    task = asyncio.create_task(measure.stream(capture, lambda: 0, nullcontext))
+    try:
+        for marker in (0, 5, 0, 0):
+            channel.message(k="s.get", fps=10, marker=marker)
+            await asyncio.sleep(0.25)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    texts = [json.loads(item) for item in channel.sent if isinstance(item, str)]
+    assert bases == [None, 7, None, 7]
+    assert [item for item in texts if item["k"] == "s.same"] == [{"k": "s.same", "crc": 7}]
+
+
+async def test_capture_lock_waits_for_the_notice_being_drained() -> None:
+    measure, channel = session("192.168.1.6")
+    measure.authorized = True
+    measure.ready.set()
+    channel.bufferedAmount = 1
+    release = asyncio.Event()
+
+    async def hold(_threshold: int) -> None:
+        await release.wait()
+
+    measure.wait_buffer = hold  # type: ignore[method-assign]
+    notice = asyncio.create_task(measure.report_state("locked"))
+    await asyncio.sleep(0.05)
+    second = asyncio.create_task(measure.report_state("locked"))
+    await asyncio.sleep(0.05)
+    assert not notice.done() and not second.done()
+    release.set()
+    await asyncio.wait_for(asyncio.gather(notice, second), timeout=2)
+    assert measure.closed.is_set()
