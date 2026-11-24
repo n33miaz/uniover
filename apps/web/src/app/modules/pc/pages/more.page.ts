@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { PcScreenAccess } from '../data/screen-access';
 import { PcStore } from '../data/pc-store';
 import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
 
@@ -24,6 +25,19 @@ import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
           </svg>
         </a>
       </li>
+      @if (screenAccess.allowed()) {
+        <li>
+          <a class="row" routerLink="/pc/tela">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path [attr.d]="'M3.5 5h17v11h-17zM9 20h6M12 16v4'" />
+            </svg>
+            <span i18n="@@pc.more.screen">Tela do PC</span>
+            <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
+              <path [attr.d]="'M9 6l6 6-6 6'" />
+            </svg>
+          </a>
+        </li>
+      }
       <li>
         <a class="row" routerLink="/pc/energia">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -126,5 +140,6 @@ import { PcPadSettingsSheet } from '../ui/pad-settings-sheet';
 })
 export class MorePage {
   protected readonly store = inject(PcStore);
+  protected readonly screenAccess = inject(PcScreenAccess);
   protected readonly settingsOpen = signal(false);
 }

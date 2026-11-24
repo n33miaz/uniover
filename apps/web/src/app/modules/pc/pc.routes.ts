@@ -1,7 +1,8 @@
 import { inject } from '@angular/core';
-import { Router, Routes } from '@angular/router';
+import { Router, type CanActivateFn, type Routes } from '@angular/router';
 import type { ShellBack } from '../../core/layout/route-data';
 import type { TabItem } from '../../shared/ui/tab-bar/tab-bar';
+import { PcScreenAccess } from './data/screen-access';
 import { PcPage } from './pc-page';
 
 // As abas do módulo ficam aqui; a barra de baixo as lê pelo `data.tabs` da rota (o título do cabeçalho vem da rota `pc`).
@@ -14,7 +15,7 @@ const TABS: readonly TabItem[] = [
     link: '/pc/mais',
     label: $localize`:@@pc.tab.more:Mais`,
     icon: 'more',
-    also: ['/pc/energia', '/pc/controles', '/pc/area-de-transferencia'],
+    also: ['/pc/energia', '/pc/controles', '/pc/area-de-transferencia', '/pc/tela'],
   },
 ];
 
@@ -30,6 +31,10 @@ export const REMOTE_BACK: ShellBack = {
   link: '/pc/controles',
   label: $localize`:@@pc.remotes.back-list:Voltar aos Controles`,
 };
+
+/** A tela do PC fica atrás do `pc_screen` e do `pc:screen`: sem eles a rota volta ao mouse. */
+const screenGuard: CanActivateFn = () =>
+  inject(PcScreenAccess).allowed() || inject(Router).createUrlTree(['/pc']);
 
 /**
  * Rotas do módulo. A casca (`PcPage`) mostra o estado do PC e, quando ele está conectado, a aba aberta. Cada aba é uma
@@ -61,6 +66,12 @@ export const PC_ROUTES: Routes = [
       {
         path: 'mais',
         loadComponent: () => import('./pages/more.page').then((m) => m.MorePage),
+      },
+      {
+        path: 'tela',
+        canActivate: [screenGuard],
+        data: { back: REMOTES_LIST_BACK },
+        loadComponent: () => import('./pages/screen.page').then((m) => m.ScreenPage),
       },
       {
         path: 'energia',
