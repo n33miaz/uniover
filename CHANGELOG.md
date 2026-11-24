@@ -1,5 +1,66 @@
 # Changelog
 
+## [0.79.0](https://github.com/n33miaz/uniover/compare/v0.78.4...v0.79.0) (2026-11-24)
+
+
+### Bug Fixes
+
+* **deploy:** classify releases by subject
+
+
+### Identity 0.46.7
+
+#### Bug Fixes
+
+* **web:** dismiss only displayed capacity alerts
+* **identity:** limit capacity alert ids to 50
+
+
+### Devices 0.69.2
+
+#### Bug Fixes
+
+* **web:** trim mouse page css
+
+
+### TV 0.54.5
+
+#### Bug Fixes
+
+* **web:** trim tv page css
+* **web:** trim tv bottom keys css
+
+
+### Training 0.46.5
+
+#### Bug Fixes
+
+* **web:** trim food diary css
+
+
+### Web 0.74.0
+
+#### Features
+
+* **web:** add video share target inbox
+
+#### Bug Fixes
+
+* **web:** dismiss only displayed capacity alerts
+* **web:** type capacity alert dismissal
+* **web:** address review on video share inbox
+* **web:** clamp share target input parameters
+* **web:** guard videos module and harden share
+* **web:** address coderabbit review feedback
+* **identity:** limit capacity alert ids to 50
+
+
+### Agent 0.63.7
+
+#### Maintenance
+
+* no user-facing changes
+
 ## [0.78.4](https://github.com/n33miaz/uniover/compare/v0.78.3...v0.78.4) (2026-11-22)
 
 
