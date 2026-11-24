@@ -2,6 +2,7 @@ import { inject } from '@angular/core';
 import { Router, type CanActivateFn, type Routes } from '@angular/router';
 import type { ShellBack } from '../../core/layout/route-data';
 import type { TabItem } from '../../shared/ui/tab-bar/tab-bar';
+import { PcAvailability } from '../../core/modules/pc-availability';
 import { PcScreenAccess } from './data/screen-access';
 import { PcPage } from './pc-page';
 
@@ -32,9 +33,17 @@ export const REMOTE_BACK: ShellBack = {
   label: $localize`:@@pc.remotes.back-list:Voltar aos Controles`,
 };
 
-/** A tela do PC fica atrás do `pc_screen` e do `pc:screen`: sem eles a rota volta ao mouse. */
-const screenGuard: CanActivateFn = () =>
-  inject(PcScreenAccess).allowed() || inject(Router).createUrlTree(['/pc']);
+/**
+ * A tela do PC fica atrás do `pc_screen` e do `pc:screen`: sem eles a rota volta ao mouse. Num endereço aberto direto
+ * (recarga ou link) o PC ainda não declarou as capacidades; a decisão espera a primeira leitura.
+ */
+export const screenGuard: CanActivateFn = async () => {
+  const availability = inject(PcAvailability);
+  const access = inject(PcScreenAccess);
+  const router = inject(Router);
+  if (availability.status() === null) await availability.refresh();
+  return access.allowed() || router.createUrlTree(['/pc']);
+};
 
 /**
  * Rotas do módulo. A casca (`PcPage`) mostra o estado do PC e, quando ele está conectado, a aba aberta. Cada aba é uma

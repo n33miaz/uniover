@@ -28,10 +28,10 @@ import {
 } from '../data/screen-viewer';
 
 const START_TIMEOUT_MS = 20_000;
-const JPEG_QUALITY = 60;
 /** A imagem não precisa passar da largura que o aparelho consegue mostrar (e 1280 basta para ler texto). */
 const MAX_WIDTH = 1280;
-const MAX_HEIGHT = 1280;
+/** O menor que o PC aceita. */
+const MIN_WIDTH = 128;
 
 type Phase = 'idle' | 'connecting' | 'live' | 'paused' | 'failed';
 
@@ -58,24 +58,6 @@ interface Link {
     @if (!access.allowed()) {
       <p class="note" i18n="@@pc.screen.unavailable">A tela do PC não está disponível aqui.</p>
     } @else {
-      @if (monitors().length > 1) {
-        <div
-          class="monitors"
-          role="group"
-          aria-label="Monitores"
-          i18n-aria-label="@@pc.screen.monitors"
-        >
-          @for (monitor of monitors(); track monitor.id; let index = $index) {
-            <button
-              type="button"
-              [attr.aria-pressed]="monitor.id === monitorId()"
-              (click)="selectMonitor(monitor.id)"
-            >
-              <span i18n="@@pc.screen.monitor">Monitor {{ index + 1 }}</span>
-            </button>
-          }
-        </div>
-      }
       <div class="stage" [hidden]="!hasFrame()">
         <canvas
           #surface
@@ -147,11 +129,6 @@ interface Link {
       stroke-width: 1.5;
       pointer-events: none;
     }
-    .monitors {
-      display: flex;
-      gap: var(--space-2);
-    }
-    .monitors button,
     .action {
       min-height: 44px;
       padding: 0 var(--space-4);
@@ -163,10 +140,6 @@ interface Link {
       font-weight: 650;
       cursor: pointer;
       touch-action: manipulation;
-    }
-    .monitors button[aria-pressed='true'] {
-      background: var(--a-accent-soft);
-      border-color: var(--a-accent);
     }
     button:focus-visible {
       outline: 3px solid var(--a-accent);
@@ -191,8 +164,7 @@ export class ScreenPage {
   private link: Link | null = null;
 
   protected readonly phase = signal<Phase>('idle');
-  protected readonly monitors = signal<readonly ScreenMonitor[]>([]);
-  protected readonly monitorId = signal<number | null>(null);
+  protected readonly monitor = signal<ScreenMonitor | null>(null);
   protected readonly cursor = signal<ScreenCursor | null>(null);
   protected readonly state = signal<ScreenViewState>('ok');
   protected readonly hasFrame = signal(false);
@@ -200,16 +172,16 @@ export class ScreenPage {
   protected readonly canOpen = computed(
     () => this.access.allowed() && this.factory !== null && this.direct.pcSessionId() !== null,
   );
-  protected readonly current = computed(
-    () => this.monitors().find((monitor) => monitor.id === this.monitorId()) ?? null,
-  );
-  /** A posição do cursor em porcentagem da imagem; só quando ele está no monitor que se vê. */
+  /** A posição do cursor em porcentagem da imagem. */
   protected readonly pointer = computed(() => {
-    const monitor = this.current();
+    const monitor = this.monitor();
     const cursor = this.cursor();
-    if (!monitor || !cursor || cursor.m !== monitor.id) return null;
+    if (!monitor || !cursor) return null;
     const clamp = (value: number) => Math.min(100, Math.max(0, value));
-    return { left: clamp((cursor.x / monitor.w) * 100), top: clamp((cursor.y / monitor.h) * 100) };
+    return {
+      left: clamp((cursor.x / monitor.width) * 100),
+      top: clamp((cursor.y / monitor.height) * 100),
+    };
   });
   protected readonly notice = computed(() => {
     switch (this.phase()) {
@@ -259,13 +231,6 @@ export class ScreenPage {
       this.doc.defaultView?.removeEventListener('pagehide', hide);
       hide();
     });
-  }
-
-  protected selectMonitor(id: number): void {
-    if (id === this.monitorId()) return;
-    this.monitorId.set(id);
-    this.cursor.set(null);
-    this.link?.loop.restart();
   }
 
   protected stop(): void {
@@ -340,18 +305,8 @@ export class ScreenPage {
   }
 
   private viewRequest() {
-    const monitor = this.current();
-    if (!monitor) return null;
-    return {
-      m: monitor.id,
-      x: 0,
-      y: 0,
-      w: monitor.w,
-      h: monitor.h,
-      maxW: MAX_WIDTH,
-      maxH: MAX_HEIGHT,
-      q: JPEG_QUALITY,
-    };
+    const monitor = this.monitor();
+    return monitor ? { width: Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, monitor.width)) } : null;
   }
 
   private listen(link: Link): void {
@@ -388,26 +343,26 @@ export class ScreenPage {
     }
     const message = parseViewerMessage(data);
     switch (message.k) {
-      case 'ready':
-        clearTimeout(link.watchdog);
-        this.phase.set('live');
-        link.loop.start();
-        break;
       case 's.mon': {
-        this.monitors.set(message.monitors);
-        const keep = message.monitors.some((monitor) => monitor.id === this.monitorId());
-        if (!keep) {
-          const first = message.monitors.find((monitor) => monitor.primary) ?? message.monitors[0];
-          this.monitorId.set(first.id);
-          // O monitor visto sumiu: o pedido em andamento já não vale.
+        // O PC manda o tamanho do monitor assim que a sessão autoriza, sem esperar pedido: é o sinal de que está pronto.
+        const before = this.monitor();
+        const changed =
+          before !== null &&
+          (before.width !== message.monitor.width || before.height !== message.monitor.height);
+        this.monitor.set(message.monitor);
+        if (!link.loop.active) {
+          clearTimeout(link.watchdog);
+          this.phase.set('live');
+          link.loop.start();
+        } else if (changed) {
+          // O pedido em andamento termina antes; o próximo já leva o tamanho novo.
           link.loop.restart();
         }
-        if (link.loop.active) link.loop.start();
         break;
       }
       case 's.same':
         if (this.state() === 'locked') this.state.set('ok');
-        link.loop.answered(message.i);
+        link.loop.answered();
         break;
       case 's.cur':
         this.cursor.set(message.cursor);
@@ -415,7 +370,7 @@ export class ScreenPage {
       case 's.state':
         this.state.set(message.state);
         // Bloqueada, o PC responde ao pedido só com o estado: o laço segue pedindo, mais devagar, até ela voltar.
-        if (message.state === 'locked') link.loop.answered(null, true);
+        if (message.state === 'locked') link.loop.answered(true);
         break;
     }
   }
@@ -437,7 +392,7 @@ export class ScreenPage {
     if (this.link !== link) return;
     link.painting = false;
     if (this.state() === 'locked') this.state.set('ok');
-    link.loop.answered(frame.i);
+    link.loop.answered();
   }
 
   private finish(next: Phase): void {
@@ -461,8 +416,7 @@ export class ScreenPage {
     }
     this.hasFrame.set(false);
     this.cursor.set(null);
-    this.monitors.set([]);
-    this.monitorId.set(null);
+    this.monitor.set(null);
     this.phase.set(next);
   }
 }

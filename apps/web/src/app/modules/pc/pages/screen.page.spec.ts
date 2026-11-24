@@ -38,22 +38,18 @@ class FakeConnection extends EventTarget {
   }
 }
 
-const MONITORS = {
-  k: 's.mon',
-  monitors: [
-    { id: 5, x: 0, y: 0, w: 1920, h: 1080, primary: true },
-    { id: 1, x: 1920, y: 176, w: 1280, h: 720, primary: false },
-  ],
-};
+/** O que o PC manda assim que a sessão autoriza: o tamanho do monitor. */
+const MONITOR = { k: 's.mon', width: 1920, height: 1080 };
 
-function jpegFrame(i: number): ArrayBuffer {
+/** Um quadro no formato do PC (cabeçalho `UOSF` de 16 bytes e 2 bytes de JPEG). */
+function jpegFrame(sequence: number): ArrayBuffer {
   const bytes = new Uint8Array(18);
   const view = new DataView(bytes.buffer);
   view.setUint32(0, 0x554f5346);
   view.setUint8(4, 1);
   view.setUint16(6, 640);
   view.setUint16(8, 360);
-  view.setUint16(10, i);
+  view.setUint16(10, sequence);
   view.setUint32(12, 2);
   return bytes.buffer;
 }
@@ -94,20 +90,23 @@ function setup() {
   async function open() {
     action().click();
     await flush();
-    peer.channel.receive('{"k":"ready"}');
-    peer.channel.receive(JSON.stringify(MONITORS));
+    peer.channel.receive(JSON.stringify(MONITOR));
     fixture.detectChanges();
   }
   return { fixture, root, peer, signaling, allowed, parent, action, requests, open };
 }
 
 describe('Tela do PC (página)', () => {
+  let drawImage: ReturnType<typeof vi.fn>;
   beforeEach(() => {
     vi.stubGlobal(
       'createImageBitmap',
       vi.fn(async () => ({ width: 640, height: 360, close: vi.fn() })),
     );
-    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({ drawImage: vi.fn() })) as never;
+    drawImage = vi.fn();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ({
+      drawImage,
+    })) as never);
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -123,7 +122,7 @@ describe('Tela do PC (página)', () => {
     expect(root.textContent).toContain('não está disponível');
   });
 
-  it('opens the screen channel, authenticates and asks for a frame of the primary monitor', async () => {
+  it('opens the screen channel, authenticates and asks for the first frame as soon as the monitor size arrives', async () => {
     const { peer, signaling, requests, open } = setup();
     await open();
 
@@ -136,55 +135,92 @@ describe('Tela do PC (página)', () => {
     expect(peer.channel.send).toHaveBeenCalledWith(
       JSON.stringify({ k: 'auth', token: 'autorizacao-tela' }),
     );
-    expect(requests()).toHaveLength(1);
-    expect(requests()[0]).toMatchObject({ k: 's.get', m: 5, w: 1920, h: 1080 });
+    expect(requests()).toEqual([{ k: 's.get', width: 1280, fps: 6, marker: 0, reset: true }]);
   });
 
   it('pulls the next frame only after drawing the previous one', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { peer, requests, open } = setup();
     await open();
-    const first = requests()[0]['i'] as number;
     vi.advanceTimersByTime(2_000);
     expect(requests()).toHaveLength(1);
 
-    peer.channel.receive(jpegFrame(first));
+    peer.channel.receive(jpegFrame(1));
     await flush();
     vi.advanceTimersByTime(250);
     expect(requests()).toHaveLength(2);
-    expect(requests()[1]['i']).toBe(first + 1);
+    expect(requests()[1]['reset']).toBe(false);
   });
 
-  it('switches monitor and asks for the new one at once', async () => {
-    const { fixture, root, requests, open } = setup();
+  it('does not ask again while the frame is still being decoded, and asks after drawing it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let decoded!: (bitmap: { width: number; height: number; close: () => void }) => void;
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(
+        () =>
+          new Promise((resolve) => {
+            decoded = resolve;
+          }),
+      ),
+    );
+    const { peer, requests, open } = setup();
     await open();
-    const buttons = root.querySelectorAll<HTMLButtonElement>('.monitors button');
-    expect(buttons).toHaveLength(2);
-    buttons[1].click();
-    fixture.detectChanges();
-    expect(requests().map((r) => r['m'])).toEqual([5, 1]);
-    expect(buttons[1].getAttribute('aria-pressed')).toBe('true');
+
+    peer.channel.receive(jpegFrame(1));
+    await flush();
+    vi.advanceTimersByTime(5_000);
+    expect(requests()).toHaveLength(1);
+    expect(drawImage).not.toHaveBeenCalled();
+
+    decoded({ width: 640, height: 360, close: vi.fn() });
+    await flush();
+    expect(drawImage).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(250);
+    expect(requests()).toHaveLength(2);
   });
 
-  it('draws the cursor from s.cur only on the monitor being viewed', async () => {
+  it('keeps the pending request when the monitor size changes and asks with the new size after the frame', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { peer, requests, open } = setup();
+    await open();
+    peer.channel.receive(JSON.stringify({ k: 's.mon', width: 800, height: 600 }));
+    vi.advanceTimersByTime(2_000);
+    expect(requests().map((r) => r['width'])).toEqual([1280]);
+
+    peer.channel.receive(jpegFrame(1));
+    await flush();
+    vi.advanceTimersByTime(0);
+    expect(requests().map((r) => r['width'])).toEqual([1280, 800]);
+  });
+
+  it('ends the session when a frame arrives while the previous one is still being decoded', async () => {
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(() => new Promise(() => undefined)),
+    );
+    const { peer, open } = setup();
+    await open();
+    peer.channel.receive(jpegFrame(1));
+    await flush();
+    peer.channel.receive(jpegFrame(2));
+    expect(peer.close).toHaveBeenCalled();
+  });
+
+  it('draws the cursor from s.cur as a share of the monitor', async () => {
     const { fixture, peer, root, open } = setup();
     await open();
-    peer.channel.receive('{"k":"s.cur","m":5,"x":960,"y":270}');
+    peer.channel.receive('{"k":"s.cur","x":960,"y":270}');
     fixture.detectChanges();
     const cursor = root.querySelector<SVGElement>('.cursor')!;
     expect(cursor.style.left).toBe('50%');
     expect(cursor.style.top).toBe('25%');
-
-    peer.channel.receive('{"k":"s.cur","m":1,"x":10,"y":10}');
-    fixture.detectChanges();
-    expect(root.querySelector('.cursor')).toBeNull();
   });
 
   it('shows the locked notice, keeps pulling slowly and clears it with the next frame', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { fixture, peer, root, requests, open } = setup();
     await open();
-    const first = requests()[0]['i'] as number;
 
     peer.channel.receive('{"k":"s.state","state":"locked"}');
     fixture.detectChanges();
@@ -192,7 +228,7 @@ describe('Tela do PC (página)', () => {
     vi.advanceTimersByTime(1_100);
     expect(requests()).toHaveLength(2);
 
-    peer.channel.receive(jpegFrame(first + 1));
+    peer.channel.receive(jpegFrame(1));
     await flush();
     fixture.detectChanges();
     expect(root.querySelector('.notice')).toBeNull();
@@ -210,7 +246,6 @@ describe('Tela do PC (página)', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { peer, signaling, requests, open } = setup();
     await open();
-    const first = requests()[0]['i'] as number;
 
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
     document.dispatchEvent(new Event('visibilitychange'));
@@ -218,7 +253,7 @@ describe('Tela do PC (página)', () => {
     expect(peer.close).toHaveBeenCalled();
     expect(signaling.close).toHaveBeenCalledWith('sessao-tela', true);
 
-    peer.channel.receive(jpegFrame(first));
+    peer.channel.receive(jpegFrame(1));
     await flush();
     vi.advanceTimersByTime(5_000);
     expect(requests()).toHaveLength(1);

@@ -5,21 +5,18 @@ import {
   type ScreenViewRequest,
 } from './screen-viewer';
 
-const VIEW: ScreenViewRequest = {
-  m: 1,
-  x: 0,
-  y: 0,
-  w: 1920,
-  h: 1080,
-  maxW: 1280,
-  maxH: 1280,
-  q: 60,
-};
+const VIEW: ScreenViewRequest = { width: 1280 };
 
-function frameBytes(i: number, jpeg: number[], header: Record<string, number> = {}): ArrayBuffer {
+/** Um quadro no formato do PC: `>4sBBHHHI` (marca, versão, reservado, largura, altura, sequência, tamanho). */
+function frameBytes(
+  sequence: number,
+  jpeg: number[],
+  header: Record<string, number> = {},
+): ArrayBuffer {
   const h = {
     magic: 0x554f5346,
     version: 1,
+    flags: 0,
     width: 640,
     height: 360,
     size: jpeg.length,
@@ -29,35 +26,32 @@ function frameBytes(i: number, jpeg: number[], header: Record<string, number> = 
   const view = new DataView(bytes.buffer);
   view.setUint32(0, h['magic']);
   view.setUint8(4, h['version']);
+  view.setUint8(5, h['flags']);
   view.setUint16(6, h['width']);
   view.setUint16(8, h['height']);
-  view.setUint16(10, i);
+  view.setUint16(10, sequence);
   view.setUint32(12, h['size']);
   bytes.set(jpeg, 16);
   return bytes.buffer;
 }
 
 describe('parseViewerMessage', () => {
-  it('reads the monitor list', () => {
-    const message = parseViewerMessage(
-      JSON.stringify({
-        k: 's.mon',
-        monitors: [
-          { id: 5, x: 0, y: 0, w: 1920, h: 1080, primary: true },
-          { id: 1, x: 1920, y: 176, w: 1280, h: 720, primary: false },
-        ],
-      }),
-    );
-    expect(message.k).toBe('s.mon');
-    expect(message.k === 's.mon' && message.monitors.map((m) => m.id)).toEqual([5, 1]);
+  it('reads the monitor size sent first by the PC', () => {
+    expect(parseViewerMessage('{"k":"s.mon","width":1920,"height":1080}')).toEqual({
+      k: 's.mon',
+      monitor: { width: 1920, height: 1080 },
+    });
   });
 
   it('reads cursor, same and state messages', () => {
-    expect(parseViewerMessage('{"k":"s.cur","m":1,"x":10,"y":20}')).toEqual({
+    expect(parseViewerMessage('{"k":"s.cur","x":10,"y":20}')).toEqual({
       k: 's.cur',
-      cursor: { m: 1, x: 10, y: 20 },
+      cursor: { x: 10, y: 20 },
     });
-    expect(parseViewerMessage('{"k":"s.same","i":7}')).toEqual({ k: 's.same', i: 7 });
+    expect(parseViewerMessage('{"k":"s.same","crc":4294967295}')).toEqual({
+      k: 's.same',
+      crc: 4294967295,
+    });
     expect(parseViewerMessage('{"k":"s.state","state":"locked"}')).toEqual({
       k: 's.state',
       state: 'locked',
@@ -65,11 +59,15 @@ describe('parseViewerMessage', () => {
   });
 
   it.each([
-    '{"k":"s.mon","monitors":[]}',
-    '{"k":"s.mon","monitors":[{"id":1,"x":0,"y":0,"w":0,"h":10}]}',
-    '{"k":"s.cur","m":1,"x":"a","y":2}',
+    '{"k":"s.mon"}',
+    '{"k":"s.mon","width":0,"height":10}',
+    '{"k":"s.mon","width":10,"height":"a"}',
+    '{"k":"s.cur","x":"a","y":2}',
+    '{"k":"s.cur","x":1}',
     '{"k":"s.state","state":"x"}',
     '{"k":"s.same"}',
+    '{"k":"s.same","crc":-1}',
+    '{"k":"s.same","crc":4294967296}',
     '{"k":"outra"}',
     'null',
   ])('rejects %s', (text) => {
@@ -82,12 +80,26 @@ describe('ScreenViewerFrameAssembler', () => {
     const assembler = new ScreenViewerFrameAssembler();
     expect(assembler.push(frameBytes(3, [1, 2, 3, 4, 5], { size: 8 }))).toBeNull();
     const frame = assembler.push(new Uint8Array([6, 7, 8]).buffer);
-    expect(frame).toMatchObject({ i: 3, width: 640, height: 360 });
+    expect(frame).toMatchObject({ sequence: 3, width: 640, height: 360 });
     expect(frame?.chunks.reduce((n, c) => n + c.byteLength, 0)).toBe(8);
   });
 
   it('returns a frame that fits in one message', () => {
-    expect(new ScreenViewerFrameAssembler().push(frameBytes(1, [9, 9]))).toMatchObject({ i: 1 });
+    expect(new ScreenViewerFrameAssembler().push(frameBytes(1, [9, 9]))).toMatchObject({
+      sequence: 1,
+    });
+  });
+
+  it('requires the UOSF header: a bare JPEG is refused', () => {
+    const jpeg = new Uint8Array(64);
+    jpeg.set([0xff, 0xd8, 0xff, 0xe0]);
+    expect(() => new ScreenViewerFrameAssembler().push(jpeg.buffer)).toThrow('cabeçalho');
+  });
+
+  it('refuses another version', () => {
+    expect(() => new ScreenViewerFrameAssembler().push(frameBytes(1, [1], { version: 2 }))).toThrow(
+      'cabeçalho',
+    );
   });
 
   it('rejects a wrong magic, an empty frame and an overflowing chunk', () => {
@@ -97,7 +109,7 @@ describe('ScreenViewerFrameAssembler', () => {
     assembler.push(frameBytes(1, [1, 2], { size: 3 }));
     expect(() => assembler.push(new Uint8Array(5).buffer)).toThrow();
     // Depois do erro o montador volta a esperar um cabeçalho.
-    expect(assembler.push(frameBytes(2, [1]))).toMatchObject({ i: 2 });
+    expect(assembler.push(frameBytes(2, [1]))).toMatchObject({ sequence: 2 });
   });
 });
 
@@ -124,15 +136,24 @@ describe('ScreenFrameLoop', () => {
   });
   afterEach(() => vi.useRealTimers());
 
+  it('asks with the fields the PC reads, and resets its counters on the first request only', () => {
+    const loop = make(5);
+    loop.start();
+    expect(sent).toEqual([{ k: 's.get', width: 1280, fps: 5, marker: 0, reset: true }]);
+    loop.answered();
+    vi.advanceTimersByTime(250);
+    expect(sent[1]).toEqual({ k: 's.get', width: 1280, fps: 5, marker: 0, reset: false });
+    loop.stop();
+  });
+
   it('asks for one frame at a time and the next only after the answer', () => {
     const loop = make();
     loop.start();
-    expect(sent).toEqual([{ k: 's.get', i: 1, ...VIEW }]);
     vi.advanceTimersByTime(5_000);
     expect(sent).toHaveLength(1);
-    loop.answered(1);
+    loop.answered();
     vi.advanceTimersByTime(250);
-    expect(sent.map((m) => m['i'])).toEqual([1, 2]);
+    expect(sent).toHaveLength(2);
     loop.stop();
   });
 
@@ -140,7 +161,7 @@ describe('ScreenFrameLoop', () => {
     const loop = make(5);
     loop.start();
     vi.advanceTimersByTime(50);
-    loop.answered(1);
+    loop.answered();
     vi.advanceTimersByTime(100);
     expect(sent).toHaveLength(1);
     vi.advanceTimersByTime(60);
@@ -148,16 +169,17 @@ describe('ScreenFrameLoop', () => {
     loop.stop();
   });
 
-  it('ignores an answer to an old request', () => {
+  it('ignores an answer when nothing is pending', () => {
     const loop = make();
     loop.start();
-    expect(loop.answered(99)).toBe(false);
+    expect(loop.answered()).toBe(true);
+    expect(loop.answered()).toBe(false);
     vi.advanceTimersByTime(1_000);
-    expect(sent).toHaveLength(1);
+    expect(sent).toHaveLength(2);
     loop.stop();
   });
 
-  it('waits for the monitor list before asking', () => {
+  it('waits for the monitor size before asking', () => {
     view = null;
     const loop = make();
     loop.start();
@@ -165,26 +187,38 @@ describe('ScreenFrameLoop', () => {
     view = VIEW;
     loop.start();
     expect(sent).toHaveLength(1);
+    expect(sent[0]['reset']).toBe(true);
     loop.stop();
   });
 
-  it('restart drops the pending request and asks again with the new view', () => {
+  it('restart with a request pending keeps it and sends the new view only after the answer', () => {
     const loop = make();
     loop.start();
-    view = { ...VIEW, m: 5 };
+    view = { width: 640 };
     loop.restart();
-    expect(sent.map((m) => [m['i'], m['m']])).toEqual([
-      [1, 1],
-      [2, 5],
-    ]);
-    expect(loop.answered(1)).toBe(false);
+    vi.advanceTimersByTime(5_000);
+    expect(sent.map((m) => m['width'])).toEqual([1280]);
+
+    expect(loop.answered()).toBe(true);
+    vi.advanceTimersByTime(0);
+    expect(sent.map((m) => m['width'])).toEqual([1280, 640]);
     loop.stop();
   });
 
-  it('slows down while the answer is a locked state without a number', () => {
+  it('restart with nothing pending asks at once', () => {
     const loop = make();
     loop.start();
-    loop.answered(null, true);
+    loop.answered();
+    view = { width: 640 };
+    loop.restart();
+    expect(sent.map((m) => m['width'])).toEqual([1280, 640]);
+    loop.stop();
+  });
+
+  it('slows down while the answer is a locked state', () => {
+    const loop = make();
+    loop.start();
+    loop.answered(true);
     vi.advanceTimersByTime(900);
     expect(sent).toHaveLength(1);
     vi.advanceTimersByTime(150);
