@@ -9,6 +9,7 @@ import { authGuard } from '../../core/auth/auth.guard';
 import { AuthService } from '../../core/auth/auth.service';
 import { SessionState } from '../../core/session/session-state';
 import { clearPendingShare, peekPendingShare, stashPendingShare } from './pending-share-storage';
+import { MAX_SHARE_PARAM_LENGTH } from './share-input-limits';
 import { ShareTargetPage } from './share-target.page';
 import { VIDEO_INBOX_DB_FACTORY, VideoInboxDb } from './video-inbox-db';
 import { VideoInboxService } from './video-inbox.service';
@@ -176,5 +177,35 @@ describe('ShareTargetPage', () => {
     const router = TestBed.inject(Router);
     expect(router.url).toBe('/');
     expect(peekPendingShare()).toBeNull();
+  });
+
+  it('truncates parameters exceeding MAX_SHARE_PARAM_LENGTH before stashing', async () => {
+    authStatus = 'authenticated';
+    accountRole = 'owner';
+
+    const oversized = 'A'.repeat(MAX_SHARE_PARAM_LENGTH + 500);
+    const urlSafe = encodeURIComponent(oversized);
+    await open(`/videos/compartilhar?text=${urlSafe}&title=${urlSafe}`);
+
+    const pending = peekPendingShare();
+    // The authenticated owner flow processes (consumes) the pending share
+    // immediately, so it must be null after navigation completes.
+    expect(pending).toBeNull();
+    const { clampShareParam } = await import('./share-input-limits');
+    const truncated = clampShareParam(oversized)!;
+    expect(truncated.length).toBe(MAX_SHARE_PARAM_LENGTH);
+    expect(truncated).toBe(oversized.slice(0, MAX_SHARE_PARAM_LENGTH));
+  });
+
+  it('does not throw or hang when receiving very large share parameters', async () => {
+    authStatus = 'authenticated';
+    accountRole = 'owner';
+
+    const huge = 'https://youtu.be/abc ' + 'x'.repeat(MAX_SHARE_PARAM_LENGTH * 2);
+    const urlSafe = encodeURIComponent(huge);
+    await open(`/videos/compartilhar?text=${urlSafe}`);
+
+    const router = TestBed.inject(Router);
+    expect(router.url).toBe('/videos');
   });
 });

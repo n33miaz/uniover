@@ -1,6 +1,7 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { stashPendingShare } from './pending-share-storage';
+import { clampShareParam } from './share-input-limits';
 
 /**
  * Ponto de entrada do Web Share Target do PWA (`/videos/compartilhar`).
@@ -59,9 +60,9 @@ export class ShareTargetPage implements OnInit {
 
   async ngOnInit(): Promise<void> {
     const query = this.route.snapshot.queryParamMap;
-    const url = query.get('url');
-    const text = query.get('text');
-    const title = query.get('title');
+    const url = clampShareParam(query.get('url'));
+    const text = clampShareParam(query.get('text'));
+    const title = clampShareParam(query.get('title'));
     if (url?.trim() || text?.trim() || title?.trim()) stashPendingShare({ url, text, title });
     await this.router.navigateByUrl('/videos', { replaceUrl: true });
   }
