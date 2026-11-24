@@ -1,4 +1,5 @@
 import type { RawSharePayload } from './video-inbox.model';
+import { clampShareParam } from './share-input-limits';
 
 // Links sem protocolo aparecem principalmente quando o texto é copiado do aplicativo de origem.
 const LINK =
@@ -7,7 +8,8 @@ const LINK =
 export function extractVideoUrl(payload: RawSharePayload | null | undefined): string | null {
   for (const field of [payload?.url, payload?.text, payload?.title]) {
     if (typeof field !== 'string') continue;
-    for (const match of field.matchAll(LINK)) {
+    const clamped = clampShareParam(field)!;
+    for (const match of clamped.matchAll(LINK)) {
       let candidate = match[0];
       let extraClosing =
         (candidate.match(/\)/g)?.length ?? 0) - (candidate.match(/\(/g)?.length ?? 0);

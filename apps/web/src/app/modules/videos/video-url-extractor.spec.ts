@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { extractVideoUrl } from './video-url-extractor';
+import { MAX_SHARE_PARAM_LENGTH } from './share-input-limits';
 
 describe('extractVideoUrl', () => {
   it('extracts direct URL when present in payload.url', () => {
@@ -106,5 +107,34 @@ describe('extractVideoUrl', () => {
     expect(extractVideoUrl({})).toBeNull();
     expect(extractVideoUrl(null)).toBeNull();
     expect(extractVideoUrl(undefined)).toBeNull();
+  });
+
+  it('truncates text longer than MAX_SHARE_PARAM_LENGTH and extracts URL within range', () => {
+    const prefix = 'https://youtu.be/dQw4w9WgXcQ ';
+    const oversized = prefix + 'x'.repeat(MAX_SHARE_PARAM_LENGTH * 2);
+    const result = extractVideoUrl({ text: oversized });
+    expect(result).toBe('https://youtu.be/dQw4w9WgXcQ');
+  });
+
+  it('does not extract URL placed beyond the truncation boundary', () => {
+    const padding = 'a'.repeat(MAX_SHARE_PARAM_LENGTH);
+    const tail = ' https://youtu.be/abc';
+    const result = extractVideoUrl({ text: padding + tail });
+    expect(result).toBeNull();
+  });
+
+  it('handles all fields oversized without throwing', () => {
+    const big = 'x'.repeat(MAX_SHARE_PARAM_LENGTH + 1000);
+    expect(() => extractVideoUrl({ url: big, text: big, title: big })).not.toThrow();
+    expect(extractVideoUrl({ url: big, text: big, title: big })).toBeNull();
+  });
+
+  it('does not hang on pathological regex input within the limit', () => {
+    // Repetitive near-match pattern that could cause backtracking on the LINK regex.
+    const evil = 'https://youtu.be/' + 'a/'.repeat(MAX_SHARE_PARAM_LENGTH / 2);
+    const start = performance.now();
+    extractVideoUrl({ text: evil.slice(0, MAX_SHARE_PARAM_LENGTH) });
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeLessThan(2000);
   });
 });
