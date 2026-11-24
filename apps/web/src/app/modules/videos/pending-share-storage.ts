@@ -11,10 +11,16 @@ let fallback: PendingShare | null = null;
 
 export function stashPendingShare(payload: RawSharePayload): void {
   fallback = { ...payload, id: crypto.randomUUID(), timestamp: payload.timestamp ?? Date.now() };
+  const json = JSON.stringify(fallback);
   try {
-    sessionStorage.setItem(PENDING_SHARE_STORAGE_KEY, JSON.stringify(fallback));
+    sessionStorage.setItem(PENDING_SHARE_STORAGE_KEY, json);
   } catch {
-    // A navegação até o login ainda funciona em memória se o navegador recusar a gravação.
+    // sessionStorage indisponível (modo privado restrito ou cota): tenta localStorage para sobreviver a reloads.
+    try {
+      localStorage.setItem(PENDING_SHARE_STORAGE_KEY, json);
+    } catch {
+      // Ambos bloqueados: a cópia em memória ainda serve enquanto a aba não fechar.
+    }
   }
 }
 
@@ -22,6 +28,12 @@ export function peekPendingShare(): PendingShare | null {
   if (fallback) return fallback;
   try {
     const raw = sessionStorage.getItem(PENDING_SHARE_STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as PendingShare;
+  } catch {
+    // sessionStorage falhou: tenta localStorage abaixo.
+  }
+  try {
+    const raw = localStorage.getItem(PENDING_SHARE_STORAGE_KEY);
     return raw ? (JSON.parse(raw) as PendingShare) : null;
   } catch {
     return null;
@@ -33,6 +45,11 @@ export function clearPendingShare(): void {
   try {
     sessionStorage.removeItem(PENDING_SHARE_STORAGE_KEY);
   } catch {
-    // A cópia em memória já foi removida.
+    // sessionStorage indisponível.
+  }
+  try {
+    localStorage.removeItem(PENDING_SHARE_STORAGE_KEY);
+  } catch {
+    // localStorage indisponível.
   }
 }

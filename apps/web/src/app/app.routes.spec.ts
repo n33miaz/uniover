@@ -162,6 +162,13 @@ describe('app routes', () => {
     expect(route?.canMatch).toBeUndefined();
     expect(route?.canActivate).toBeUndefined();
   });
+
+  it('protects /videos with moduleGuard at the route level', () => {
+    const shell = routes.find((r) => r.path === '' && r.children);
+    const videosRoute = shell?.children?.find((r) => r.path === 'videos');
+    expect(videosRoute?.canMatch).toBeDefined();
+    expect(videosRoute!.canMatch!.length).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe('app routes for a guest', () => {

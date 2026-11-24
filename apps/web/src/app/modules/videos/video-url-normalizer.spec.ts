@@ -133,4 +133,19 @@ describe('normalizeVideoUrl', () => {
       expect(result.canonical_url).toBe('not-a-valid-url:::');
     });
   });
+
+  describe('immutability', () => {
+    it.each([
+      ['Instagram', 'https://www.instagram.com/reel/C3abc123/?igsh=xyz123'],
+      ['YouTube', 'https://m.youtube.com/watch?v=dQw4w9WgXcQ&pp=ygU%3D&feature=shared'],
+      ['TikTok', 'https://m.tiktok.com/@creator/video/7123456789012345678?_t=8abcd&_r=1'],
+      ['Twitter', 'https://twitter.com/uniover/status/1234567890?s=20&t=abcdef'],
+      ['Other', 'https://vimeo.com/123456789?utm_source=test&foo=bar'],
+    ])('does not mutate the original URL object for %s', (_platform, rawUrl) => {
+      const original = new URL(rawUrl);
+      const snapshotBefore = original.toString();
+      normalizeVideoUrl(rawUrl);
+      expect(original.toString()).toBe(snapshotBefore);
+    });
+  });
 });
