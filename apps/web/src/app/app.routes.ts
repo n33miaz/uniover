@@ -98,6 +98,7 @@ export const routes: Routes = [
       },
       {
         path: 'videos',
+        canMatch: [moduleGuard('videos')],
         data: { title: $localize`:@@module.videos.title:Vídeos` },
         loadChildren: () => import('./modules/videos/videos.routes').then((m) => m.VIDEOS_ROUTES),
       },

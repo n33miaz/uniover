@@ -26,7 +26,8 @@ function stripQueryParams(url: URL, paramsToRemove: Set<string>): void {
   }
 }
 
-function normalizeInstagram(url: URL): NormalizedVideoUrl {
+function normalizeInstagram(parsed: URL): NormalizedVideoUrl {
+  const url = new URL(parsed.toString());
   url.protocol = 'https:';
   url.hostname = 'www.instagram.com';
 
@@ -62,7 +63,8 @@ function normalizeInstagram(url: URL): NormalizedVideoUrl {
   };
 }
 
-function normalizeYouTube(url: URL): NormalizedVideoUrl {
+function normalizeYouTube(parsed: URL): NormalizedVideoUrl {
+  const url = new URL(parsed.toString());
   url.protocol = 'https:';
   const hostname = url.hostname.toLowerCase();
 
@@ -122,7 +124,8 @@ function normalizeYouTube(url: URL): NormalizedVideoUrl {
   };
 }
 
-function normalizeTikTok(url: URL): NormalizedVideoUrl {
+function normalizeTikTok(parsed: URL): NormalizedVideoUrl {
+  const url = new URL(parsed.toString());
   url.protocol = 'https:';
   if (url.hostname.toLowerCase() === 'm.tiktok.com') {
     url.hostname = 'www.tiktok.com';
@@ -147,7 +150,8 @@ function normalizeTikTok(url: URL): NormalizedVideoUrl {
   };
 }
 
-function normalizeTwitter(url: URL): NormalizedVideoUrl {
+function normalizeTwitter(parsed: URL): NormalizedVideoUrl {
+  const url = new URL(parsed.toString());
   url.protocol = 'https:';
   if (url.hostname !== 't.co') url.hostname = 'x.com';
 
@@ -167,7 +171,8 @@ function normalizeTwitter(url: URL): NormalizedVideoUrl {
   };
 }
 
-function normalizeOther(url: URL): NormalizedVideoUrl {
+function normalizeOther(parsed: URL): NormalizedVideoUrl {
+  const url = new URL(parsed.toString());
   url.hostname = url.hostname.toLowerCase();
   stripQueryParams(url, GLOBAL_TRACKING_PARAMS);
 

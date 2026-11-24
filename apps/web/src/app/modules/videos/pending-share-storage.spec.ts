@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearPendingShare, peekPendingShare, stashPendingShare } from './pending-share-storage';
+import {
+  clearPendingShare,
+  peekPendingShare,
+  PENDING_SHARE_STORAGE_KEY,
+  stashPendingShare,
+} from './pending-share-storage';
 
 describe('pending-share-storage', () => {
   beforeEach(() => {
@@ -9,6 +14,7 @@ describe('pending-share-storage', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     sessionStorage.clear();
     localStorage.clear();
     clearPendingShare();
@@ -73,5 +79,36 @@ describe('pending-share-storage', () => {
 
     clearPendingShare();
     expect(peekPendingShare()).toBeNull();
+  });
+
+  it('survives a reload via localStorage when sessionStorage fails', () => {
+    const denyAccess = () => {
+      throw new Error('SecurityError');
+    };
+    const blockedSessionStorage: Storage = {
+      length: 0,
+      key: () => null,
+      getItem: denyAccess,
+      setItem: denyAccess,
+      removeItem: denyAccess,
+      clear: denyAccess,
+    };
+    vi.stubGlobal('sessionStorage', blockedSessionStorage);
+
+    stashPendingShare({ url: 'https://www.youtube.com/watch?v=abc' });
+
+    // localStorage deve ter recebido o item como fallback
+    const stored = localStorage.getItem(PENDING_SHARE_STORAGE_KEY);
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored!).url).toBe('https://www.youtube.com/watch?v=abc');
+
+    // Simula reload: limpa tudo, e reescreve em localStorage (como se ele tivesse sobrevivido ao reload)
+    clearPendingShare();
+    localStorage.setItem(PENDING_SHARE_STORAGE_KEY, stored!);
+
+    // localStorage ainda devolve o item salvo antes do reload
+    const peeked = peekPendingShare();
+    expect(peeked).not.toBeNull();
+    expect(peeked?.url).toBe('https://www.youtube.com/watch?v=abc');
   });
 });
