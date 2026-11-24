@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -27,7 +28,10 @@ internal sealed record CapacityServer(
 
 internal sealed record CapacityAlertItem(Guid Id, string Metric, int Percent, DateTimeOffset DetectedAt);
 
-internal sealed record CapacityMarkSeenRequest(Guid[] AlertIds);
+internal sealed record CapacityMarkSeenRequest([property: MaxLength(CapacityMarkSeenRequest.MaxAlertIds)] Guid[] AlertIds)
+{
+    public const int MaxAlertIds = 50;
+}
 
 /// <summary>O cartão inteiro. <c>MeasuredAt</c> é quando o banco foi medido (pode ter alguns minutos); o servidor é lido na hora.</summary>
 internal sealed record CapacityResponse(
@@ -132,6 +136,14 @@ internal static class CapacityEndpoint
                     return Results.ValidationProblem(new Dictionary<string, string[]>
                     {
                         ["alertIds"] = ["A lista de IDs dos avisos é obrigatória."],
+                    });
+                }
+
+                if (request.AlertIds.Length > CapacityMarkSeenRequest.MaxAlertIds)
+                {
+                    return Results.ValidationProblem(new Dictionary<string, string[]>
+                    {
+                        ["alertIds"] = [$"A lista de avisos não pode ter mais de {CapacityMarkSeenRequest.MaxAlertIds} itens."],
                     });
                 }
 

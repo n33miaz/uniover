@@ -28,8 +28,8 @@
         >
           Dispensar
         </button>
-        @if (dismissFailed()) {
-          <p class="error dismiss-error" role="alert">{{ dismissFailedText }}</p>
+        @if (dismissError(); as message) {
+          <p class="error dismiss-error" role="alert">{{ message }}</p>
         }
       </div>
     }

@@ -9,7 +9,7 @@ import {
   formatUptime,
   sparklinePoints,
 } from './capacity-format';
-import { CapacityBand, CapacityReport, SystemApi } from './system-api';
+import { CapacityAlertDismissalError, CapacityBand, CapacityReport, SystemApi } from './system-api';
 
 /** Uma barra do cartão: o que mede, quanto usa de quanto, a faixa e, quando é estimativa, o porquê em uma frase. */
 interface Meter {
@@ -42,8 +42,7 @@ export class SystemCapacitySection {
   protected readonly report = signal<CapacityReport | null>(null);
   protected readonly failed = signal(false);
   protected readonly dismissing = signal(false);
-  protected readonly dismissFailed = signal(false);
-  protected readonly dismissFailedText = $localize`:@@settings.system.capacity.dismiss-failed:Não foi possível dispensar os avisos. Tente novamente.`;
+  protected readonly dismissError = signal<string | null>(null);
 
   protected readonly meters = computed<readonly Meter[]>(() => {
     const report = this.report();
@@ -118,13 +117,17 @@ export class SystemCapacitySection {
 
   protected async dismiss(alerts: CapacityReport['alerts']): Promise<void> {
     if (this.dismissing() || alerts.length === 0) return;
-    this.dismissFailed.set(false);
+    this.dismissError.set(null);
     this.dismissing.set(true);
     try {
       await this.system.dismissCapacityAlerts(alerts.map((alert) => alert.id));
       await this.load();
-    } catch {
-      this.dismissFailed.set(true);
+    } catch (error) {
+      this.dismissError.set(
+        error instanceof CapacityAlertDismissalError
+          ? error.message
+          : $localize`:@@settings.system.capacity.dismiss-failed:Não foi possível dispensar os avisos. Tente novamente.`,
+      );
     } finally {
       this.dismissing.set(false);
     }

@@ -333,6 +333,24 @@ public sealed class CapacityTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Dismissing_ValidatesTheMaximumNumberOfAlertIds()
+    {
+        await using var app = await IdentityApp.StartAsync(postgres);
+        var owner = await app.LoginAsync();
+        var alertIds = Enumerable.Range(0, 51).Select(_ => Guid.NewGuid()).ToArray();
+
+        using var rejected = await app.SendAsync(HttpMethod.Post, SeenRoute, new { alertIds }, owner.AccessToken);
+        rejected.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (rejected.Content.Headers.ContentType?.MediaType).Should().Be("application/problem+json");
+        var problem = await IdentityApp.JsonAsync(rejected);
+        problem.GetProperty("errors").GetProperty("alertIds").EnumerateArray().Single().GetString()
+            .Should().Be("A lista de avisos não pode ter mais de 50 itens.");
+
+        using var accepted = await app.SendAsync(HttpMethod.Post, SeenRoute, new { alertIds = alertIds[..50] }, owner.AccessToken);
+        accepted.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
     public async Task Dismissing_OnlyTouchesTheOpenAlerts()
     {
         await using var app = await IdentityApp.StartAsync(postgres);

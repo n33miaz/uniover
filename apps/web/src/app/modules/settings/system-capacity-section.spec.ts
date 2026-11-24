@@ -1,7 +1,6 @@
-import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { SessionState } from '../../core/session/session-state';
-import { CapacityReport, SystemApi } from './system-api';
+import { CapacityAlertDismissalError, CapacityReport, SystemApi } from './system-api';
 import { SystemCapacitySection } from './system-capacity-section';
 
 const MIB = 1024 * 1024;
@@ -249,12 +248,9 @@ describe('SystemCapacitySection', () => {
         ],
       }),
     );
-    system.dismissCapacityAlerts.mockRejectedValueOnce(
-      new HttpErrorResponse({
-        status: 503,
-        error: { type: 'https://uniover.app/problems/capacity-alerts-busy' },
-      }),
-    );
+    const message =
+      'O serviço de avisos está temporariamente indisponível. Tente novamente em instantes.';
+    system.dismissCapacityAlerts.mockRejectedValueOnce(new CapacityAlertDismissalError(message));
     const fixture = await renderFixture();
     const root = fixture.nativeElement as HTMLElement;
     const button = root.querySelector<HTMLButtonElement>('.alert button')!;
@@ -266,9 +262,7 @@ describe('SystemCapacitySection', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(root.querySelector('.alert')?.textContent).toContain('Horas do Mês, Dados');
-    expect(root.querySelector('.alert [role="alert"]')?.textContent?.trim()).toBe(
-      'Não foi possível dispensar os avisos. Tente novamente.',
-    );
+    expect(root.querySelector('.alert [role="alert"]')?.textContent?.trim()).toBe(message);
     expect(button.disabled).toBe(false);
     expect(system.capacity).toHaveBeenCalledTimes(1);
 

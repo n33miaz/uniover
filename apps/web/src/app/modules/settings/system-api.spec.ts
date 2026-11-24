@@ -37,12 +37,32 @@ describe('SystemApi', () => {
   afterEach(() => http.verify());
 
   it('posts the displayed capacity alert IDs', async () => {
-    const dismissal = api.dismissCapacityAlerts(['a1', 'a2']);
+    const alertIds = Array.from({ length: 50 }, (_, index) => `a${index}`);
+    const dismissal = api.dismissCapacityAlerts(alertIds);
     const request = http.expectOne('/api/v1/identity/capacity/alerts/seen');
     expect(request.request.method).toBe('POST');
-    expect(request.request.body).toEqual({ alertIds: ['a1', 'a2'] });
+    expect(request.request.body).toEqual({ alertIds });
     request.flush(null, { status: 204, statusText: 'No Content' });
     await dismissal;
+  });
+
+  it('rejects more than 50 capacity alert IDs before posting', async () => {
+    const dismissal = api.dismissCapacityAlerts(Array<string>(51).fill('a1'));
+    http.expectNone('/api/v1/identity/capacity/alerts/seen');
+    await expect(dismissal).rejects.toThrow('A lista de avisos não pode ter mais de 50 itens.');
+  });
+
+  it('reports temporary unavailability when dismissing capacity alerts returns 503', async () => {
+    const dismissal = api.dismissCapacityAlerts(['a1']);
+    http.expectOne('/api/v1/identity/capacity/alerts/seen').flush(null, {
+      status: 503,
+      statusText: 'Service Unavailable',
+    });
+    await expect(dismissal).rejects.toMatchObject({
+      message:
+        'O serviço de avisos está temporariamente indisponível. Tente novamente em instantes.',
+      cause: { status: 503 },
+    });
   });
 
   it('reads the TV configuration', async () => {
