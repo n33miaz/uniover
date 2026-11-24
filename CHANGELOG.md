@@ -48,10 +48,8 @@
 
 * **web:** dismiss only displayed capacity alerts
 * **web:** type capacity alert dismissal
-* **web:** address review on video share inbox
 * **web:** clamp share target input parameters
 * **web:** guard videos module and harden share
-* **web:** address coderabbit review feedback
 * **identity:** limit capacity alert ids to 50
 
 
