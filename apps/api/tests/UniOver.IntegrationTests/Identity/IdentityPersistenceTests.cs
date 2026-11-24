@@ -17,6 +17,8 @@ public sealed class IdentityPersistenceTests(PostgresFixture postgres) : IDispos
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
+    private static readonly string[] BadPermissions = ["nao-existe", "TV:CONTROL", "tv:*", "", .. AccessPermissions.OwnerOnly];
+
     // Fecha os pools deste teste (cada um tem o seu banco): evita esgotar as conexões do contêiner compartilhado.
     public void Dispose() => NpgsqlConnection.ClearAllPools();
 
@@ -326,13 +328,14 @@ public sealed class IdentityPersistenceTests(PostgresFixture postgres) : IDispos
         await Exec(conn, "INSERT INTO identity.users (id, email, display_name, password_hash, created_at, failed_login_count, role) "
             + $"VALUES ('{InvitedGuestId}', 'alice@uniover.test', 'Alice', 'hash', now(), 0, 'guest')");
 
-        // Todo item do catálogo do código passa na restrição do banco: se o catálogo crescer sem migration, este teste cai.
-        foreach (var permission in AccessPermissions.All)
+        // Todo item concedível do catálogo do código passa na restrição do banco: se o catálogo crescer sem migration, este teste cai.
+        foreach (var permission in AccessPermissions.Grantable)
         {
             await Exec(conn, $"INSERT INTO identity.user_grants (user_id, permission, granted_by, granted_at) VALUES ('{InvitedGuestId}', '{permission}', '{OwnerId}', now())");
         }
 
-        foreach (var bad in new[] { "nao-existe", "TV:CONTROL", "tv:*", "" })
+        // As permissões exclusivas do dono nunca entram numa concessão: o banco também as recusa.
+        foreach (var bad in BadPermissions)
         {
             var act = async () => await Exec(conn,
                 $"INSERT INTO identity.user_grants (user_id, permission, granted_by, granted_at) VALUES ('{InvitedGuestId}', '{bad}', '{OwnerId}', now())");

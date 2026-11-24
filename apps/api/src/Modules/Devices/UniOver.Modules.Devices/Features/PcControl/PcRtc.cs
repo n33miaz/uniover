@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
@@ -40,6 +41,24 @@ internal enum PcRtcScopes
     Pc = 1,
     Tv = 2,
     Screen = 8,
+}
+
+/// <summary>
+/// A flag <c>pc_screen</c> (configuração <c>Modules:Devices:PcScreen:Enabled</c>, desligada por padrão): com ela desligada a API
+/// recusa qualquer oferta do escopo da tela, mesmo do dono com a permissão.
+/// </summary>
+internal static class PcRtcAudit
+{
+    /// <summary>O fechamento de um canal só da tela tem evento próprio; os demais seguem como sempre.</summary>
+    public static string ClosedEvent(PcRtcSession session) =>
+        session.Scopes == PcRtcScopes.Screen ? PairingEvents.PcScreenClosed : PairingEvents.PcDirectClosed;
+}
+
+internal sealed class PcScreenFlag(IConfiguration configuration)
+{
+    public const string ConfigurationKey = "Modules:Devices:PcScreen:Enabled";
+
+    public bool Enabled => bool.TryParse(configuration[ConfigurationKey], out var enabled) && enabled;
 }
 
 internal static class PcRtcScopeNames
@@ -721,7 +740,7 @@ internal sealed class PcRtcClosures(
             var sent = await gateway.SendAsync(agentSlug, PcMessages.RtcClose(session.Id, PcRtcCloseV1BodyReason.Revoked), cancellationToken);
             if (sent.IsSuccess && sessions.TakeOwned(session.Id, session.UserId) is not null)
             {
-                audit.Add(PairingEvents.PcDirectClosed, new ClientInfo(null, null), agentId: session.AgentId, userId: session.UserId);
+                audit.Add(PcRtcAudit.ClosedEvent(session), new ClientInfo(null, null), agentId: session.AgentId, userId: session.UserId);
                 closed++;
             }
         }
@@ -748,7 +767,7 @@ internal sealed class PcRtcClosures(
 
         if (live is not null)
         {
-            audit.Add(PairingEvents.PcDirectClosed, new ClientInfo(null, null), agentId: session.AgentId, userId: session.UserId);
+            audit.Add(PcRtcAudit.ClosedEvent(session), new ClientInfo(null, null), agentId: session.AgentId, userId: session.UserId);
             await db.SaveChangesAsync(cancellationToken);
         }
 
@@ -802,7 +821,8 @@ internal sealed class PcRtcHandler(
     IAccessGrants grants,
     ITvDirectChannels? tv = null,
     PcRtcTickets? tickets = null,
-    TimeProvider? time = null)
+    TimeProvider? time = null,
+    PcScreenFlag? screenFlag = null)
 {
     /// <summary>O agente carrega a biblioteca na primeira oferta (cerca de um segundo) e junta os candidatos; o prazo dele é de 12 s, e o desta espera é maior para a recusa dele chegar antes.</summary>
     public static readonly TimeSpan OfferTimeout = TimeSpan.FromSeconds(15);
@@ -843,8 +863,11 @@ internal sealed class PcRtcHandler(
 
         var requested = PcRtcScopeNames.Parse(request.Scopes);
         var isScreen = requested == PcRtcScopes.Screen;
+        // A tela só abre com a flag ligada, para o dono e com a permissão própria (pc:screen, além de module:pc, conferida mais abaixo).
         if (requested.HasFlag(PcRtcScopes.Screen) && (!isScreen || !isOwner || sessionFamily is null
-            || request.ParentSessionId is null || request.ParentSessionId == Guid.Empty))
+            || request.ParentSessionId is null || request.ParentSessionId == Guid.Empty
+            || screenFlag?.Enabled != true
+            || !await grants.HasAsync(userId, AccessPermissions.PcScreen, cancellationToken)))
         {
             return PcProblems.DirectForbidden();
         }
@@ -1072,7 +1095,7 @@ internal sealed class PcRtcHandler(
         }
 
         // A trilha diz que o canal foi negociado e entregue (ele só abre depois, direto entre o app e o PC) e nunca leva SDP nem token.
-        audit.Add(PairingEvents.PcDirectOpened, client, agentId: target.AgentId, userId: userId);
+        audit.Add(isScreen ? PairingEvents.PcScreenOpened : PairingEvents.PcDirectOpened, client, agentId: target.AgentId, userId: userId);
         await db.SaveChangesAsync(cancellationToken);
         if (tvId is { } openedTv && tv is not null)
         {
@@ -1096,7 +1119,7 @@ internal sealed class PcRtcHandler(
             }
 
             await gateway.SendAsync(agentSlug, PcMessages.RtcClose(old.Id, PcRtcCloseV1BodyReason.Replaced), cancellationToken);
-            audit.Add(PairingEvents.PcDirectClosed, client, agentId: old.AgentId, userId: old.UserId);
+            audit.Add(PcRtcAudit.ClosedEvent(old), client, agentId: old.AgentId, userId: old.UserId);
             // Grava já: o fechamento do canal anterior não pode se perder se algo falhar adiante.
             await db.SaveChangesAsync(cancellationToken);
         }
@@ -1129,7 +1152,7 @@ internal sealed class PcRtcHandler(
 
         // Falhar o aviso (o PC caiu) não impede o registro: o canal já morreu junto com a conexão do agente.
         await gateway.SendAsync(session.AgentSlug, PcMessages.RtcClose(sessionId, PcRtcCloseV1BodyReason.Requested), cancellationToken);
-        audit.Add(PairingEvents.PcDirectClosed, client, agentId: session.AgentId, userId: userId);
+        audit.Add(PcRtcAudit.ClosedEvent(session), client, agentId: session.AgentId, userId: userId);
         await db.SaveChangesAsync(cancellationToken);
         return TypedResults.NoContent();
     }
@@ -1207,7 +1230,7 @@ internal sealed partial class PcRtcRevoker(
                     continue;
                 }
 
-                audit.Add(PairingEvents.PcDirectClosed, new ClientInfo(null, null), agentId: session.AgentId, userId: session.UserId);
+                audit.Add(PcRtcAudit.ClosedEvent(session), new ClientInfo(null, null), agentId: session.AgentId, userId: session.UserId);
                 closed++;
             }
         }
@@ -1290,7 +1313,12 @@ internal sealed class PcRtcAccessListener(PcRtcSessions sessions, PcRtcRevoker r
             AccessPermissions.TvModule => PcRtcScopes.Tv,
             _ => PcRtcScopes.None,
         }),
-        UserAccessChangeKind.PermissionRemoved => ReasonForLost(session, change.Permission == AccessPermissions.TvControl ? PcRtcScopes.Tv : PcRtcScopes.None),
+        UserAccessChangeKind.PermissionRemoved => ReasonForLost(session, change.Permission switch
+        {
+            AccessPermissions.TvControl => PcRtcScopes.Tv,
+            AccessPermissions.PcScreen => PcRtcScopes.Screen,
+            _ => PcRtcScopes.None,
+        }),
         _ => null,
     };
 
@@ -1379,6 +1407,7 @@ internal static class PcRtcRights
         var valid = PcRtcScopes.None;
         if ((scopes.HasFlag(PcRtcScopes.Pc) || scopes == PcRtcScopes.Screen && isOwner)
             && await grants.HasAsync(userId, AccessPermissions.PcModule, cancellationToken)
+            && (scopes != PcRtcScopes.Screen || await grants.HasAsync(userId, AccessPermissions.PcScreen, cancellationToken))
             && await resolver.ResolveAsync(userId, cancellationToken) is { } pc
             && string.Equals(pc.Slug, agentSlug, StringComparison.Ordinal))
         {

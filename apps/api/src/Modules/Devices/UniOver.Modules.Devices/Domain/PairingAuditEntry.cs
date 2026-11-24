@@ -50,6 +50,11 @@ public static class PairingEvents
     public const string PcDirectOpened = "pc_direct_opened";
     public const string PcDirectClosed = "pc_direct_closed";
 
+    // Tela do PC vista ao vivo (canal de escopo exclusivo da tela): abriu e fechou. A duração sai da diferença entre as duas linhas.
+    // Nunca leva imagem, título de janela nem nome de monitor.
+    public const string PcScreenOpened = "pc_screen_opened";
+    public const string PcScreenClosed = "pc_screen_closed";
+
     // A tentativa das mesmas ações que o agente recusou, não conseguiu ou não respondeu a tempo (pode ter agido mesmo assim).
     // A tabela não tem coluna de resultado: o sufixo é o resultado, e a trilha unificada o lê como falha. Nunca leva texto digitado.
     public const string PcLockFailed = "pc_lock_failed";

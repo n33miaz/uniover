@@ -129,16 +129,16 @@ public class GuestInviteTests
     public void InviteAuditDetail_WithTheWholeCatalog_FitsTheAuditColumn_SoNothingIsTruncatedSilently()
     {
         var invite = GuestInvite.Create(
-            Guid.NewGuid(), "Alice", SecretTokens.Generate().Hash, Now, Validity, [.. UniOver.BuildingBlocks.Web.AccessPermissions.All]);
+            Guid.NewGuid(), "Alice", SecretTokens.Generate().Hash, Now, Validity, [.. UniOver.BuildingBlocks.Web.AccessPermissions.Grantable]);
 
         var detail = Features.CreateGuestInvite.CreateGuestInviteHandler.InviteAuditDetail(invite);
         // Pior caso real de uma edição: cada permissão ou entra ou sai (nunca as duas), então juntas somam o catálogo uma vez só.
-        var all = UniOver.BuildingBlocks.Web.AccessPermissions.All;
+        var all = UniOver.BuildingBlocks.Web.AccessPermissions.Grantable;
         var change = Features.SetGuestPermissions.SetGuestPermissionsHandler.ChangeAuditDetail(invite.Id, all.Take(3), all.Skip(3));
 
         detail.Length.Should().BeLessThan(AuditText.DetailMax);
         change.Length.Should().BeLessThan(AuditText.DetailMax);
-        foreach (var permission in UniOver.BuildingBlocks.Web.AccessPermissions.All)
+        foreach (var permission in UniOver.BuildingBlocks.Web.AccessPermissions.Grantable)
         {
             detail.Should().Contain(permission);
         }

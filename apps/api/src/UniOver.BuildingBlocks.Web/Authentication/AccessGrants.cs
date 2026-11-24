@@ -42,6 +42,9 @@ public static class AccessPermissions
     /// <summary>Controlar o PC pelo app (mouse, teclado, mídia, energia). O dono tem por padrão; o convidado só se concedido.</summary>
     public const string PcModule = "module:pc";
 
+    /// <summary>Ver a tela do PC ao vivo. Só o dono a tem (nunca é concedida a convidado) e só vale junto com <c>module:pc</c>.</summary>
+    public const string PcScreen = "pc:screen";
+
     /// <summary>Prefixo do nome das políticas por permissão (uma por item do catálogo).</summary>
     public const string PolicyPrefix = "permission:";
 
@@ -57,12 +60,21 @@ public static class AccessPermissions
         TrainingModule,
         ShoppingModule,
         PcModule,
+        PcScreen,
     ];
+
+    /// <summary>Permissões que só o dono tem: nunca entram em convite nem em concessão (o banco também as recusa).</summary>
+    public static IReadOnlyList<string> OwnerOnly { get; } = [PcScreen];
+
+    /// <summary>As permissões que um convidado pode receber: o catálogo sem as exclusivas do dono.</summary>
+    public static IReadOnlyList<string> Grantable { get; } = [.. All.Where(p => p != PcScreen)];
 
     /// <summary>As permissões de módulo: dar acesso a uma área inteira. Toda concessão precisa de ao menos uma.</summary>
     public static IReadOnlyList<string> Modules { get; } = [TvModule, TrainingModule, ShoppingModule, PcModule];
 
     private static readonly FrozenSet<string> KnownSet = All.ToFrozenSet(StringComparer.Ordinal);
+
+    private static readonly FrozenSet<string> OwnerOnlySet = OwnerOnly.ToFrozenSet(StringComparer.Ordinal);
 
     private static readonly FrozenSet<string> ModuleSet = Modules.ToFrozenSet(StringComparer.Ordinal);
 
@@ -71,6 +83,8 @@ public static class AccessPermissions
 
     /// <summary>Comparação exata (caixa e espaços contam): "TV:Control" não é permissão.</summary>
     public static bool IsKnown(string? permission) => permission is not null && KnownSet.Contains(permission);
+
+    public static bool IsOwnerOnly(string? permission) => permission is not null && OwnerOnlySet.Contains(permission);
 
     public static bool IsModule(string? permission) => permission is not null && ModuleSet.Contains(permission);
 
@@ -81,6 +95,7 @@ public static class AccessPermissions
     public static string? RequiredModule(string permission) => permission switch
     {
         TvControl or TvPower or TvLaunch or TvEditShortcuts or TvHistory => TvModule,
+        PcScreen => PcModule,
         _ => null,
     };
 
