@@ -1,0 +1,136 @@
+<div class="inbox-container" [attr.data-screen-ready]="'videos'">
+  @if (feedback(); as message) {
+    <div class="notice" role="status">
+      {{ message }}
+    </div>
+  }
+
+  <section class="add-section" aria-labelledby="add-heading">
+    <h2 id="add-heading" class="section-title" i18n="@@videos.inbox.add.title">Adicionar link</h2>
+    <form class="add-form" (submit)="$event.preventDefault(); addManual()">
+      <input
+        type="text"
+        class="add-input"
+        [value]="inputUrl()"
+        (input)="onInput($event)"
+        placeholder="Cole um link ou texto com vídeo…"
+        i18n-placeholder="@@videos.inbox.add.placeholder"
+        [disabled]="adding() || !activeAccountId()"
+        aria-label="Link do vídeo"
+        i18n-aria-label="@@videos.inbox.add.aria-label"
+      />
+      <button
+        type="submit"
+        class="add-btn"
+        [disabled]="adding() || !activeAccountId() || !inputUrl().trim()"
+        i18n="@@videos.inbox.add.button"
+      >
+        Salvar
+      </button>
+    </form>
+  </section>
+
+  <section class="list-section" aria-labelledby="list-heading">
+    <div class="list-header">
+      <h2 id="list-heading" class="section-title" i18n="@@videos.inbox.list.title">
+        Links capturados
+      </h2>
+      <span class="count-badge" [attr.aria-label]="getItemsCountLabel(items().length)">
+        {{ items().length }}
+      </span>
+    </div>
+
+    @if (loading()) {
+      <div class="loading-state" role="status" i18n="@@videos.inbox.loading">
+        Carregando links salvos…
+      </div>
+    } @else if (items().length === 0) {
+      <div class="empty-state">
+        <p class="empty-title" i18n="@@videos.inbox.empty.title">Nenhum link na caixa ainda</p>
+        <p class="empty-desc" i18n="@@videos.inbox.empty.description">
+          Compartilhe links do Instagram, YouTube, TikTok ou X pelo menu de compartilhamento do
+          Android para salvá-los aqui.
+        </p>
+      </div>
+    } @else {
+      <ul class="items-list" role="list">
+        @for (item of items(); track item.id) {
+          <li class="item-card" role="listitem">
+            <div class="item-top">
+              <span class="platform-chip" [attr.data-platform]="item.platform">
+                {{ getPlatformLabel(item.platform) }}
+              </span>
+              <time class="item-date" [attr.datetime]="item.captured_at">
+                {{ formatCapturedDate(item.captured_at) }}
+              </time>
+            </div>
+
+            @if (item.title) {
+              <h3 class="item-title">{{ item.title }}</h3>
+            }
+
+            <div class="item-url-row">
+              <a
+                [href]="item.canonical_url"
+                target="_blank"
+                [attr.rel]="'noopener noreferrer'"
+                class="item-url"
+                [title]="item.canonical_url"
+              >
+                {{ item.canonical_url }}
+              </a>
+            </div>
+
+            @if (item.raw_text && item.raw_text !== item.canonical_url) {
+              <blockquote class="item-raw-text">
+                {{ item.raw_text }}
+              </blockquote>
+            }
+
+            <div class="item-meta">
+              <span class="meta-tag status-tag">
+                {{ getStatusLabel(item.status) }}
+              </span>
+              <span class="meta-tag via-tag">
+                {{ getViaLabel(item.captured_via) }}
+              </span>
+            </div>
+
+            <div class="item-actions">
+              <a
+                [href]="item.canonical_url"
+                target="_blank"
+                [attr.rel]="'noopener noreferrer'"
+                class="btn-action btn-open"
+                i18n="@@videos.inbox.action.open"
+              >
+                Abrir
+              </a>
+              <button
+                type="button"
+                class="btn-action btn-copy"
+                (click)="copyLink(item)"
+                [attr.aria-label]="getCopyAriaLabel(item.canonical_url)"
+              >
+                @if (copiedId() === item.id) {
+                  <span i18n="@@videos.inbox.action.copied">Copiado!</span>
+                } @else {
+                  <span i18n="@@videos.inbox.action.copy">Copiar link</span>
+                }
+              </button>
+              <button
+                type="button"
+                class="btn-action btn-delete"
+                (click)="deleteItem(item.id)"
+                [attr.aria-label]="getDeleteAriaLabel(item.canonical_url)"
+                i18n="@@videos.inbox.action.delete"
+              >
+                Excluir
+              </button>
+            </div>
+          </li>
+        }
+      </ul>
+    }
+  </section>
+</div>
