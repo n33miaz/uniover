@@ -67,7 +67,8 @@ public static class PermissionRules
         var unknown = false;
         foreach (var item in requested)
         {
-            if (AccessPermissions.IsKnown(item))
+            // Permissão exclusiva do dono conta como desconhecida: convidado nunca a recebe, e o erro não revela que ela existe.
+            if (AccessPermissions.IsKnown(item) && !AccessPermissions.IsOwnerOnly(item))
             {
                 chosen.Add(item!);
             }
@@ -107,7 +108,7 @@ public static class PermissionRules
     {
         ArgumentNullException.ThrowIfNull(stored);
 
-        var known = stored.Where(AccessPermissions.IsKnown).ToHashSet(StringComparer.Ordinal);
+        var known = stored.Where(p => AccessPermissions.IsKnown(p) && !AccessPermissions.IsOwnerOnly(p)).ToHashSet(StringComparer.Ordinal);
         known.RemoveWhere(p => AccessPermissions.RequiredModule(p) is { } module && !known.Contains(module));
         return InCatalogOrder(known);
     }

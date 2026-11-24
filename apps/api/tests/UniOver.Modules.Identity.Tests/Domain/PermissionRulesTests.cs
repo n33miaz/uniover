@@ -10,7 +10,11 @@ public class AccessPermissionsTests
     public void TheCatalogIsClosedAndStable_TheseExactIdentifiersAreStoredInTheDatabase()
     {
         AccessPermissions.All.Should().Equal(
-            "module:tv", "tv:control", "tv:power", "tv:launch", "tv:edit-shortcuts", "tv:history", "module:training", "module:shopping", "module:pc");
+            "module:tv", "tv:control", "tv:power", "tv:launch", "tv:edit-shortcuts", "tv:history", "module:training", "module:shopping", "module:pc", "pc:screen");
+        AccessPermissions.OwnerOnly.Should().Equal("pc:screen");
+        AccessPermissions.Grantable.Should().Equal(AccessPermissions.All.Where(p => p != "pc:screen"));
+        AccessPermissions.RequiredModule("pc:screen").Should().Be("module:pc");
+        AccessPermissions.IsModule("pc:screen").Should().BeFalse();
         AccessPermissions.Modules.Should().Equal("module:tv", "module:training", "module:shopping", "module:pc");
         AccessPermissions.All.Should().OnlyHaveUniqueItems();
     }
@@ -148,5 +152,22 @@ public class PermissionRulesTests
             .Should().Equal("module:tv", "tv:control", "tv:history");
         PermissionRules.Effective(["module:training", "tv:launch"]).Should().Equal("module:training");
         PermissionRules.Effective([]).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Validate_RejectsAnOwnerOnlyPermission_EvenWithItsModule_WithoutNamingIt()
+    {
+        var result = PermissionRules.Validate(["module:pc", "pc:screen"]);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(PermissionRules.ErrorUnknown);
+        string.Join('|', result.Errors).Should().NotContain("pc:screen");
+        PermissionRules.Validate(["module:pc"]).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Effective_DropsAnOwnerOnlyPermission_FoundInAStoredRow()
+    {
+        PermissionRules.Effective(["module:pc", "pc:screen"]).Should().Equal("module:pc");
     }
 }

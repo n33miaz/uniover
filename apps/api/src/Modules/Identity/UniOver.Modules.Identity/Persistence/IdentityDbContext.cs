@@ -49,11 +49,11 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
     public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
 
     /// <summary>
-    /// A lista do catálogo como texto SQL (<c>'module:tv', 'tv:control', ...</c>) para as restrições do banco. Só
+    /// A lista das permissões concedíveis (o catálogo sem as exclusivas do dono) como texto SQL (<c>'module:tv', 'tv:control', ...</c>) para as restrições do banco. Só
     /// constantes do código entram aqui (nenhum dado de usuário). Quando o catálogo muda, o modelo muda e o EF exige uma
     /// migration nova: é assim que "permissão nova entra por migration".
     /// </summary>
-    private static string CatalogSqlList() => string.Join(", ", AccessPermissions.All.Select(p => $"'{p}'"));
+    private static string CatalogSqlList() => string.Join(", ", AccessPermissions.Grantable.Select(p => $"'{p}'"));
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

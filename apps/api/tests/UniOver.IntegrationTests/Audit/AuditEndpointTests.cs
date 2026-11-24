@@ -108,7 +108,7 @@ public sealed class AuditEndpointTests(PostgresFixture postgres)
     {
         var (app, owner, _) = await StartAsync();
         await using var lifetime = app;
-        var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow(), "Alice", AccessPermissions.All);
+        var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow(), "Alice", AccessPermissions.Grantable);
 
         foreach (var path in new[] { "", "/sources", "/export" })
         {
@@ -176,7 +176,7 @@ public sealed class AuditEndpointTests(PostgresFixture postgres)
     private async Task<(IdentityApp App, string Token, Guid OwnerId, Guid GuestId)> SeededAsync()
     {
         var (app, owner, ownerId) = await StartAsync();
-        var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow(), "Alice", AccessPermissions.All);
+        var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow(), "Alice", AccessPermissions.Grantable);
         var agentId = Guid.NewGuid();
         await AddAgentAsync(app.Database, Agent.Create(agentId, "pc-sala", "Computador da sala", "windows", ownerId, T0));
 

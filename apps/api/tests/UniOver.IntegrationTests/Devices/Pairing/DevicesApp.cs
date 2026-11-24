@@ -38,6 +38,9 @@ internal sealed record DevicesAppOptions
 
     public bool ForwardedHeaders { get; init; }
 
+    /// <summary>Liga a flag da tela do PC (<c>Modules:Devices:PcScreen:Enabled</c>); desligada por padrão, como em produção.</summary>
+    public bool PcScreen { get; init; }
+
     public int? TokenCacheSeconds { get; init; }
 
     public int? TokenFailureLimit { get; init; }
@@ -149,6 +152,11 @@ internal sealed class DevicesApp : IAsyncDisposable
             ["UNIOVER_OWNER_EMAIL"] = ownerEmail,
             ["UNIOVER_OWNER_PASSWORD"] = password,
         };
+        if (options.PcScreen)
+        {
+            settings["Modules:Devices:PcScreen:Enabled"] = "true";
+        }
+
         if (options.RequireStepUp is { } require)
         {
             settings["Modules:Devices:Pairing:RequireStepUp"] = require ? "true" : "false";

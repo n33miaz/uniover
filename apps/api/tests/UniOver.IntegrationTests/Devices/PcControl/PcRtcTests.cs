@@ -110,7 +110,7 @@ public sealed class PcRtcTests(PostgresFixture postgres)
     [Fact]
     public async Task ScreenIsAnIndependentChannelForTheSameLoginAndPcSession()
     {
-        await using var app = await TransportApp.StartAsync(postgres);
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PcScreen = true });
         await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
         using var status = await app.App.SendAsync(HttpMethod.Get, "/api/v1/pc/status", bearer: app.Login.AccessToken);
         var capabilities = (await DevicesApp.JsonAsync(status)).GetProperty("capabilities").EnumerateArray().Select(c => c.GetString());
@@ -159,7 +159,7 @@ public sealed class PcRtcTests(PostgresFixture postgres)
     [Fact]
     public async Task ScreenRequiresAnAccountWithPermission()
     {
-        await using var app = await TransportApp.StartAsync(postgres);
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PcScreen = true });
         await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
         var (parent, _) = await OpenAsync(app, agent);
         var parentId = parent.GetProperty("sessionId").GetGuid();
@@ -174,9 +174,66 @@ public sealed class PcRtcTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task ScreenRequiresTheAgentCapability()
+    public async Task ScreenIsRefusedForTheOwnerWhileTheFlagIsOff()
     {
         await using var app = await TransportApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+
+        using var response = await PostAsync(app, "offer", new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await ExpectStillOpenAsync(app, agent, parentId);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event.StartsWith("pc_screen"), Ct)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ScreenIsRefusedForAGuestEvenWithEveryGrantablePermission()
+    {
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PcScreen = true });
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        var guest = await GuestSeed.CreateGuestAsync(
+            app.App.Client, app.App.Database, app.App.Time.GetUtcNow(), "Raphael", [.. AccessPermissions.Grantable]);
+
+        using var response = await PostAsync(app, "offer",
+            new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId }, guest.Login.AccessToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await ExpectStillOpenAsync(app, agent, parentId);
+    }
+
+    [Fact]
+    public async Task ScreenOpenAndCloseLeaveTheirOwnAuditTrailWithoutTheDirectEvents()
+    {
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PcScreen = true });
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+
+        var posting = PostAsync(app, "offer", new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId });
+        await AnswerOfferAsync(agent);
+        using var opened = await posting.WaitAsync(FakeAgent.Patience, Ct);
+        opened.StatusCode.Should().Be(HttpStatusCode.OK);
+        var screenId = (await DevicesApp.JsonAsync(opened)).GetProperty("sessionId").GetGuid();
+        using var close = await PostAsync(app, $"{screenId}/close", null);
+        close.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        await using var db = app.App.Db();
+        var screenRows = await db.PairingAudit.Where(a => a.Event.StartsWith("pc_screen")).OrderBy(a => a.OccurredAt).ToListAsync(Ct);
+        screenRows.Select(r => r.Event).Should().Equal("pc_screen_opened", "pc_screen_closed");
+        screenRows.Should().OnlyContain(r => r.UserId != null && r.AgentId != null);
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_direct_opened", Ct)).Should().Be(1, "só o canal de controle do PC");
+        (await db.PairingAudit.CountAsync(a => a.Event == "pc_direct_closed", Ct)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ScreenRequiresTheAgentCapability()
+    {
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PcScreen = true });
         await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1");
         var (parent, _) = await OpenAsync(app, agent);
         var parentId = parent.GetProperty("sessionId").GetGuid();
@@ -192,7 +249,7 @@ public sealed class PcRtcTests(PostgresFixture postgres)
     [Fact]
     public async Task ScreenRequiresADeviceIdFromTheLoginSession()
     {
-        await using var app = await TransportApp.StartAsync(postgres);
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PcScreen = true });
         await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
         var (parent, _) = await OpenAsync(app, agent);
         var parentId = parent.GetProperty("sessionId").GetGuid();
@@ -223,7 +280,7 @@ public sealed class PcRtcTests(PostgresFixture postgres)
     [Fact]
     public async Task ScreenRejectsADeniedDeviceWhileTheParentChannelIsOpen()
     {
-        await using var app = await TransportApp.StartAsync(postgres);
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PcScreen = true });
         await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
         var (parent, offer) = await OpenAsync(app, agent);
         var parentId = parent.GetProperty("sessionId").GetGuid();

@@ -41,6 +41,8 @@ internal static class DevicesAuditActions
         (PairingEvents.PcAppLaunch, "pc_app_launch"),
         (PairingEvents.PcDirectOpened, "pc_direct_opened"),
         (PairingEvents.PcDirectClosed, "pc_direct_closed"),
+        (PairingEvents.PcScreenOpened, "pc_screen_opened"),
+        (PairingEvents.PcScreenClosed, "pc_screen_closed"),
         (PairingEvents.PcLockFailed, "pc_lock_failed"),
         (PairingEvents.PcSleepFailed, "pc_sleep_failed"),
         (PairingEvents.PcShutdownFailed, "pc_shutdown_failed"),

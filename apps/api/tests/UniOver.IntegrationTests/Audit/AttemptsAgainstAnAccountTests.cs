@@ -110,7 +110,7 @@ public sealed class AttemptsAgainstAnAccountTests(PostgresFixture postgres)
     {
         var (app, token, _) = await StartAsync();
         await using var lifetime = app;
-        var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow(), "Alice", AccessPermissions.All);
+        var guest = await GuestSeed.CreateGuestAsync(app.Client, app.Database, app.Time.GetUtcNow(), "Alice", AccessPermissions.Grantable);
         await ExecuteAsync(app.Database.OwnerConnection, $"UPDATE identity.users SET disabled_at = now() WHERE id = '{guest.UserId}'");
 
         (await app.LoginRawAsync(guest.Email, guest.Password, "203.0.113.30")).Dispose();
