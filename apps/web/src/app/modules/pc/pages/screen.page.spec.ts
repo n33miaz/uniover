@@ -39,7 +39,17 @@ class FakeConnection extends EventTarget {
 }
 
 /** O que o PC manda assim que a sessão autoriza: o tamanho do monitor. */
-const MONITOR = { k: 's.mon', width: 1920, height: 1080 };
+const MONITOR = {
+  k: 's.mon',
+  monitors: [{ id: 7, width: 1920, height: 1080, primary: true }],
+};
+const TWO_MONITORS = {
+  k: 's.mon',
+  monitors: [
+    { id: 3, width: 1280, height: 1024, primary: false },
+    { id: 7, width: 1920, height: 1080, primary: true },
+  ],
+};
 
 /** Um quadro no formato do PC (cabeçalho `UOSF` de 16 bytes e 2 bytes de JPEG). */
 function jpegFrame(sequence: number): ArrayBuffer {
@@ -135,7 +145,9 @@ describe('Tela do PC (página)', () => {
     expect(peer.channel.send).toHaveBeenCalledWith(
       JSON.stringify({ k: 'auth', token: 'autorizacao-tela' }),
     );
-    expect(requests()).toEqual([{ k: 's.get', width: 1280, fps: 6, marker: 0, reset: true }]);
+    expect(requests()).toEqual([
+      { k: 's.get', monitor: 7, width: 1280, fps: 6, marker: 0, reset: true },
+    ]);
   });
 
   it('pulls the next frame only after drawing the previous one', async () => {
@@ -184,7 +196,9 @@ describe('Tela do PC (página)', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { peer, requests, open } = setup();
     await open();
-    peer.channel.receive(JSON.stringify({ k: 's.mon', width: 800, height: 600 }));
+    peer.channel.receive(
+      JSON.stringify({ k: 's.mon', monitors: [{ id: 7, width: 800, height: 600, primary: true }] }),
+    );
     vi.advanceTimersByTime(2_000);
     expect(requests().map((r) => r['width'])).toEqual([1280]);
 
@@ -192,6 +206,73 @@ describe('Tela do PC (página)', () => {
     await flush();
     vi.advanceTimersByTime(0);
     expect(requests().map((r) => r['width'])).toEqual([1280, 800]);
+  });
+
+  it('shows no selector with a single monitor', async () => {
+    const { root, open } = setup();
+    await open();
+    expect(root.querySelector('.monitors')).toBeNull();
+  });
+
+  it('lists the monitors in an accessible group, starting on the primary one', async () => {
+    const { fixture, peer, root, requests, action } = setup();
+    action().click();
+    await flush();
+    peer.channel.receive(JSON.stringify(TWO_MONITORS));
+    fixture.detectChanges();
+
+    const group = root.querySelector('.monitors')!;
+    expect(group.getAttribute('role')).toBe('group');
+    expect(group.getAttribute('aria-label')).toBe('Monitores');
+    const buttons = [...group.querySelectorAll<HTMLButtonElement>('button')];
+    expect(buttons.map((b) => b.textContent?.trim())).toEqual(['Monitor 1', 'Monitor 2']);
+    expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true']);
+    expect(requests()[0]['monitor']).toBe(7);
+  });
+
+  it('switching monitor resets the frame, uses that monitor width and keeps a single request in flight', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { fixture, peer, root, requests, action } = setup();
+    action().click();
+    await flush();
+    peer.channel.receive(JSON.stringify(TWO_MONITORS));
+    fixture.detectChanges();
+
+    root.querySelectorAll<HTMLButtonElement>('.monitors button')[0].click();
+    fixture.detectChanges();
+    vi.advanceTimersByTime(2_000);
+    expect(requests()).toHaveLength(1);
+    expect(root.querySelectorAll('.monitors button')[0].getAttribute('aria-pressed')).toBe('true');
+
+    peer.channel.receive(jpegFrame(1));
+    await flush();
+    vi.advanceTimersByTime(0);
+    expect(requests()).toHaveLength(2);
+    expect(requests()[1]).toEqual({
+      k: 's.get',
+      monitor: 3,
+      width: 1280,
+      fps: 6,
+      marker: 0,
+      reset: true,
+    });
+  });
+
+  it('falls back to the primary monitor when the chosen one disappears', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { fixture, peer, root, requests, action } = setup();
+    action().click();
+    await flush();
+    peer.channel.receive(JSON.stringify(TWO_MONITORS));
+    fixture.detectChanges();
+    root.querySelectorAll<HTMLButtonElement>('.monitors button')[0].click();
+    peer.channel.receive(JSON.stringify(MONITOR));
+    fixture.detectChanges();
+    peer.channel.receive(jpegFrame(1));
+    await flush();
+    vi.advanceTimersByTime(0);
+    expect(requests()[requests().length - 1]['monitor']).toBe(7);
+    expect(root.querySelector('.monitors')).toBeNull();
   });
 
   it('ends the session when a frame arrives while the previous one is still being decoded', async () => {

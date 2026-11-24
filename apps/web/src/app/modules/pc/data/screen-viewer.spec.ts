@@ -5,7 +5,7 @@ import {
   type ScreenViewRequest,
 } from './screen-viewer';
 
-const VIEW: ScreenViewRequest = { width: 1280 };
+const VIEW: ScreenViewRequest = { monitor: 1, width: 1280 };
 
 /** Um quadro no formato do PC: `>4sBBHHHI` (marca, versão, reservado, largura, altura, sequência, tamanho). */
 function frameBytes(
@@ -36,10 +36,16 @@ function frameBytes(
 }
 
 describe('parseViewerMessage', () => {
-  it('reads the monitor size sent first by the PC', () => {
-    expect(parseViewerMessage('{"k":"s.mon","width":1920,"height":1080}')).toEqual({
+  it('reads the monitor list sent first by the PC', () => {
+    const text =
+      '{"k":"s.mon","monitors":[{"id":1,"width":1920,"height":1080,"primary":true},' +
+      '{"id":2,"width":1280,"height":1024,"primary":false}]}';
+    expect(parseViewerMessage(text)).toEqual({
       k: 's.mon',
-      monitor: { width: 1920, height: 1080 },
+      monitors: [
+        { id: 1, width: 1920, height: 1080, primary: true },
+        { id: 2, width: 1280, height: 1024, primary: false },
+      ],
     });
   });
 
@@ -60,8 +66,14 @@ describe('parseViewerMessage', () => {
 
   it.each([
     '{"k":"s.mon"}',
-    '{"k":"s.mon","width":0,"height":10}',
-    '{"k":"s.mon","width":10,"height":"a"}',
+    '{"k":"s.mon","width":1920,"height":1080}',
+    '{"k":"s.mon","monitors":[]}',
+    '{"k":"s.mon","monitors":[{"id":1,"width":0,"height":10,"primary":true}]}',
+    '{"k":"s.mon","monitors":[{"id":1,"width":10,"height":"a","primary":true}]}',
+    '{"k":"s.mon","monitors":[{"id":"a","width":10,"height":10,"primary":true}]}',
+    '{"k":"s.mon","monitors":[{"id":1,"width":10,"height":10}]}',
+    '{"k":"s.mon","monitors":[{"id":1,"width":10,"height":10,"primary":true},{"id":1,"width":10,"height":10,"primary":false}]}',
+    '{"k":"s.mon","monitors":[null]}',
     '{"k":"s.cur","x":"a","y":2}',
     '{"k":"s.cur","x":1}',
     '{"k":"s.state","state":"x"}',
@@ -139,10 +151,17 @@ describe('ScreenFrameLoop', () => {
   it('asks with the fields the PC reads, and resets its counters on the first request only', () => {
     const loop = make(5);
     loop.start();
-    expect(sent).toEqual([{ k: 's.get', width: 1280, fps: 5, marker: 0, reset: true }]);
+    expect(sent).toEqual([{ k: 's.get', monitor: 1, width: 1280, fps: 5, marker: 0, reset: true }]);
     loop.answered();
     vi.advanceTimersByTime(250);
-    expect(sent[1]).toEqual({ k: 's.get', width: 1280, fps: 5, marker: 0, reset: false });
+    expect(sent[1]).toEqual({
+      k: 's.get',
+      monitor: 1,
+      width: 1280,
+      fps: 5,
+      marker: 0,
+      reset: false,
+    });
     loop.stop();
   });
 
@@ -194,7 +213,7 @@ describe('ScreenFrameLoop', () => {
   it('restart with a request pending keeps it and sends the new view only after the answer', () => {
     const loop = make();
     loop.start();
-    view = { width: 640 };
+    view = { monitor: 2, width: 640 };
     loop.restart();
     vi.advanceTimersByTime(5_000);
     expect(sent.map((m) => m['width'])).toEqual([1280]);
@@ -202,6 +221,8 @@ describe('ScreenFrameLoop', () => {
     expect(loop.answered()).toBe(true);
     vi.advanceTimersByTime(0);
     expect(sent.map((m) => m['width'])).toEqual([1280, 640]);
+    expect(sent.map((m) => m['monitor'])).toEqual([1, 2]);
+    expect(sent.map((m) => m['reset'])).toEqual([true, true]);
     loop.stop();
   });
 
@@ -209,9 +230,11 @@ describe('ScreenFrameLoop', () => {
     const loop = make();
     loop.start();
     loop.answered();
-    view = { width: 640 };
+    view = { monitor: 2, width: 640 };
     loop.restart();
     expect(sent.map((m) => m['width'])).toEqual([1280, 640]);
+    expect(sent[1]['monitor']).toBe(2);
+    expect(sent[1]['reset']).toBe(true);
     loop.stop();
   });
 

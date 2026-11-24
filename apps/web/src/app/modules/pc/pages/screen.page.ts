@@ -58,6 +58,24 @@ interface Link {
     @if (!access.allowed()) {
       <p class="note" i18n="@@pc.screen.unavailable">A tela do PC não está disponível aqui.</p>
     } @else {
+      @if (monitors().length > 1) {
+        <div
+          class="monitors"
+          role="group"
+          aria-label="Monitores"
+          i18n-aria-label="@@pc.screen.monitors"
+        >
+          @for (item of monitors(); track item.id; let index = $index) {
+            <button
+              type="button"
+              [attr.aria-pressed]="item.id === monitorId()"
+              (click)="selectMonitor(item.id)"
+            >
+              <span i18n="@@pc.screen.monitor">Monitor {{ index + 1 }}</span>
+            </button>
+          }
+        </div>
+      }
       <div class="stage" [hidden]="!hasFrame()">
         <canvas
           #surface
@@ -129,6 +147,12 @@ interface Link {
       stroke-width: 1.5;
       pointer-events: none;
     }
+    .monitors {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+    .monitors button,
     .action {
       min-height: 44px;
       padding: 0 var(--space-4);
@@ -140,6 +164,10 @@ interface Link {
       font-weight: 650;
       cursor: pointer;
       touch-action: manipulation;
+    }
+    .monitors button[aria-pressed='true'] {
+      background: var(--a-accent-soft);
+      border-color: var(--a-accent);
     }
     button:focus-visible {
       outline: 3px solid var(--a-accent);
@@ -164,7 +192,8 @@ export class ScreenPage {
   private link: Link | null = null;
 
   protected readonly phase = signal<Phase>('idle');
-  protected readonly monitor = signal<ScreenMonitor | null>(null);
+  protected readonly monitors = signal<readonly ScreenMonitor[]>([]);
+  protected readonly monitorId = signal<number | null>(null);
   protected readonly cursor = signal<ScreenCursor | null>(null);
   protected readonly state = signal<ScreenViewState>('ok');
   protected readonly hasFrame = signal(false);
@@ -172,9 +201,12 @@ export class ScreenPage {
   protected readonly canOpen = computed(
     () => this.access.allowed() && this.factory !== null && this.direct.pcSessionId() !== null,
   );
+  protected readonly current = computed(
+    () => this.monitors().find((item) => item.id === this.monitorId()) ?? null,
+  );
   /** A posição do cursor em porcentagem da imagem. */
   protected readonly pointer = computed(() => {
-    const monitor = this.monitor();
+    const monitor = this.current();
     const cursor = this.cursor();
     if (!monitor || !cursor) return null;
     const clamp = (value: number) => Math.min(100, Math.max(0, value));
@@ -304,9 +336,18 @@ export class ScreenPage {
     }
   }
 
+  protected selectMonitor(id: number): void {
+    const link = this.link;
+    if (!link || id === this.monitorId() || !this.monitors().some((item) => item.id === id)) return;
+    this.monitorId.set(id);
+    link.loop.restart();
+  }
+
   private viewRequest() {
-    const monitor = this.monitor();
-    return monitor ? { width: Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, monitor.width)) } : null;
+    const monitor = this.current();
+    return monitor
+      ? { monitor: monitor.id, width: Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, monitor.width)) }
+      : null;
   }
 
   private listen(link: Link): void {
@@ -344,18 +385,25 @@ export class ScreenPage {
     const message = parseViewerMessage(data);
     switch (message.k) {
       case 's.mon': {
-        // O PC manda o tamanho do monitor assim que a sessão autoriza, sem esperar pedido: é o sinal de que está pronto.
-        const before = this.monitor();
-        const changed =
-          before !== null &&
-          (before.width !== message.monitor.width || before.height !== message.monitor.height);
-        this.monitor.set(message.monitor);
+        // O PC manda a lista de monitores assim que a sessão autoriza, sem esperar pedido: é o sinal de que está pronto.
+        const before = this.current();
+        const chosen =
+          message.monitors.find((item) => item.id === this.monitorId()) ??
+          message.monitors.find((item) => item.primary) ??
+          message.monitors[0];
+        this.monitors.set(message.monitors);
+        this.monitorId.set(chosen.id);
         if (!link.loop.active) {
           clearTimeout(link.watchdog);
           this.phase.set('live');
           link.loop.start();
-        } else if (changed) {
-          // O pedido em andamento termina antes; o próximo já leva o tamanho novo.
+        } else if (
+          before === null ||
+          before.id !== chosen.id ||
+          before.width !== chosen.width ||
+          before.height !== chosen.height
+        ) {
+          // O pedido em andamento termina antes; o próximo já leva o monitor e o tamanho novos.
           link.loop.restart();
         }
         break;
@@ -416,7 +464,8 @@ export class ScreenPage {
     }
     this.hasFrame.set(false);
     this.cursor.set(null);
-    this.monitor.set(null);
+    this.monitors.set([]);
+    this.monitorId.set(null);
     this.phase.set(next);
   }
 }
