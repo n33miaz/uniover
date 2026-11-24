@@ -1,5 +1,7 @@
-/** O monitor do PC, em pixels físicos, como ele o anuncia em `s.mon`. */
+/** Um monitor do PC, em pixels físicos, como ele o anuncia em `s.mon`. O `id` é estável durante a sessão. */
 export interface ScreenMonitor {
+  readonly id: number;
+  readonly primary: boolean;
   readonly width: number;
   readonly height: number;
 }
@@ -13,12 +15,14 @@ export interface ScreenCursor {
 }
 
 export type ScreenViewerMessage =
-  | { readonly k: 's.mon'; readonly monitor: ScreenMonitor }
+  | { readonly k: 's.mon'; readonly monitors: readonly ScreenMonitor[] }
   | { readonly k: 's.same'; readonly crc: number }
   | { readonly k: 's.cur'; readonly cursor: ScreenCursor }
   | { readonly k: 's.state'; readonly state: ScreenViewState };
 
 const MAX_COORD = 100_000;
+const MAX_MONITORS = 16;
+const MAX_MONITOR_ID = 0x7fff_ffff;
 
 function whole(value: unknown, min: number, max: number): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
@@ -29,11 +33,29 @@ export function parseViewerMessage(text: string): ScreenViewerMessage {
   const data = JSON.parse(text) as Record<string, unknown> | null;
   switch (data?.['k']) {
     case 's.mon': {
-      const { width, height } = data;
-      if (!whole(width, 1, MAX_COORD) || !whole(height, 1, MAX_COORD)) {
-        throw new Error('monitor inválido');
+      const list = data['monitors'];
+      if (!Array.isArray(list) || list.length < 1 || list.length > MAX_MONITORS) {
+        throw new Error('monitores inválidos');
       }
-      return { k: 's.mon', monitor: { width, height } };
+      const monitors: ScreenMonitor[] = [];
+      for (const item of list as unknown[]) {
+        const entry = (typeof item === 'object' && item !== null ? item : {}) as Record<
+          string,
+          unknown
+        >;
+        const { id, width, height, primary } = entry;
+        if (
+          !whole(id, -MAX_MONITOR_ID, MAX_MONITOR_ID) ||
+          !whole(width, 1, MAX_COORD) ||
+          !whole(height, 1, MAX_COORD) ||
+          typeof primary !== 'boolean' ||
+          monitors.some((known) => known.id === id)
+        ) {
+          throw new Error('monitor inválido');
+        }
+        monitors.push({ id, primary, width, height });
+      }
+      return { k: 's.mon', monitors };
     }
     case 's.same':
       if (!whole(data['crc'], 0, 0xffff_ffff)) throw new Error('quadro igual inválido');
@@ -119,8 +141,9 @@ export class ScreenViewerFrameAssembler {
   }
 }
 
-/** O que o quadro pedido deve mostrar: a largura máxima da imagem, que o PC reduz do monitor inteiro. */
+/** O que o quadro pedido deve mostrar: o monitor e a largura máxima da imagem, que o PC reduz do monitor inteiro. */
 export interface ScreenViewRequest {
+  readonly monitor: number;
   readonly width: number;
 }
 
@@ -185,11 +208,13 @@ export class ScreenFrameLoop {
   }
 
   /**
-   * O recorte mudou (chegou outro tamanho de monitor): o próximo pedido leva o recorte novo. O pedido em andamento
-   * continua até a resposta chegar, para o PC nunca ter dois ao mesmo tempo; sem nenhum em andamento, pede já.
+   * O recorte mudou (outro monitor ou outro tamanho): o próximo pedido leva o recorte novo e recomeça o quadro
+   * (`reset`). O pedido em andamento continua até a resposta chegar, para o PC nunca ter dois ao mesmo tempo; sem nenhum
+   * em andamento, pede já.
    */
   restart(): void {
     if (!this.running) return;
+    this.reset = true;
     if (this.pending) {
       this.refresh = true;
       return;
@@ -226,7 +251,14 @@ export class ScreenFrameLoop {
     this.watchdog = setTimeout(() => this.options.onTimeout(), this.timeoutMs);
     try {
       this.options.send(
-        JSON.stringify({ k: 's.get', width: view.width, fps: this.fps, marker: 0, reset }),
+        JSON.stringify({
+          k: 's.get',
+          monitor: view.monitor,
+          width: view.width,
+          fps: this.fps,
+          marker: 0,
+          reset,
+        }),
       );
     } catch {
       this.options.onTimeout();
