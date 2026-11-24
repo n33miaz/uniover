@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import type { components } from '../../core/api/generated/schema';
@@ -7,6 +7,8 @@ import { AgentDiagnostics, readAgentDiagnostics } from './agent-diagnostics';
 
 /** A configuração da TV padrão, como a API a entrega (tipo gerado do OpenAPI). */
 export type TvConfig = components['schemas']['TvConfigResponse'];
+
+export class CapacityAlertDismissalError extends Error {}
 
 /**
  * O retrato da capacidade como o administrador o vê em `GET /api/v1/identity/capacity`. O tipo é local porque o OpenAPI
@@ -383,10 +385,25 @@ export class SystemApi {
 
   /** O administrador viu os avisos de capacidade: eles saem do cartão. */
   async dismissCapacityAlerts(alertIds: readonly string[]): Promise<void> {
+    if (alertIds.length > 50) {
+      throw new CapacityAlertDismissalError(
+        $localize`:@@settings.system.capacity.dismiss-limit:A lista de avisos não pode ter mais de 50 itens.`,
+      );
+    }
     const body: components['schemas']['CapacityMarkSeenRequest'] = { alertIds: [...alertIds] };
-    await firstValueFrom(
-      this.http.post<void>(`${APP_CONFIG.apiBase}/v1/identity/capacity/alerts/seen`, body),
-    );
+    try {
+      await firstValueFrom(
+        this.http.post<void>(`${APP_CONFIG.apiBase}/v1/identity/capacity/alerts/seen`, body),
+      );
+    } catch (error) {
+      if (error instanceof HttpErrorResponse && error.status === 503) {
+        throw new CapacityAlertDismissalError(
+          $localize`:@@settings.system.capacity.dismiss-busy:O serviço de avisos está temporariamente indisponível. Tente novamente em instantes.`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
   }
 
   /** O endpoint de saúde é público e não lê dados da conta. */
