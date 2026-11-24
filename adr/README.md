@@ -36,3 +36,4 @@ que o código é como é, sem precisar adivinhar.
 | [0017](0017-instalacao-por-usuario-no-windows.md) | Instalação por usuário e pastas do agente no Windows | Proposto |
 | [0018](0018-manifesto-assinado-do-agente.md) | Manifesto assinado para atualização do agente | Aceito |
 | [0019](0019-production-flow.md) | Fluxo de produção pela `develop` | Proposto |
+| [0020](0020-armazenamento-local-da-caixa-de-videos.md) | Armazenamento local da caixa de vídeos | Proposto |
