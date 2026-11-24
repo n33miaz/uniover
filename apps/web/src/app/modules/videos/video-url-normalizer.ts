@@ -26,8 +26,7 @@ function stripQueryParams(url: URL, paramsToRemove: Set<string>): void {
   }
 }
 
-function normalizeInstagram(parsed: URL): NormalizedVideoUrl {
-  const url = new URL(parsed.toString());
+function normalizeInstagram(url: URL): NormalizedVideoUrl {
   url.protocol = 'https:';
   url.hostname = 'www.instagram.com';
 
@@ -63,8 +62,7 @@ function normalizeInstagram(parsed: URL): NormalizedVideoUrl {
   };
 }
 
-function normalizeYouTube(parsed: URL): NormalizedVideoUrl {
-  const url = new URL(parsed.toString());
+function normalizeYouTube(url: URL): NormalizedVideoUrl {
   url.protocol = 'https:';
   const hostname = url.hostname.toLowerCase();
 
@@ -124,8 +122,7 @@ function normalizeYouTube(parsed: URL): NormalizedVideoUrl {
   };
 }
 
-function normalizeTikTok(parsed: URL): NormalizedVideoUrl {
-  const url = new URL(parsed.toString());
+function normalizeTikTok(url: URL): NormalizedVideoUrl {
   url.protocol = 'https:';
   if (url.hostname.toLowerCase() === 'm.tiktok.com') {
     url.hostname = 'www.tiktok.com';
@@ -150,8 +147,7 @@ function normalizeTikTok(parsed: URL): NormalizedVideoUrl {
   };
 }
 
-function normalizeTwitter(parsed: URL): NormalizedVideoUrl {
-  const url = new URL(parsed.toString());
+function normalizeTwitter(url: URL): NormalizedVideoUrl {
   url.protocol = 'https:';
   if (url.hostname !== 't.co') url.hostname = 'x.com';
 
@@ -171,8 +167,7 @@ function normalizeTwitter(parsed: URL): NormalizedVideoUrl {
   };
 }
 
-function normalizeOther(parsed: URL): NormalizedVideoUrl {
-  const url = new URL(parsed.toString());
+function normalizeOther(url: URL): NormalizedVideoUrl {
   url.hostname = url.hostname.toLowerCase();
   stripQueryParams(url, GLOBAL_TRACKING_PARAMS);
 
@@ -185,13 +180,14 @@ function normalizeOther(parsed: URL): NormalizedVideoUrl {
 /**
  * Normaliza a URL extraída e identifica a plataforma (instagram, youtube, tiktok, twitter, outros).
  */
-export function normalizeVideoUrl(rawUrl: string): NormalizedVideoUrl {
+export function normalizeVideoUrl(rawUrl: string | URL): NormalizedVideoUrl {
   let parsed: URL;
   try {
-    const input = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+    const input =
+      typeof rawUrl === 'string' && !/^https?:\/\//i.test(rawUrl) ? `https://${rawUrl}` : rawUrl;
     parsed = new URL(input);
   } catch {
-    return { canonical_url: rawUrl, platform: 'other' };
+    return { canonical_url: rawUrl.toString(), platform: 'other' };
   }
 
   const hostname = parsed.hostname.toLowerCase();

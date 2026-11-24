@@ -85,7 +85,7 @@ export class VideoInboxService {
     const pending = peekPendingShare();
     if (!pending) return null;
     const item = await this.captureShare(pending, 'share_target', pending.id);
-    if (peekPendingShare()?.id === pending.id) clearPendingShare();
+    clearPendingShare(pending.id);
     return item;
   }
 }
