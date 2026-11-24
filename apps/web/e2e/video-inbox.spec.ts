@@ -1,4 +1,4 @@
-import { mockIdentityApi, OWNER } from './auth/identity-mock';
+import { GUEST, mockIdentityApi, OWNER } from './auth/identity-mock';
 import { expect, expectNoHorizontalScroll, test } from './fixtures';
 
 test.use({ serviceWorkers: 'block' });
@@ -38,4 +38,26 @@ test('keeps a text-only share through sign-in and lists it once after reload', a
   await expect(item).toHaveCount(1);
   await item.getByRole('button', { name: /Excluir link/ }).click();
   await expect(page.getByText('Nenhum link na caixa ainda')).toBeVisible();
+});
+
+test('redirects a guest without video permission from the inbox to the home page', async ({
+  context,
+  page,
+}) => {
+  const identity = await mockIdentityApi(context);
+  identity.guests.push({
+    ...GUEST,
+    id: '00000000-0000-4000-8000-000000000051',
+    createdAt: '2026-10-19T15:00:00Z',
+    disabledAt: null,
+    permissions: ['module:tv', 'tv:control'],
+  });
+  identity.loggedIn = true;
+  identity.role = 'guest';
+
+  await page.goto('/videos');
+
+  await expect(page).toHaveURL('/');
+  await expect(page.locator('app-home-page')).toBeVisible();
+  await expect(page.locator('app-video-inbox-page')).toBeHidden();
 });
