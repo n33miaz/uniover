@@ -393,7 +393,7 @@ async def test_capture_lock_waits_for_the_notice_being_drained() -> None:
     async def hold(_threshold: int) -> None:
         await release.wait()
 
-    measure.wait_buffer = hold  # type: ignore[method-assign]
+    measure.wait_buffer = hold  # type: ignore[method-assign,assignment]
     notice = asyncio.create_task(measure.report_state("locked"))
     await asyncio.sleep(0.05)
     second = asyncio.create_task(measure.report_state("locked"))
