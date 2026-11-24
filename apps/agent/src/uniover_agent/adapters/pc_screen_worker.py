@@ -12,7 +12,7 @@ import zlib
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from ctypes import wintypes
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from io import BytesIO
 from threading import Thread
 from time import monotonic, process_time
@@ -22,6 +22,7 @@ from PIL import Image, ImageDraw, ImageGrab
 
 from uniover_agent.adapters.pc_direct_aiortc import _load, prepare_offer
 from uniover_agent.adapters.pc_direct_network import is_lan_address
+from uniover_agent.adapters.pc_screen_monitors import Monitor, list_monitors
 from uniover_agent.adapters.pc_screen_presence import screen_indicator
 from uniover_agent.adapters.pc_screen_probes import STATE_LOCKED, STATE_OK, read_cursor, read_state
 from uniover_agent.adapters.pc_windows import USER_DESKTOP
@@ -38,6 +39,7 @@ MAX_FPS = 10
 MARKER_BITS = 16
 MARKER_CELL = 8
 MAX_MARKER = (1 << MARKER_BITS) - 1
+MAX_MONITOR = 2**31 - 1
 CURSOR_INTERVAL = 1 / 30
 STATE_INTERVAL = 0.25
 FRAME_MAGIC = b"UOSF"
@@ -86,17 +88,23 @@ class FrameRequest:
     fps: int
     marker: int
     reset: bool
+    # Id anunciado em `s.mon`; `None` é o monitor principal.
+    monitor: int | None = None
+    # Retângulo virtual (esquerda, topo, direita, base) resolvido pela sessão; fora do protocolo.
+    area: tuple[int, int, int, int] | None = None
 
     @classmethod
     def parse(cls, message: dict[str, Any]) -> FrameRequest:
         reset = message.get("reset", False)
         if message.get("k") != "s.get" or not isinstance(reset, bool):
             raise ValueError("Pedido de quadro inválido.")
+        monitor = message.get("monitor")
         return cls(
             _integer(message.get("width", 1280), MIN_WIDTH, MAX_WIDTH),
             _integer(message.get("fps", 5), 1, MAX_FPS),
             _integer(message.get("marker", 0), 0, MAX_MARKER),
             reset,
+            None if monitor is None else _integer(monitor, 0, MAX_MONITOR),
         )
 
 
@@ -157,15 +165,16 @@ def capture_frame(request: FrameRequest, previous_crc: int | None = None) -> Cap
     desktop = _input_desktop_name()
     if desktop is None or desktop.lower() != USER_DESKTOP:
         raise DesktopLockedError
-    # O monitor principal sempre começa em (0, 0). O modo DPI do processo fornece pixels físicos.
+    # O modo DPI do processo fornece pixels físicos.
+    if request.area is not None:
+        # Com `all_screens`, o recorte usa o retângulo virtual: monitores à esquerda ou acima do
+        # principal têm origem negativa.
+        with ImageGrab.grab(bbox=request.area, all_screens=True) as image:
+            return encode_frame(image, request, previous_crc)
+    # O monitor principal sempre começa em (0, 0).
     metrics = ctypes.windll.user32.GetSystemMetrics
     with ImageGrab.grab(bbox=(0, 0, metrics(0), metrics(1))) as image:
         return encode_frame(image, request, previous_crc)
-
-
-def monitor_size() -> tuple[int, int]:
-    metrics = ctypes.windll.user32.GetSystemMetrics
-    return metrics(0), metrics(1)
 
 
 class _MemoryCounters(ctypes.Structure):
@@ -201,7 +210,7 @@ def _remote_is_lan(peer: Any) -> bool:
 class Probes:
     """Leituras opcionais do desktop; sem elas a sessão só envia quadros."""
 
-    monitor: Callable[[], tuple[int, int]] | None = None
+    monitors: Callable[[], list[Monitor]] | None = None
     cursor: Callable[[], tuple[int, int] | None] | None = None
     state: Callable[[], str] | None = None
 
@@ -224,6 +233,7 @@ class ScreenSession:
         self.sequence = 0
         self.state = STATE_OK
         self.locked_notice = asyncio.Event()
+        self.monitors: list[Monitor] = []
 
     async def answer(self, sdp: str) -> str:
         prepared = prepare_offer(sdp)
@@ -274,9 +284,7 @@ class ScreenSession:
             request = FrameRequest.parse(data)
             self.requests.put_nowait(request)
         except ValueError, RecursionError, asyncio.QueueFull:
-            self.invalid += 1
-            if self.invalid >= MAX_INVALID:
-                self.closed.set()
+            self.reject_request()
 
     def authenticate(self, token: Any) -> None:
         if (
@@ -356,10 +364,17 @@ class ScreenSession:
         probes: Probes | None = None,
     ) -> None:
         probes = probes or Probes()
-        mon: dict[str, Any] = {"k": "s.mon"}
-        if probes.monitor is not None:
-            mon["width"], mon["height"] = probes.monitor()
-        self.send_json(mon)
+        # Os ids valem durante a sessão: a lista é lida uma vez, antes de qualquer quadro.
+        self.monitors = probes.monitors() if probes.monitors else []
+        self.send_json(
+            {
+                "k": "s.mon",
+                "monitors": [
+                    {"id": m.id, "width": m.width, "height": m.height, "primary": m.primary}
+                    for m in self.monitors
+                ],
+            }
+        )
         watchers = [
             asyncio.create_task(watcher)
             for watcher in (
@@ -375,6 +390,21 @@ class ScreenSession:
                 watcher.cancel()
             await asyncio.gather(*watchers, return_exceptions=True)
 
+    def resolve_monitor(self, request: FrameRequest) -> FrameRequest | None:
+        """Preenche o retângulo do monitor pedido; `None` se o id não foi anunciado."""
+        if request.monitor is None:
+            chosen = next((m for m in self.monitors if m.primary), None)
+        else:
+            chosen = next((m for m in self.monitors if m.id == request.monitor), None)
+            if chosen is None:
+                return None
+        return request if chosen is None else replace(request, area=chosen.area)
+
+    def reject_request(self) -> None:
+        self.invalid += 1
+        if self.invalid >= MAX_INVALID:
+            self.closed.set()
+
     async def frame_loop(
         self, capture: Callable[[FrameRequest, int | None], Capture], memory: Callable[[], int]
     ) -> None:
@@ -383,6 +413,10 @@ class ScreenSession:
         while not self.closed.is_set():
             async with asyncio.timeout(FRAME_TIMEOUT):
                 request = await self.requests.get()
+                if (resolved := self.resolve_monitor(request)) is None:
+                    self.reject_request()
+                    continue
+                request = resolved
                 await asyncio.sleep(max(0, last_capture + 1 / request.fps - monotonic()))
                 last_capture = monotonic()
                 if request.reset:
@@ -443,7 +477,7 @@ class ScreenSession:
                     capture_frame,
                     private_bytes,
                     viewing,
-                    Probes(monitor_size, read_cursor, read_state) if probes is None else probes,
+                    Probes(list_monitors, read_cursor, read_state) if probes is None else probes,
                 )
 
         tasks = [

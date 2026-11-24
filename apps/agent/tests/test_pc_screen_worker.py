@@ -12,6 +12,7 @@ import pytest
 from PIL import Image
 
 from uniover_agent.adapters import pc_screen_worker
+from uniover_agent.adapters.pc_screen_monitors import Monitor, list_monitors
 from uniover_agent.adapters.pc_screen_worker import (
     CHUNK_BYTES,
     FRAME_HEADER,
@@ -22,6 +23,7 @@ from uniover_agent.adapters.pc_screen_worker import (
     Offer,
     Probes,
     ScreenSession,
+    capture_frame,
     encode_frame,
 )
 from uniover_agent.ports.pc_direct import SCREEN_MAX_LIFETIME_SECONDS
@@ -89,7 +91,7 @@ async def test_auth_then_frame_with_marker_and_metrics() -> None:
         channel.message(k="s.get", width=1280, fps=8, marker=42, reset=True)
         await asyncio.wait_for(channel.complete.wait(), timeout=1)
         monitor, stats, first, second = channel.sent
-        assert json.loads(monitor) == {"k": "s.mon"}
+        assert json.loads(monitor) == {"k": "s.mon", "monitors": []}
         assert json.loads(stats)["bytes"] == FRAME_HEADER.size + CHUNK_BYTES + 1
         assert json.loads(stats)["privateMB"] == 40
         assert isinstance(first, bytes) and isinstance(second, bytes)
@@ -312,7 +314,7 @@ async def test_unchanged_screen_answers_s_same_and_cursor_is_throttled() -> None
     def cursor() -> tuple[int, int] | None:
         return next(positions, (3, 4))
 
-    probes = Probes(monitor=lambda: (1920, 1080), cursor=cursor)
+    probes = Probes(monitors=lambda: [Monitor(0, 0, 0, 1920, 1080, True)], cursor=cursor)
     task = asyncio.create_task(measure.stream(capture, lambda: 0, nullcontext, probes))
     try:
         channel.message(k="s.get")
@@ -323,7 +325,10 @@ async def test_unchanged_screen_answers_s_same_and_cursor_is_throttled() -> None
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
     texts = [json.loads(item) for item in channel.sent if isinstance(item, str)]
-    assert texts[0] == {"k": "s.mon", "width": 1920, "height": 1080}
+    assert texts[0] == {
+        "k": "s.mon",
+        "monitors": [{"id": 0, "width": 1920, "height": 1080, "primary": True}],
+    }
     assert {"k": "s.same", "crc": 9} in texts
     cursors = [item for item in texts if item["k"] == "s.cur"]
     assert [(item["x"], item["y"]) for item in cursors] == [(1, 2), (3, 4)]
@@ -402,3 +407,99 @@ async def test_capture_lock_waits_for_the_notice_being_drained() -> None:
     release.set()
     await asyncio.wait_for(asyncio.gather(notice, second), timeout=2)
     assert measure.closed.is_set()
+
+
+PRIMARY = Monitor(0, 0, 0, 1920, 1080, True)
+LEFT = Monitor(1, -1280, -200, 1280, 1024, False)
+
+
+def test_frame_request_monitor_is_optional_and_validated() -> None:
+    assert FrameRequest.parse({"k": "s.get"}).monitor is None
+    assert FrameRequest.parse({"k": "s.get", "monitor": 3}).monitor == 3
+    assert FrameRequest.parse({"k": "s.get", "monitor": None}).monitor is None
+    for bad in (True, -1, 1.5, "1", 2**31):
+        with pytest.raises(ValueError):
+            FrameRequest.parse({"k": "s.get", "monitor": bad})
+
+
+async def test_s_mon_lists_every_monitor_and_requests_pick_one_by_id() -> None:
+    measure, channel = session("192.168.1.6")
+    measure.authorized = True
+    measure.ready.set()
+    areas: list[tuple[int, int, int, int] | None] = []
+
+    def capture(request: FrameRequest, _previous: int | None) -> Capture:
+        areas.append(request.area)
+        return Capture(len(areas), 10, 10, b"jpeg")
+
+    probes = Probes(monitors=lambda: [LEFT, PRIMARY])
+    task = asyncio.create_task(measure.stream(capture, lambda: 0, nullcontext, probes))
+    try:
+        channel.message(k="s.get")
+        await asyncio.sleep(0.05)
+        channel.message(k="s.get", monitor=1)
+        await asyncio.sleep(0.3)
+        channel.message(k="s.get", monitor=0)
+        await asyncio.sleep(0.3)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    first = json.loads(channel.sent[0])
+    assert first == {
+        "k": "s.mon",
+        "monitors": [
+            {"id": 1, "width": 1280, "height": 1024, "primary": False},
+            {"id": 0, "width": 1920, "height": 1080, "primary": True},
+        ],
+    }
+    assert areas == [(0, 0, 1920, 1080), (-1280, -200, 0, 824), (0, 0, 1920, 1080)]
+
+
+async def test_unknown_monitor_is_an_invalid_request_and_the_loop_survives() -> None:
+    measure, channel = session("192.168.1.6")
+    measure.authorized = True
+    measure.ready.set()
+    captured: list[FrameRequest] = []
+
+    def capture(request: FrameRequest, _previous: int | None) -> Capture:
+        captured.append(request)
+        return Capture(1, 10, 10, b"jpeg")
+
+    task = asyncio.create_task(
+        measure.stream(capture, lambda: 0, nullcontext, Probes(monitors=lambda: [PRIMARY]))
+    )
+    try:
+        channel.message(k="s.get", monitor=7)
+        await asyncio.sleep(0.05)
+        assert (measure.invalid, captured, measure.closed.is_set()) == (1, [], False)
+        channel.message(k="s.get")
+        await asyncio.sleep(0.1)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    assert len(captured) == 1 and captured[0].monitor is None
+
+
+def test_capture_uses_the_virtual_rectangle_and_the_width_limit_applies_to_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    grabbed: list[dict[str, Any]] = []
+
+    def grab(**kwargs: Any) -> Image.Image:
+        grabbed.append(kwargs)
+        return Image.new("RGB", (1280, 1024), "#112233")
+
+    monkeypatch.setattr(f"{WORKER}.ImageGrab.grab", grab)
+    monkeypatch.setattr("uniover_agent.adapters.pc_windows._input_desktop_name", lambda: "default")
+    request = FrameRequest(640, 5, 0, False, 1, LEFT.area)
+    shot = capture_frame(request)
+    assert grabbed == [{"bbox": (-1280, -200, 0, 824), "all_screens": True}]
+    assert (shot.width, shot.height) == (640, 512)
+
+
+def test_list_monitors_reads_the_real_layout() -> None:
+    monitors = list_monitors()
+    assert monitors
+    assert [m.id for m in monitors] == list(range(len(monitors)))
+    assert sum(m.primary for m in monitors) == 1
+    assert all(m.width > 0 and m.height > 0 for m in monitors)
