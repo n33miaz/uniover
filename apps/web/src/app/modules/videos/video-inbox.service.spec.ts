@@ -165,4 +165,40 @@ describe('VideoInboxService', () => {
     });
     expect(await service.processPendingShare()).toBeNull();
   });
+
+  describe('unsafe protocol rejection in captureShare', () => {
+    it('returns null and does not save when url field has javascript: scheme', async () => {
+      const result = await service.captureShare({ url: 'javascript:alert(1)' });
+      expect(result).toBeNull();
+      expect(await service.list()).toHaveLength(0);
+    });
+
+    it('returns null and does not save when url field has data: scheme', async () => {
+      const result = await service.captureShare({
+        url: 'data:text/html,<script>alert(1)</script>',
+      });
+      expect(result).toBeNull();
+      expect(await service.list()).toHaveLength(0);
+    });
+
+    it('returns null and does not save when url field has blob: scheme', async () => {
+      const result = await service.captureShare({
+        url: 'blob:https://example.com/some-uuid',
+      });
+      expect(result).toBeNull();
+      expect(await service.list()).toHaveLength(0);
+    });
+
+    it('returns null and does not save when url field has file: scheme', async () => {
+      const result = await service.captureShare({ url: 'file:///etc/passwd' });
+      expect(result).toBeNull();
+      expect(await service.list()).toHaveLength(0);
+    });
+
+    it('returns null and does not save when text field has javascript: scheme', async () => {
+      const result = await service.captureShare({ text: 'javascript:alert(document.cookie)' });
+      expect(result).toBeNull();
+      expect(await service.list()).toHaveLength(0);
+    });
+  });
 });

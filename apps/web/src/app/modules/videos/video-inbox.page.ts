@@ -11,6 +11,7 @@ import {
 import { ActivatedRoute, Router } from '@angular/router';
 import { SessionState } from '../../core/session/session-state';
 import { VideoInboxService } from './video-inbox.service';
+import { isHttpUrl } from './video-url-normalizer';
 import {
   type VideoInboxItem,
   type VideoPlatform,
@@ -193,6 +194,14 @@ export class VideoInboxPage implements OnInit {
         $localize`:@@videos.inbox.feedback.copy-error:Não foi possível copiar o link.`,
       );
     }
+  }
+
+  /**
+   * Retorna a URL se o protocolo for estritamente http: ou https:, ou null caso contrário.
+   * Impede que URLs com esquemas como javascript:, data:, blob: ou file: sejam colocadas em href.
+   */
+  protected safeHref(url: string): string | null {
+    return isHttpUrl(url) ? url : null;
   }
 
   protected getPlatformLabel(platform: VideoPlatform): string {

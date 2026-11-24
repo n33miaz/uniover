@@ -177,16 +177,44 @@ function normalizeOther(url: URL): NormalizedVideoUrl {
   };
 }
 
+const HTTP_PROTOCOLS = new Set(['http:', 'https:']);
+
+// Esquema no início do texto; `host:porta` (dígito após os dois-pontos) não conta como esquema.
+const EXPLICIT_SCHEME = /^\s*[a-z][a-z0-9+.-]*:(?!\d)/i;
+
+/**
+ * Indica se o valor é uma URL absoluta com protocolo estritamente http: ou https:.
+ * Única regra usada para decidir o que pode ser salvo ou virar link clicável.
+ */
+export function isHttpUrl(value: string | null | undefined): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    return HTTP_PROTOCOLS.has(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Normaliza a URL extraída e identifica a plataforma (instagram, youtube, tiktok, twitter, outros).
  */
 export function normalizeVideoUrl(rawUrl: string | URL): NormalizedVideoUrl {
+  // Um esquema explícito diferente de http/https (javascript:, data:, blob:, file:...) nunca é
+  // promovido a https: o valor volta intacto para que quem chama o rejeite com `isHttpUrl`.
+  if (typeof rawUrl === 'string' && EXPLICIT_SCHEME.test(rawUrl) && !/^https?:/i.test(rawUrl)) {
+    return { canonical_url: rawUrl, platform: 'other' };
+  }
+
   let parsed: URL;
   try {
     const input =
       typeof rawUrl === 'string' && !/^https?:\/\//i.test(rawUrl) ? `https://${rawUrl}` : rawUrl;
     parsed = new URL(input);
   } catch {
+    return { canonical_url: rawUrl.toString(), platform: 'other' };
+  }
+
+  if (!HTTP_PROTOCOLS.has(parsed.protocol)) {
     return { canonical_url: rawUrl.toString(), platform: 'other' };
   }
 

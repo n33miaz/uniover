@@ -70,15 +70,21 @@
             }
 
             <div class="item-url-row">
-              <a
-                [href]="item.canonical_url"
-                target="_blank"
-                [attr.rel]="'noopener noreferrer'"
-                class="item-url"
-                [title]="item.canonical_url"
-              >
-                {{ item.canonical_url }}
-              </a>
+              @if (safeHref(item.canonical_url); as href) {
+                <a
+                  [href]="href"
+                  target="_blank"
+                  [attr.rel]="'noopener noreferrer'"
+                  class="item-url"
+                  [title]="item.canonical_url"
+                >
+                  {{ item.canonical_url }}
+                </a>
+              } @else {
+                <span class="item-url item-url--unsafe" [title]="item.canonical_url">
+                  {{ item.canonical_url }}
+                </span>
+              }
             </div>
 
             @if (item.raw_text && item.raw_text !== item.canonical_url) {
@@ -97,15 +103,17 @@
             </div>
 
             <div class="item-actions">
-              <a
-                [href]="item.canonical_url"
-                target="_blank"
-                [attr.rel]="'noopener noreferrer'"
-                class="btn-action btn-open"
-                i18n="@@videos.inbox.action.open"
-              >
-                Abrir
-              </a>
+              @if (safeHref(item.canonical_url); as href) {
+                <a
+                  [href]="href"
+                  target="_blank"
+                  [attr.rel]="'noopener noreferrer'"
+                  class="btn-action btn-open"
+                  i18n="@@videos.inbox.action.open"
+                >
+                  Abrir
+                </a>
+              }
               <button
                 type="button"
                 class="btn-action btn-copy"

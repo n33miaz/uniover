@@ -137,4 +137,42 @@ describe('extractVideoUrl', () => {
     const elapsed = performance.now() - start;
     expect(elapsed).toBeLessThan(2000);
   });
+
+  describe('unsafe protocol rejection', () => {
+    it('returns null for javascript: scheme in url field', () => {
+      expect(extractVideoUrl({ url: 'javascript:alert(1)' })).toBeNull();
+    });
+
+    it('returns null for javascript: scheme in text field', () => {
+      expect(extractVideoUrl({ text: 'click here javascript:alert(1)' })).toBeNull();
+    });
+
+    it('returns null for data: scheme', () => {
+      expect(extractVideoUrl({ url: 'data:text/html,<script>alert(1)</script>' })).toBeNull();
+    });
+
+    it('returns null for blob: scheme', () => {
+      expect(extractVideoUrl({ url: 'blob:https://example.com/uuid-1234' })).toBeNull();
+    });
+
+    it('returns null for file: scheme', () => {
+      expect(extractVideoUrl({ url: 'file:///etc/passwd' })).toBeNull();
+    });
+
+    it('returns null for vbscript: scheme', () => {
+      expect(extractVideoUrl({ url: 'vbscript:MsgBox(1)' })).toBeNull();
+    });
+
+    it('skips links wrapped by another scheme and keeps the next safe link', () => {
+      expect(
+        extractVideoUrl({
+          text: 'view-source:https://evil.example/x e o vídeo https://youtu.be/abc',
+        }),
+      ).toBe('https://youtu.be/abc');
+    });
+
+    it('still extracts a link right after a pt-BR label with colon', () => {
+      expect(extractVideoUrl({ text: 'Veja:https://youtu.be/abc' })).toBe('https://youtu.be/abc');
+    });
+  });
 });
