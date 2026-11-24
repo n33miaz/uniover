@@ -453,7 +453,67 @@ async def test_s_mon_lists_every_monitor_and_requests_pick_one_by_id() -> None:
             {"id": 0, "width": 1920, "height": 1080, "primary": True},
         ],
     }
-    assert areas == [(0, 0, 1920, 1080), (-1280, -200, 0, 824), (0, 0, 1920, 1080)]
+    # Sem monitor pedido a captura fica no caminho do principal (sem área).
+    assert areas == [None, (-1280, -200, 0, 824), (0, 0, 1920, 1080)]
+
+
+async def test_monitor_layout_is_reread_and_announced_when_it_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(f"{WORKER}.MONITOR_RECHECK_FRAMES", 2)
+    measure, channel = session("192.168.1.6")
+    measure.authorized = True
+    measure.ready.set()
+    layout = [PRIMARY]
+    areas: list[tuple[int, int, int, int] | None] = []
+
+    def capture(request: FrameRequest, _previous: int | None) -> Capture:
+        areas.append(request.area)
+        return Capture(len(areas), 10, 10, b"jpeg")
+
+    task = asyncio.create_task(
+        measure.stream(capture, lambda: 0, nullcontext, Probes(monitors=lambda: list(layout)))
+    )
+    try:
+        channel.message(k="s.get", monitor=0)
+        await asyncio.sleep(0.1)
+        layout[:] = [Monitor(0, 0, 0, 2560, 1440, True)]
+        for _ in range(3):
+            channel.message(k="s.get", monitor=0)
+            await asyncio.sleep(0.3)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    texts = [json.loads(m) for m in channel.sent if isinstance(m, str)]
+    announced = [m for m in texts if m.get("k") == "s.mon"]
+    assert [a["monitors"][0]["width"] for a in announced] == [1920, 2560]
+    assert areas[0] == (0, 0, 1920, 1080)
+    assert areas[-1] == (0, 0, 2560, 1440)
+
+
+async def test_unknown_monitor_triggers_a_layout_reread_before_rejecting() -> None:
+    measure, channel = session("192.168.1.6")
+    measure.authorized = True
+    measure.ready.set()
+    layout = [PRIMARY]
+    areas: list[tuple[int, int, int, int] | None] = []
+
+    def capture(request: FrameRequest, _previous: int | None) -> Capture:
+        areas.append(request.area)
+        return Capture(1, 10, 10, b"jpeg")
+
+    task = asyncio.create_task(
+        measure.stream(capture, lambda: 0, nullcontext, Probes(monitors=lambda: list(layout)))
+    )
+    try:
+        await asyncio.sleep(0.05)
+        layout.append(LEFT)
+        channel.message(k="s.get", monitor=1)
+        await asyncio.sleep(0.2)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    assert (measure.invalid, areas) == (0, [LEFT.area])
 
 
 async def test_unknown_monitor_is_an_invalid_request_and_the_loop_survives() -> None:
