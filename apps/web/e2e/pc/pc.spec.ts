@@ -954,11 +954,13 @@ test.describe('Digitação ao vivo', () => {
     await expect(field).toBeFocused();
     await page.getByRole('button', { name: 'Mostrar o que digito' }).click();
     await expect(echo).toHaveText('ola mund⏎');
-    // Fechar o teclado apaga o eco: abrir de novo começa vazio.
+    // Fechar o teclado apaga o eco: abrir de novo começa vazio (só a faixa que diz onde as letras vão aparecer).
     await page.getByRole('button', { name: 'Teclado', exact: true }).click();
     await expect(page.locator('.echo')).toHaveCount(0);
     await openKeyboard(page);
-    await expect(page.locator('.echo')).toHaveCount(0);
+    await expect(echo).toHaveCount(0);
+    await expect(page.locator('.echo')).toHaveText('O que você digitar aparece aqui');
+    await expectNoA11yViolations(page);
     // Nada do texto foi guardado no aparelho.
     const stored = await page.evaluate(() =>
       JSON.stringify({ ...localStorage, ...sessionStorage }),

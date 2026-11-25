@@ -176,7 +176,10 @@ svg {
   min-height: 0;
 }
 
-/* O eco da digitação começa à esquerda, logo acima da barra de ações. Fica acima da superfície, abaixo do painel e do aviso. */
+/*
+ * O eco da digitação, logo acima da barra de ações: no tamanho do texto do app e na cor do texto (é para ler de relance com
+ * o teclado do celular aberto). Fica acima da superfície, abaixo do painel e do aviso.
+ */
 .echo {
   position: relative;
   z-index: 1;
@@ -188,22 +191,27 @@ svg {
   padding-inline-start: var(--space-3);
   border-radius: var(--radius);
   background: var(--a-surface);
-  font-size: var(--fs-small);
+  font-size: var(--fs-body);
+}
+/*
+ * A linha mostra sempre o fim do que se digitou. A trilha estica para encher a linha (o texto curto começa à esquerda) e
+ * nunca encolhe; a linha a encosta à direita, então o texto longo sai pela esquerda e a última letra digitada fica à vista.
+ */
+.echo-line,
+.echo-hint {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
 }
 .echo-line {
   display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 2px;
-  margin: 0;
+  flex-direction: row-reverse;
   overflow: hidden;
+  color: var(--a-ink);
   white-space: pre;
 }
-.echo-line > span {
-  flex: none;
-}
-.echo-text {
-  color: var(--a-ink);
+.echo-track {
+  flex: 1 0 auto;
 }
 .echo-key {
   padding: 0 var(--space-1);

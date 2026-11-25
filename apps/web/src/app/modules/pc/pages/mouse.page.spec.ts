@@ -668,8 +668,9 @@ describe('MousePage', () => {
       expect(echo()).toBeNull();
       bar('Teclado').click();
       fixture.detectChanges();
-      // Nada digitado ainda: nada a mostrar.
-      expect(echo()).toBeNull();
+      // Nada digitado ainda: a faixa já está à vista e diz onde as letras vão aparecer.
+      expect(echo()?.textContent).toContain('O que você digitar aparece aqui');
+      expect(line()).toBeNull();
       type('oi');
       await flush();
       bar('Enter').click();
@@ -692,7 +693,8 @@ describe('MousePage', () => {
       expect(echo()).toBeNull();
       bar('Teclado').click();
       fixture.detectChanges();
-      expect(echo()).toBeNull();
+      expect(line()).toBeNull();
+      expect(echo()?.textContent).not.toContain('abc');
     });
 
     it('one touch hides it without closing the phone keyboard, and the choice is kept', async () => {
@@ -708,12 +710,27 @@ describe('MousePage', () => {
       expect(document.activeElement).toBe(field());
       expect(line()).toBeNull();
       expect(prefs.showTyped()).toBe(false);
-      // Escondido, só o botão de mostrar fica, e o texto não aparece em lugar nenhum.
+      // Escondido, a faixa diz que está escondido (não some sem a pessoa perceber), e o texto não aparece em lugar nenhum.
+      expect(echo()?.textContent).toContain('Texto escondido');
       expect(toggle().getAttribute('aria-label')).toBe('Mostrar o que digito');
       expect(root.textContent).not.toContain('abc');
       toggle().click();
       fixture.detectChanges();
       expect(line()?.textContent).toContain('abc');
+    });
+
+    it('keeps the end of a long text in the line, where the last letter typed is', async () => {
+      bar('Teclado').click();
+      type('a'.repeat(30) + 'fim');
+      await flush();
+      fixture.detectChanges();
+      // A trilha encostada à direita (o que não cabe sai pela esquerda): a última letra nunca fica cortada.
+      const track = line()?.querySelector('.echo-track');
+      expect(track?.textContent?.endsWith('fim')).toBe(true);
+      const style = getComputedStyle(line()!);
+      expect(style.flexDirection).toBe('row-reverse');
+      expect(style.overflow).toBe('hidden');
+      expect(getComputedStyle(track!).flexShrink).toBe('0');
     });
   });
 

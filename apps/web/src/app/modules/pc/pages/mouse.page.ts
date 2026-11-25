@@ -200,20 +200,30 @@ interface Ring {
       </div>
     }
 
-    @if (typing() && (!prefs.showTyped() || echo().length > 0)) {
+    @if (typing()) {
       <!-- O que se digitou no PC nesta sessão, só na memória (pode ser uma senha). Não é região viva: o leitor de tela não
-           lê cada letra em voz alta. Tocar no botão de esconder não fecha o teclado do celular. -->
+           lê cada letra em voz alta. Fica à vista o tempo todo no modo teclado (vazio, diz onde as letras vão aparecer;
+           escondido, diz que está escondido). Tocar no botão de esconder não fecha o teclado do celular. -->
       <div class="echo">
         @if (prefs.showTyped()) {
-          <p class="echo-line">
-            @for (segment of echo(); track $index) {
-              @if (segment.kind === 'key') {
-                <span class="echo-key">{{ segment.value }}</span>
-              } @else {
-                <span class="echo-text">{{ segment.value }}</span>
-              }
-            }
-          </p>
+          @if (echo().length > 0) {
+            <!-- A linha mostra sempre o fim: o que não cabe sai pela esquerda, e a última letra fica à vista. -->
+            <p class="echo-line">
+              <span class="echo-track">
+                @for (segment of echo(); track $index) {
+                  @if (segment.kind === 'key') {
+                    <span class="echo-key">{{ segment.value }}</span>
+                  } @else {
+                    <span class="echo-text">{{ segment.value }}</span>
+                  }
+                }
+              </span>
+            </p>
+          } @else {
+            <p class="echo-hint" i18n="@@pc.echo.empty">O que você digitar aparece aqui</p>
+          }
+        } @else {
+          <p class="echo-hint" i18n="@@pc.echo.hidden">Texto escondido</p>
         }
         <button
           type="button"

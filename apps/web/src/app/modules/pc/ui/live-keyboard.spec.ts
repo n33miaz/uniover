@@ -534,6 +534,59 @@ describe('PcLiveKeyboard', () => {
       expect(echoLine()).toBe('[Ctrl+V]');
     });
 
+    it('the field getting the focus by another way than the keyboard button turns the mode on, and the echo shows the text', async () => {
+      field.focus();
+      expect(typingStates).toEqual([true]);
+      type(SENTINEL + 'oi');
+      await flush();
+      expect(store.sendText.mock.calls).toEqual([['oi']]);
+      expect(echoLine()).toBe('oi');
+    });
+
+    it('a composition cut by the keyboard closing (no compositionend) does not swallow what is typed next', async () => {
+      fixture.componentInstance.open();
+      field.dispatchEvent(new CompositionEvent('compositionstart'));
+      field.blur();
+      fixture.componentInstance.open();
+      expect(document.activeElement).toBe(field);
+      type(SENTINEL + 'olá');
+      await flush();
+      expect(store.sendText.mock.calls).toEqual([['olá']]);
+      expect(echoLine()).toBe('olá');
+    });
+
+    it('accents composed by the keyboard and an autocorrection show as they end up on the PC', async () => {
+      fixture.componentInstance.open();
+      field.dispatchEvent(new CompositionEvent('compositionstart'));
+      field.value = SENTINEL + 'e';
+      field.dispatchEvent(
+        new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: 'e' }),
+      );
+      await flush();
+      field.value = SENTINEL + 'é';
+      field.dispatchEvent(
+        new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: 'é' }),
+      );
+      field.dispatchEvent(new CompositionEvent('compositionend', { data: 'é' }));
+      await flush();
+      expect(echoLine()).toBe('é');
+      field.value = SENTINEL + 'é vc';
+      field.dispatchEvent(
+        new InputEvent('input', { bubbles: true, inputType: 'insertText', data: 'vc' }),
+      );
+      await flush();
+      field.value = SENTINEL + 'é você';
+      field.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          inputType: 'insertReplacementText',
+          data: 'você',
+        }),
+      );
+      await flush();
+      expect(echoLine()).toBe('é você');
+    });
+
     it('records nothing outside the keyboard mode', () => {
       fixture.componentInstance.press('ENTER');
       type(SENTINEL + 'x');
