@@ -3,7 +3,6 @@ package br.uniover.launcher.ui
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.text.TextUtils
@@ -95,8 +94,9 @@ class AppTile(
                     setPadding(inset, inset, inset, inset)
                 } else {
                     // Ícone sem tinta nenhuma (todo transparente) seria um círculo vazio: vale a reserva com a inicial.
-                    // A reserva já enche o círculo; o adaptativo já vem sangrado: nenhum dos dois passa pelo ajuste.
-                    val fit = if (icon is AdaptiveIconDrawable || icon is FallbackIcon.LetterDrawable) null
+                    // A reserva já enche o círculo e não passa pelo ajuste; o adaptativo já vem sangrado: só se confere se
+                    // é todo transparente, sem recortar.
+                    val fit = if (icon is FallbackIcon.LetterDrawable) null
                     else IconFit.fit(icon, diameter)
                     val shown = if (fit?.blank == true) fallback?.invoke() else fit?.drawable
                     if (shown != null) setImageDrawable(shown)

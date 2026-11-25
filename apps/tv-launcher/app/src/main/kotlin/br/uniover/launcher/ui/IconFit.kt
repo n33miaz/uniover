@@ -41,6 +41,7 @@ object IconFit {
     const val ANALYSIS_SIDE = 64
 
     private const val SOLID_ALPHA = 128
+    private const val MIN_KEPT_PIXELS = 2
     private const val COLOR_TOLERANCE = 18
     private const val STRAY_SHARE = 0.02f
     private const val FREE_FORM_KEEP = 0.07f
@@ -137,6 +138,13 @@ object IconFit {
         return free + min(MAX_TRIM, max(0f, value - max(0f, clear)))
     }
 
+    /** Os dois cortes opostos nunca comem o lado inteiro: sobram ao menos [MIN_KEPT_PIXELS] pixels (o miolo nunca zera). */
+    private fun keepSpan(start: Float, end: Float, pixels: Int): Pair<Float, Float> {
+        val room = 1f - MIN_KEPT_PIXELS.toFloat() / pixels
+        val total = start + end
+        return if (total <= room) start to end else (start * room / total) to (end * room / total)
+    }
+
     /**
      * Procura a margem do ícone em [argb] (largura x altura pixels ARGB) e devolve quanto aparar de cada lado e a cor da
      * placa. Entrada que não dá para ler com segurança (pequena demais, buffer curto) não corta nada.
@@ -145,7 +153,7 @@ object IconFit {
         if (width < 4 || height < 4 || argb.size < width * height) return NOTHING
         val whole = Box(0, 0, width, height)
         val content = shrink(whole) { x, y -> alpha(argb[y * width + x]) < SOLID_ALPHA }
-            ?: return Analysis(NO_TRIM, null, blank = true)
+            ?: return if (argb.take(width * height).all { alpha(it) == 0 }) Analysis(NO_TRIM, null, blank = true) else NOTHING
         val margins = Trim(
             content.x0.toFloat() / width,
             content.y0.toFloat() / height,
@@ -170,12 +178,15 @@ object IconFit {
                 )
             }
         }
-        val capped = Trim(
+        val rawCapped = Trim(
             clampTrim(trim.left, margins.left - keep),
             clampTrim(trim.top, margins.top - keep),
             clampTrim(trim.right, margins.right - keep),
             clampTrim(trim.bottom, margins.bottom - keep),
         )
+        val (left, right) = keepSpan(rawCapped.left, rawCapped.right, width)
+        val (top, bottom) = keepSpan(rawCapped.top, rawCapped.bottom, height)
+        val capped = Trim(left, top, right, bottom)
         val finalRing = ringOf(
             argb,
             width,
@@ -216,7 +227,8 @@ object IconFit {
 
     /** Como [fitted], dizendo também quando o ícone é todo transparente (quem o mostra põe a reserva no lugar). */
     fun fit(icon: Drawable, diameter: Int): Fitted {
-        if (icon is AdaptiveIconDrawable || diameter < 8) return UNTOUCHED
+        if (diameter < 8) return UNTOUCHED
+        val adaptive = icon is AdaptiveIconDrawable
         val analysis = try {
             val sample = Bitmap.createBitmap(ANALYSIS_SIDE, ANALYSIS_SIDE, Bitmap.Config.ARGB_8888)
             drawSquare(icon, Canvas(sample), ANALYSIS_SIDE, 1f, 0f, 0f)
@@ -228,6 +240,8 @@ object IconFit {
             return UNTOUCHED
         }
         if (analysis.blank) return Fitted(null, true)
+        // O adaptativo já vem sangrado: só se confere se é todo transparente, sem recortar nada.
+        if (adaptive) return UNTOUCHED
         val crop = cropSquare(analysis.trim)
         if (!needsFit(analysis, crop)) return UNTOUCHED
         val drawable = try {
