@@ -184,7 +184,11 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         var (parent, _) = await OpenAsync(app, agent);
         var parentId = parent.GetProperty("sessionId").GetGuid();
 
-        var posting = PostAsync(app, "offer", new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId });
+        // O IP do cliente é fixado de propósito dentro da faixa CGNAT da lista (a da VPN), para que o teste não dependa do
+        // endereço padrão do servidor de teste: se a API passasse a decidir por rede, este é o caso que seria recusado.
+        var posting = app.App.SendAsync(
+            HttpMethod.Post, "/api/v1/pc/rtc/offer", new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId },
+            app.Login.AccessToken, forwardedFor: "100.64.1.5");
         await AnswerOfferAsync(agent);
         using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
 
