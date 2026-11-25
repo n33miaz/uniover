@@ -97,6 +97,8 @@ export interface MockTvState {
   adbPermission?: string | null;
   /** O motivo do agente quando a permissão falta (`tv_forgot`, `never`...). */
   adbPermissionReason?: string | null;
+  /** O elo entre a tela, o PC e a TV; ausente: um servidor que ainda não o manda. */
+  link?: { version: number; state: string } | null;
 }
 
 /** Falha que a próxima chamada de comando devolve (e que se repete até o teste limpar). */

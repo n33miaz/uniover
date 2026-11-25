@@ -33,6 +33,24 @@ export type AdbPermission = 'granted' | 'missing' | 'pending';
  */
 export type TvWakeHint = 'screenless_off' | 'replug';
 
+const LINK_STATES = [
+  'pc_offline',
+  'tv_off',
+  'tv_standby',
+  'tv_sleep',
+  'tv_unresponsive',
+  'ready',
+] as const;
+
+/** A versão dos valores de `link.state` que esta tela entende; ela só sobe na API com mudança incompatível. */
+const LINK_VERSION = 1;
+
+/**
+ * Em que ponto o caminho tela → PC → TV está, como a API o publica (`link.state`). `unknown` é um valor ou uma versão que
+ * esta versão do app não conhece: vale como "sem elo confirmado".
+ */
+export type TvLinkState = (typeof LINK_STATES)[number] | 'unknown';
+
 /** O estado já normalizado: o gerador tipa `volume` como número ou texto e `connection`/`power` como texto livre. */
 export interface TvState {
   readonly power: TvPower;
@@ -49,6 +67,8 @@ export interface TvState {
   readonly adbPermissionReason?: string | null;
   /** Os avisos de ligar pela rede; ausente quando não há nada a avisar (ou o agente está fora). */
   readonly wakeHints?: readonly TvWakeHint[];
+  /** O elo entre a tela, o PC e a TV; ausente ou `null` quando não há um valor da API para mostrar. */
+  readonly link?: TvLinkState | null;
 }
 
 /** Tipo da TV, como o agente a declara: muda o que o controle oferece (a Samsung não tem teclado nem limpeza). */
@@ -221,12 +241,21 @@ function toConnection(value: unknown, agentOnline: boolean): TvConnection {
     : 'unknown';
 }
 
+/** Só vale o que a API manda: sem o campo não há elo, e nada aqui o deduz de `connection` ou de `power`. */
+function toLink(value: unknown): TvLinkState | null {
+  if (!value || typeof value !== 'object') return null;
+  const dto = value as { version?: unknown; state?: unknown };
+  if (Number(dto.version) !== LINK_VERSION) return 'unknown';
+  return LINK_STATES.find((state) => state === dto.state) ?? 'unknown';
+}
+
 /** Lê o estado vindo da API ou do SSE; `null` quando o corpo não tem a forma esperada. */
 export function parseState(value: unknown): TvState | null {
   if (!value || typeof value !== 'object') return null;
   const dto = value as Partial<TvStateDto>;
   const agentOnline = dto.agentOnline === true;
   const wakeHints = toWakeHints((dto as { wakeHints?: unknown }).wakeHints, agentOnline);
+  const link = toLink(dto.link);
   return {
     power: toPower(dto.power),
     volume: agentOnline ? toVolume(dto.volume) : null,
@@ -238,6 +267,7 @@ export function parseState(value: unknown): TvState | null {
     adbPermission: toAdbPermission(dto.adbPermission, agentOnline),
     adbPermissionReason: toAdbReason(dto.adbPermissionReason, agentOnline),
     ...(wakeHints.length > 0 ? { wakeHints } : {}),
+    ...(link ? { link } : {}),
   };
 }
 

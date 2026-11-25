@@ -1,4 +1,5 @@
 import type { TvStatus } from './tv-store';
+import type { TvLinkState } from './tv-types';
 
 /**
  * Texto curto de cada estado do controle. `hibernating` é "controle dormindo": quem dorme é a sessão com a TV, a TV
@@ -28,6 +29,26 @@ export function statusLabel(status: TvStatus): string {
       return $localize`:@@tv.status.tv-unreachable:PC não alcança a TV`;
     default:
       return $localize`:@@tv.status.loading:reconectando…`;
+  }
+}
+
+/** A frase do elo entre a tela, o PC e a TV; sem um valor que se conheça, diz que não há confirmação. */
+export function linkLabel(state: TvLinkState | null): string {
+  switch (state) {
+    case 'pc_offline':
+      return $localize`:@@tv.link.pc-offline:PC desligado ou sem conexão`;
+    case 'tv_off':
+      return $localize`:@@tv.link.tv-off:TV desligada`;
+    case 'tv_standby':
+      return $localize`:@@tv.link.tv-standby:TV em standby`;
+    case 'tv_sleep':
+      return $localize`:@@tv.link.tv-sleep:TV no Modo Dormir`;
+    case 'tv_unresponsive':
+      return $localize`:@@tv.link.tv-unresponsive:A TV não responde ao PC`;
+    case 'ready':
+      return $localize`:@@tv.link.ready:Tudo pronto`;
+    default:
+      return $localize`:@@tv.link.unconfirmed:Estado da TV sem confirmação`;
   }
 }
 

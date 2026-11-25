@@ -30,6 +30,7 @@ import { TvSelection } from './tv-selection';
 import {
   TV_STREAM_EVENTS,
   TvKey,
+  TvLinkState,
   TvSettingsScreen,
   TvShortcut,
   TvState,
@@ -169,7 +170,6 @@ export class TvStore {
   private readonly api = inject(TvApi);
   /** O canal direto do aparelho: a tela da TV o pede aberto, e ele só leva as teclas com a sessão da TV aberta. */
   private readonly direct = inject(TvDirect);
-  readonly directReady = computed(() => this.direct.carriesKeys());
   private readonly stream = inject(StreamService);
   private readonly connectivity = inject(ConnectivityService);
   /** O comando que fica sem resposta ganha o aviso "A TV não está respondendo" (ver `SlowCommandWatch`). */
@@ -295,6 +295,14 @@ export class TvStore {
 
   /** Hora (HH:MM) em que esta tela recebeu o último estado; é o "visto às" mostrado sem rede. */
   readonly seenAtText = computed(() => (this.currentAccount() ? clockText(this._seenAt()) : null));
+
+  /**
+   * O elo que a API publicou por último para a TV em uso; `null` quando não há o que afirmar (nada lido ainda, API que não
+   * o manda ou aparelho sem rede, em que o último valor já não descreve o agora).
+   */
+  readonly linkState = computed<TvLinkState | null>(() =>
+    this.currentAccount() && this.link() !== 'offline' ? (this._state()?.link ?? null) : null,
+  );
 
   /** "28/10 19:24" (horário local), desde quando o PC está desligado; `null` se o servidor não sabe. */
   readonly pcOffSince = computed<string | null>(() => {
@@ -437,6 +445,10 @@ export class TvStore {
    * ele continua o mesmo: uma resposta da TV anterior nunca cai na atual.
    */
   private epoch = 0;
+  /** Numera, na ordem em que acontecem, os pedidos ao servidor e os estados que chegam pelo fluxo. */
+  private stateClock = 0;
+  /** O número do que o estado atual reflete: resposta ou falha de um pedido anterior a ele não o altera mais. */
+  private stateStamp = 0;
   /** A TV de quem são o estado e o fluxo de agora (`null` = ainda não se sabe qual a API escolheu). */
   private resolvedId: string | null = null;
   /** O fluxo está aberto e o aquecimento armado: só acontece com a tela viva E com permissão de ver a TV. */
@@ -627,9 +639,11 @@ export class TvStore {
     // Cada resposta é aplicada assim que chega, protegida pela `epoch` (se a TV ou a conta mudou no meio, ela é
     // descartada): uma lista de TVs ou um relatório de limpeza lentos não seguram o estado nem os atalhos que já voltaram.
     // Se a lista de TVs mostrar que a TV pedida não é a certa, a troca esquece o que já tinha chegado e busca o da certa.
+    const asked = this.ticket();
     const stateDone = this.api.state().then(
       (value) => {
-        if (this.live(epoch)) this.applyState(value);
+        // O fluxo, ou uma leitura pedida depois desta, pode ter chegado antes: esta resposta já é antiga.
+        if (this.live(epoch) && asked > this.stateStamp) this.applyState(value, asked);
       },
       (error: unknown) => {
         if (!this.live(epoch)) return;
@@ -637,7 +651,7 @@ export class TvStore {
         // e tempo esgotado seguem como "ainda não sei" e o teto da leitura decide.
         const failure = describeFailure(error);
         if (failure.kind === 'agent-offline' || failure.kind === 'not-configured') {
-          this.absorb(failure);
+          this.absorb(failure, asked);
         }
       },
     );
@@ -695,11 +709,12 @@ export class TvStore {
     // Com o agente fora do ar não há o que aquecer (e cada pedido recusado ocuparia a trilha de comandos): a volta
     // dele chega pelo fluxo, e a leitura periódica do estado cobre o fluxo caído.
     if (this._state()?.agentOnline === false) return;
+    const asked = this.ticket();
     try {
       await this.api.wake();
       if (this.live(epoch)) this._notConfigured.set(false);
     } catch (error) {
-      if (this.live(epoch)) this.absorb(describeFailure(error));
+      if (this.live(epoch)) this.absorb(describeFailure(error), asked);
     }
   }
 
@@ -736,6 +751,7 @@ export class TvStore {
     this._inFlightKeys.update((count) => count + 1);
     this._sent.update((count) => count + 1);
     const done = this.slow.begin('tv');
+    const asked = this.ticket();
     try {
       await this.api.sendKey(key);
       if (this.live(epoch) && this._notice()?.kind === 'error') this.clearNotice();
@@ -744,7 +760,7 @@ export class TvStore {
     } catch (error) {
       if (this.live(epoch)) {
         if (isExpiredInput(error)) this.noteExpiredKey();
-        else this.fail(error);
+        else this.fail(error, asked);
       }
       return false;
     } finally {
@@ -778,13 +794,14 @@ export class TvStore {
       };
     }
     const done = this.slow.begin('tv');
+    const asked = this.ticket();
     try {
       await this.api.sendText(text);
       return null;
     } catch (error) {
       const failure = describeFailure(error);
       this.telemetry.record({ kind: 'command-failure', module: 'tv', code: failure.kind });
-      if (this.live(epoch)) this.absorb(failure);
+      if (this.live(epoch)) this.absorb(failure, asked);
       return failure;
     } finally {
       done();
@@ -813,6 +830,7 @@ export class TvStore {
     this._sent.update((count) => count + 1);
     // Desligar espera o agente confirmar: o aviso vem com o prazo longo, mas vem.
     const done = this.slow.begin('tv', 'long');
+    const asked = this.ticket();
     try {
       const outcome = await this.api.powerOff(safe);
       if (this.live(epoch)) this.showNotice('info', powerOffNotice(outcome));
@@ -820,7 +838,7 @@ export class TvStore {
     } catch (error) {
       const failure = describeFailure(error, safe ? 'power-off' : undefined);
       this.telemetry.record({ kind: 'command-failure', module: 'tv', code: failure.kind });
-      if (this.live(epoch)) this.absorb(failure);
+      if (this.live(epoch)) this.absorb(failure, asked);
       return failure;
     } finally {
       done();
@@ -903,6 +921,7 @@ export class TvStore {
     this._sent.update((count) => count + 1);
     // O prazo conta desde o toque, inclusive a espera do sinal de presença.
     const done = this.slow.begin('tv');
+    const asked = this.ticket();
     try {
       await this.presence();
       await this.api.launch(shortcut.id);
@@ -912,7 +931,7 @@ export class TvStore {
       }
       return true;
     } catch (error) {
-      if (this.live(epoch)) this.fail(error);
+      if (this.live(epoch)) this.fail(error, asked);
       return false;
     } finally {
       done();
@@ -930,6 +949,7 @@ export class TvStore {
       return false;
     }
     const done = this.slow.begin('tv');
+    const asked = this.ticket();
     try {
       await this.presence();
       await this.api.openSettings(screen);
@@ -944,7 +964,7 @@ export class TvStore {
       }
       return true;
     } catch (error) {
-      if (this.live(epoch)) this.fail(error);
+      if (this.live(epoch)) this.fail(error, asked);
       return false;
     } finally {
       done();
@@ -971,6 +991,7 @@ export class TvStore {
     this._sent.update((count) => count + 1);
     // A limpeza leva até ~25 s de propósito: o aviso vem com o prazo longo, contado desde o toque.
     const done = this.slow.begin('tv', 'long');
+    const asked = this.ticket();
     try {
       await this.presence();
       const result = await this.api.cleanup();
@@ -986,7 +1007,7 @@ export class TvStore {
       }
       return true;
     } catch (error) {
-      if (this.live(epoch)) this.fail(error, 'cleanup');
+      if (this.live(epoch)) this.fail(error, asked, 'cleanup');
       return false;
     } finally {
       done();
@@ -1003,6 +1024,7 @@ export class TvStore {
     const done = this.slow.begin('tv');
     // O aceite na TV pode chegar pelo fluxo antes da resposta recusada: a prova já sai armada daqui.
     this.adbPermission.arm();
+    const asked = this.ticket();
     try {
       await this.api.refreshShortcuts();
       // A lista nova chega pelo fluxo; buscar de novo cobre o caso de o fluxo estar reconectando.
@@ -1024,7 +1046,7 @@ export class TvStore {
         !this.adbPermission.prompted(unconfirmed)
       ) {
         this.adbPermission.disarm();
-        this.fail(error);
+        this.fail(error, asked);
       }
       return false;
     } finally {
@@ -1082,6 +1104,7 @@ export class TvStore {
       return false;
     }
     const done = this.slow.begin('tv');
+    const asked = this.ticket();
     try {
       const updated = await this.api.updateShortcut(id, change);
       if (!this.live(epoch)) return true;
@@ -1090,7 +1113,7 @@ export class TvStore {
       );
       return true;
     } catch (error) {
-      if (this.live(epoch)) this.fail(error);
+      if (this.live(epoch)) this.fail(error, asked);
       return false;
     } finally {
       done();
@@ -1193,7 +1216,7 @@ export class TvStore {
         return;
       case TV_STREAM_EVENTS.state: {
         const state = parseState(parse(event.data));
-        if (state) this.applyState(state);
+        if (state) this.applyState(state, this.ticket());
         this._streamStatus.set('live');
         return;
       }
@@ -1213,7 +1236,8 @@ export class TvStore {
     }
   }
 
-  private applyState(state: TvState): void {
+  private applyState(state: TvState, stamp: number): void {
+    this.stateStamp = stamp;
     this.stateWatch.done();
     if (state.agentOnline) this._agentUnavailable.set(false);
     // O agente voltou: o que a TV oferece (as capacidades) só chega depois do `hello` dele, então a lista se renova.
@@ -1369,6 +1393,10 @@ export class TvStore {
     this.nudgeTimer = setTimeout(() => this._volumeNudge.set(0), VOLUME_NUDGE_MS);
   }
 
+  private ticket(): number {
+    return ++this.stateClock;
+  }
+
   /** Começa uma chamada: confere a conta e devolve a `epoch` com que ela vai ser conferida na volta. */
   private begin(): number {
     this.syncAccount();
@@ -1393,22 +1421,34 @@ export class TvStore {
     }
   }
 
-  /** Fatos que uma falha revela sobre o agente (sem aviso): o estado verdadeiro continua vindo do servidor. */
-  private absorb(failure: TvFailure): void {
+  /**
+   * Fatos que uma falha revela sobre o agente (sem aviso): o estado verdadeiro continua vindo do servidor. `asked` é o número
+   * do pedido que falhou: se um estado mais novo chegou depois dele, a falha já não diz nada sobre o agora.
+   */
+  private absorb(failure: TvFailure, asked: number): void {
+    if (asked <= this.stateStamp) return;
     if (failure.kind === 'not-configured') this._notConfigured.set(true);
     if (failure.kind === 'agent-offline') {
       // O servidor disse "fora do ar" fora da graça de presença (dentro dela a falha é `agent-reconnecting`, que não entra
       // aqui): é certeza, mesmo sem estado lido ainda.
       this._agentUnavailable.set(true);
-      this._state.update((state) =>
-        state ? { ...state, agentOnline: false, connection: 'disconnected', volume: null } : state,
-      );
+      const state = this._state();
+      if (!state) return;
+      this.stateStamp = asked;
+      this._state.set({
+        ...state,
+        agentOnline: false,
+        connection: 'disconnected',
+        volume: null,
+        // O elo guardado deixa de valer, salvo se já dizia o mesmo; o novo só a API informa.
+        ...(state.link && state.link !== 'pc_offline' ? { link: null } : {}),
+      });
     }
   }
 
-  private fail(error: unknown, context?: TvFailureContext): TvFailure {
+  private fail(error: unknown, asked: number, context?: TvFailureContext): TvFailure {
     const failure = describeFailure(error, context);
-    this.absorb(failure);
+    this.absorb(failure, asked);
     this.telemetry.record({ kind: 'command-failure', module: 'tv', code: failure.kind });
     // Falta de permissão do ADB: a folha "Liberar na TV" abre (ou o aviso já está na TV) e o erro não se repete em cima;
     // se a pessoa disse "Agora não", fica só o aviso curto.
@@ -1481,7 +1521,8 @@ export class TvStore {
       if ((cached.tv ?? null) !== this.selection.scope()) return;
       const state = parseState(cached.state);
       if (!state || typeof cached.seenAt !== 'number') return;
-      this._state.set(state);
+      // O elo é do instante em que chegou: o guardado não volta a valer quando a rede voltar.
+      this._state.set(state.link ? { ...state, link: null } : state);
       this._seenAt.set(cached.seenAt);
       this._shortcuts.set(this.withCachedIcons(parseShortcuts(cached.shortcuts)));
     } catch {
