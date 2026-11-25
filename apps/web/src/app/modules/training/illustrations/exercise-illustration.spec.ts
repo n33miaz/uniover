@@ -37,7 +37,7 @@ describe('ExerciseIllustration', () => {
 
   beforeEach(() => {
     reduced.set(false);
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toNotFake: ['setImmediate', 'clearImmediate'] });
   });
 
   afterEach(() => {

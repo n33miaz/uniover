@@ -34,7 +34,7 @@ describe('QrLoginPanel', () => {
   }
 
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toNotFake: ['setImmediate', 'clearImmediate'] });
     stubMedia();
     api.qrStart.mockReset();
     api.qrPoll.mockReset().mockResolvedValue({ status: 'pending' });

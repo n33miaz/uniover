@@ -24,7 +24,7 @@ describe('LoadingFrame', () => {
   const reload = vi.fn();
 
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toNotFake: ['setImmediate', 'clearImmediate'] });
     reload.mockReset();
     TestBed.configureTestingModule({
       providers: [
