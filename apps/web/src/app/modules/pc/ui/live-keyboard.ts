@@ -478,12 +478,31 @@ export class PcLiveKeyboard {
     }
   }
 
+  /**
+   * O campo ganhou o foco: o teclado do celular está aberto. Se o foco chegar por outro caminho que não o botão do teclado
+   * (NÃO VERIFICADO: o iPhone pode devolvê-lo ao campo ao voltar para o app), o modo teclado liga do mesmo jeito: com o
+   * teclado aberto o que se digita vai ao PC e tem de aparecer no eco.
+   */
   protected onFocus(): void {
+    if (!this.wanted && !this.disabled()) {
+      this.wanted = true;
+      this.shrunk = false;
+      this.clearEcho();
+      this.typing.emit(true);
+    }
     this.reset();
   }
 
-  /** O foco saiu do campo: se não foi um toque nas teclas da tela, o teclado do celular foi fechado (ou o foco foi para outro lugar). */
+  /**
+   * O foco saiu do campo: se não foi um toque nas teclas da tela, o teclado do celular foi fechado (ou o foco foi para outro
+   * lugar). Uma composição não sobrevive à perda de foco, mesmo se o navegador não avisar o fim dela: sem isto o campo
+   * ficaria esperando um fim que não vem e descartaria tudo o que se digitasse depois.
+   */
   protected onBlur(): void {
+    if (this.composing) {
+      this.composing = false;
+      this.resetPending = false;
+    }
     if (this.wanted && !this.holding) this.endMode();
   }
 

@@ -272,6 +272,28 @@ describe('PcPrefs', () => {
     expect(fresh().showTyped()).toBe(false);
   });
 
+  it('an old "hidden" choice for the typed text turns back on once, and a new choice to hide it is kept', () => {
+    localStorage.setItem(
+      pcPrefsStorageKey('pc-user'),
+      JSON.stringify({
+        ...PC_PREFS_DEFAULTS,
+        showTypedChecked: undefined,
+        showTyped: false,
+        invertScroll: true,
+      }),
+    );
+    const prefs = fresh();
+    expect(prefs.showTyped()).toBe(true);
+    // Só o eco volta: as outras escolhas ficam como estavam.
+    expect(prefs.invertScroll()).toBe(true);
+    expect(saved()).toMatchObject({ showTyped: true, showTypedChecked: true, invertScroll: true });
+    expect(fresh().showTyped()).toBe(true);
+
+    fresh().set({ showTyped: false });
+    expect(fresh().showTyped()).toBe(false);
+    expect(saved()).toMatchObject({ showTyped: false, showTypedChecked: true });
+  });
+
   it('reset returns to the defaults', () => {
     const prefs = fresh();
     prefs.set({ sensitivity: 7, acceleration: true, invertScroll: true });

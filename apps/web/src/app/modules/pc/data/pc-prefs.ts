@@ -49,6 +49,11 @@ export interface PcPrefsValue {
    * nunca.
    */
   readonly showTyped: boolean;
+  /**
+   * O eco já passou pela volta ao padrão (ligado). Uma escolha "escondido" guardada antes dela volta a mostrar uma vez: o eco
+   * escondido some sem a pessoa perceber, e quem o quiser escondido esconde de novo (e essa escolha fica).
+   */
+  readonly showTypedChecked: boolean;
   /** A dica de primeiro uso (os três gestos) já foi vista: some ao primeiro toque e não volta. */
   readonly hintSeen: boolean;
   /** O aviso do Vídeo ("o player precisa estar em foco") já foi visto: some ao primeiro toque de vídeo e não volta. */
@@ -69,6 +74,7 @@ export const PC_PREFS_DEFAULTS: PcPrefsValue = {
   clickButtons: false,
   keepAwake: true,
   showTyped: true,
+  showTypedChecked: true,
   hintSeen: false,
   videoHintSeen: false,
 };
@@ -110,6 +116,7 @@ function parsePrefs(raw: unknown): PcPrefsValue {
     clickButtons: flag('clickButtons'),
     keepAwake: flag('keepAwake'),
     showTyped: flag('showTyped'),
+    showTypedChecked: true,
     hintSeen: flag('hintSeen'),
     videoHintSeen: flag('videoHintSeen'),
   };
@@ -241,14 +248,22 @@ export class PcPrefs {
     if (!accountId) return PC_PREFS_DEFAULTS;
     try {
       const raw = this.storage?.getItem(pcPrefsStorageKey(accountId));
-      return raw ? parsePrefs(JSON.parse(raw)) : PC_PREFS_DEFAULTS;
+      if (!raw) return PC_PREFS_DEFAULTS;
+      const stored: unknown = JSON.parse(raw);
+      const value = parsePrefs(stored);
+      // Guardado antes da volta ao padrão: o eco volta a aparecer, uma vez, e a marca fica guardada.
+      if (stored && typeof stored === 'object' && !('showTypedChecked' in stored)) {
+        const migrated = { ...value, showTyped: true };
+        this.write(migrated, accountId);
+        return migrated;
+      }
+      return value;
     } catch {
       return PC_PREFS_DEFAULTS; // JSON corrompido: volta ao padrão sem quebrar o touchpad
     }
   }
 
-  private write(value: PcPrefsValue): void {
-    const accountId = this.session.accountId();
+  private write(value: PcPrefsValue, accountId = this.session.accountId()): void {
     if (!accountId) return;
     try {
       this.storage?.setItem(pcPrefsStorageKey(accountId), JSON.stringify(value));

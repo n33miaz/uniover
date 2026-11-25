@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { Page, TestInfo } from '@playwright/test';
-import { mockIdentityApi } from '../auth/identity-mock';
+import { OWNER_ID, mockIdentityApi } from '../auth/identity-mock';
 import { expect, screenshot, test } from '../fixtures';
 import { afterFrames, settle } from '../screens/screen-helpers';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
@@ -76,6 +76,32 @@ function visibleArea(page: Page) {
     const viewport = window.visualViewport!;
     return { top: viewport.offsetTop, bottom: viewport.offsetTop + viewport.height };
   });
+}
+
+/** Onde está a última letra do eco, na tela (a caixa do último caractere do último trecho de texto). */
+function lastLetterBox(page: Page) {
+  return page.evaluate(() => {
+    const texts = document.querySelectorAll('.echo-text');
+    const node = texts[texts.length - 1]?.firstChild;
+    if (!node?.textContent) return null;
+    const range = document.createRange();
+    range.setStart(node, node.textContent.length - 1);
+    range.setEnd(node, node.textContent.length);
+    const rect = range.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  });
+}
+
+/** Abre a tela do mouse com o PC conectado e o teclado do controle aberto (o campo com o foco). */
+async function openTyping(page: Page): Promise<void> {
+  await page.goto('/pc');
+  await expect(page.getByRole('heading', { level: 1, name: 'Controle do PC' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: /Conectado|Sem/ })).toHaveText(
+    'Conectado',
+  );
+  await settle(page);
+  await page.getByRole('button', { name: 'Teclado', exact: true }).click();
+  await expect(page.getByLabel('Digitar no PC')).toBeFocused();
 }
 
 async function boxOf(page: Page, selector: string) {
@@ -163,4 +189,61 @@ test.describe('o eco do que se digita no PC fica à vista com o teclado do celul
       );
     });
   }
+
+  test('a última letra de um texto longo fica à vista, acima do teclado do celular', async ({
+    page,
+  }, info) => {
+    await openTyping(page);
+    await openPhoneKeyboard(page, info, true);
+    const text = 'Bom dia, já mandei o relatório de ontem e a planilha nova!';
+    await page.keyboard.type(text);
+    await page.keyboard.type('Z');
+    await afterFrames(page, 4);
+    const visible = await visibleArea(page);
+    const line = await boxOf(page, '.echo-line');
+    const last = await lastLetterBox(page);
+    expect(last, 'última letra no eco').not.toBeNull();
+    // A última letra digitada está inteira dentro da linha do eco (não cortada pela direita) e na parte visível da tela.
+    expect(last!.x, 'última letra dentro da linha').toBeGreaterThanOrEqual(line.x - 0.5);
+    expect(last!.x + last!.width, 'última letra não cortada').toBeLessThanOrEqual(
+      line.x + line.width + 0.5,
+    );
+    expect(last!.y, 'última letra abaixo do topo visível').toBeGreaterThanOrEqual(
+      visible.top - 0.5,
+    );
+    expect(last!.y + last!.height, 'última letra acima do teclado').toBeLessThanOrEqual(
+      visible.bottom + 0.5,
+    );
+    // E é mesmo ela que está ali (nada por cima).
+    const onTop = await page.evaluate(
+      ({ x, y }) => document.elementFromPoint(x, y)?.closest('.echo-line') !== null,
+      { x: last!.x + last!.width / 2, y: last!.y + last!.height / 2 },
+    );
+    expect(onTop, 'nada cobre a última letra').toBe(true);
+    // O eco não alargou a tela (a linha cabe na largura do aparelho).
+    expect(line.x + line.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  });
+
+  test('uma escolha antiga de esconder o eco não esconde as letras sem a pessoa saber', async ({
+    page,
+  }, info) => {
+    test.skip(info.project.name !== 'iphone-12', 'o teclado que cobre a janela é o do iPhone');
+    await page.addInitScript(
+      (key) => {
+        if (localStorage.getItem(key) === null) {
+          localStorage.setItem(key, JSON.stringify({ showTyped: false }));
+        }
+      },
+      `uniover.pc.prefs.v1.${encodeURIComponent(OWNER_ID)}`,
+    );
+    await openTyping(page);
+    await openPhoneKeyboard(page, info, true);
+    // Antes de digitar, a faixa do eco já está à vista e diz onde as letras vão aparecer.
+    await expect(page.locator('.echo')).toBeVisible();
+    await page.keyboard.type('olá');
+    await expect(page.locator('.echo-line')).toHaveText('olá');
+    const visible = await visibleArea(page);
+    const echo = await boxOf(page, '.echo');
+    expect(echo.y + echo.height, 'eco acima do teclado').toBeLessThanOrEqual(visible.bottom + 0.5);
+  });
 });
