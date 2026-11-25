@@ -80,6 +80,8 @@ class TrayController:
         self._announced: str | None = None
         # Quando a visualização já avisada foi vista pela última vez (nulo: a próxima é nova).
         self._viewing_seen: datetime | None = None
+        # O identificador da última sessão notificada ou emendada (some junto com `_viewing_seen`).
+        self._viewing_session: str | None = None
         # A que o dono mandou parar: segue visível até o processo da tela sair.
         self._stopped_screen: str | None = None
 
@@ -112,6 +114,7 @@ class TrayController:
                 self._stopped_screen = screen_session
                 # O aparelho que pedir a tela de novo começa outra visualização, com aviso.
                 self._viewing_seen = None
+                self._viewing_session = None
         elif action == "open":
             env.open_url(env.site_url)
         elif action == "status":
@@ -157,6 +160,7 @@ class TrayController:
             self._maybe_notify(inputs, now)
         elif inputs.screen_session:
             self._viewing_seen = now
+            self._viewing_session = inputs.screen_session
         return view
 
     def _notify_viewing(self, session: str | None, now: datetime) -> None:
@@ -164,9 +168,13 @@ class TrayController:
         if session is None or session == self._stopped_screen:
             return
         seen = self._viewing_seen
-        resumed = seen is not None and now - seen <= VIEWING_RESUMES_WITHIN
-        if resumed or self._env.notify(VIEWING_MESSAGE, VIEWING_TITLE):
+        # A mesma sessão já avisada é a mesma visualização, mesmo após uma pausa longa do laço
+        # (ex.: suspensão). Já outra sessão só emenda se a anterior foi vista há pouco (renovação).
+        same_session = seen is not None and session == self._viewing_session
+        renewed = seen is not None and now - seen <= VIEWING_RESUMES_WITHIN
+        if same_session or renewed or self._env.notify(VIEWING_MESSAGE, VIEWING_TITLE):
             self._viewing_seen = now
+            self._viewing_session = session
 
     def _maybe_notify(self, inputs: TrayInputs, now: datetime) -> None:
         checked = inputs.update_checked_at
