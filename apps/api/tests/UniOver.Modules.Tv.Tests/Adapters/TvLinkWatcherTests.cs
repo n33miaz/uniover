@@ -1,0 +1,108 @@
+using AwesomeAssertions;
+using Microsoft.Extensions.Options;
+using UniOver.Modules.Tv.Adapters;
+using UniOver.Modules.Tv.Domain;
+using UniOver.Modules.Tv.Ports;
+
+namespace UniOver.Modules.Tv.Tests.Adapters;
+
+public class TvLinkWatcherTests
+{
+    private const string Agent = "pc-casa";
+    private static readonly Guid TvId = Guid.NewGuid();
+
+    private sealed class Presence : ITvAgentPresence
+    {
+        public bool Fresh { get; set; } = true;
+
+        public bool IsOnline(string agentId) => true;
+
+        public DateTimeOffset? OfflineSince(string agentId) => null;
+
+        public bool IsOfflineBeyondReconnectGrace(string agentId) => false;
+
+        public bool HasRecentReport(string agentId, TimeSpan within) => Fresh;
+    }
+
+    private sealed class Stream : ITvStreamPublisher
+    {
+        public List<(Guid TvId, TvState State)> Published { get; } = [];
+
+        public void PublishState(TvState state) => Published.Add((Guid.Empty, state));
+
+        public void PublishState(Guid tvId, TvState state) => Published.Add((tvId, state));
+
+        public void PublishShortcuts(IReadOnlyList<TvShortcut> shortcuts)
+        {
+        }
+
+        public void PublishWatchdog(TvWatchdogEntry entry)
+        {
+        }
+    }
+
+    private static (TvLinkWatcher Watcher, Presence Presence, Stream Stream) Rig()
+    {
+        var store = new InMemoryTvStateStore();
+        store.Apply(Agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
+        var presence = new Presence();
+        var stream = new Stream();
+        var watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()));
+        watcher.Track(TvId, Agent, TvState.From(store.Last(Agent), agentOnline: true));
+        return (watcher, presence, stream);
+    }
+
+    [Fact]
+    public void ASilentAgent_PastTheStaleWindow_PublishesPcOfflineToThatTv_WithoutAnyRead()
+    {
+        var (watcher, presence, stream) = Rig();
+
+        watcher.Check();
+        stream.Published.Should().BeEmpty("nada mudou");
+
+        presence.Fresh = false;
+        watcher.Check();
+
+        var (tvId, state) = stream.Published.Should().ContainSingle().Subject;
+        tvId.Should().Be(TvId);
+        state.Link!.State.Should().Be(TvLinkText.PcOffline);
+    }
+
+    [Fact]
+    public void WhenTheAgentSpeaksAgain_WithoutTvState_TheRestoredLinkIsPublished()
+    {
+        var (watcher, presence, stream) = Rig();
+        presence.Fresh = false;
+        watcher.Check();
+
+        presence.Fresh = true;
+        watcher.Check();
+
+        stream.Published.Select(p => p.State.Link!.State).Should().Equal(TvLinkText.PcOffline, TvLinkText.Ready);
+    }
+
+    [Fact]
+    public void AnUnchangedLink_IsNotPublishedAgain()
+    {
+        var (watcher, presence, stream) = Rig();
+        presence.Fresh = false;
+
+        watcher.Check();
+        watcher.Check();
+        watcher.Check();
+
+        stream.Published.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void AnAgentNeverTracked_IsNotWatched()
+    {
+        var stream = new Stream();
+        var watcher = new TvLinkWatcher(
+            new InMemoryTvStateStore(), new Presence { Fresh = false }, stream, Options.Create(new TvModuleOptions()));
+
+        watcher.Check();
+
+        stream.Published.Should().BeEmpty();
+    }
+}

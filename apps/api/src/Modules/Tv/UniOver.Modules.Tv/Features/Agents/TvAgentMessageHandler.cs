@@ -27,6 +27,7 @@ internal sealed partial class TvAgentMessageHandler(
     ITvStateStore state,
     TvStatePersister persister,
     ITvStreamPublisher stream,
+    TvLinkWatcher watcher,
     ITvCleanupReports cleanupReports,
     ITvDiscoveryReports discoveryReports,
     TvLivreStore livreStore,
@@ -268,7 +269,9 @@ internal sealed partial class TvAgentMessageHandler(
         // Um estado vindo do agente prova que ele está conectado.
         state.NoteOnline(message.AgentId, true);
         state.Apply(message.AgentId, snapshot);
-        stream.PublishState(tvId, TvState.From(snapshot, agentOnline: true));
+        var view = TvState.From(snapshot, agentOnline: true);
+        stream.PublishState(tvId, view);
+        watcher.Track(tvId, message.AgentId, view);
         persister.Observe(message.AgentId, snapshot);
     }
 

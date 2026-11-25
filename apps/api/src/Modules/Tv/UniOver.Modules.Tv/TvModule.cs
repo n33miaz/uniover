@@ -95,6 +95,8 @@ public static class TvModule
         services.AddSingleton<ITvAgentResolver, TvAgentResolver>();
         services.AddHostedService<LegacyAgentImport>();
         services.AddSingleton<ITvAgentPresence, DevicesAgentPresence>();
+        services.AddSingleton<TvLinkWatcher>();
+        services.AddHostedService(sp => sp.GetRequiredService<TvLinkWatcher>());
         services.AddSingleton<IAgentPresenceListener, TvPresenceListener>();
         services.AddSingleton<ITvCommandSender, DevicesGatewayCommandSender>();
         services.AddSingleton<ITvCleanupSettingsPublisher, CleanupSettingsPublisher>();

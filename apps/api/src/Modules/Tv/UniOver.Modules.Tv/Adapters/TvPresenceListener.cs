@@ -20,7 +20,8 @@ internal sealed partial class TvPresenceListener(
     ITvStateStore state,
     ITvStreamPublisher stream,
     ILogger<TvPresenceListener> logger,
-    IServiceScopeFactory? scopes = null)
+    IServiceScopeFactory? scopes = null,
+    TvLinkWatcher? watcher = null)
     : IAgentPresenceListener
 {
     private readonly object _gate = new();
@@ -116,10 +117,14 @@ internal sealed partial class TvPresenceListener(
         // tela nunca viu a queda, mas um comando que falhou na janela pode tê-la marcado fora do ar por conta própria, e é
         // este aviso que a corrige.
         var justConnected = info.Connected && info.AgentVersion is null;
-        if (state.NoteOnline(info.AgentId, info.Connected) || justConnected)
+        var changed = state.NoteOnline(info.AgentId, info.Connected) || justConnected;
+        var view = TvState.From(state.Last(info.AgentId), info.Connected, offlineSince: info.DisconnectedAt ?? info.LastMessageAt, reportFresh: info.Connected);
+        if (changed)
         {
-            stream.PublishState(tvId, TvState.From(state.Last(info.AgentId), info.Connected, offlineSince: info.DisconnectedAt ?? info.LastMessageAt, reportFresh: info.Connected));
+            stream.PublishState(tvId, view);
         }
+
+        watcher?.Track(tvId, agentSlug, view);
     }
 
     // Só o tipo do erro: a mensagem do driver do banco pode citar o servidor e a conexão.
