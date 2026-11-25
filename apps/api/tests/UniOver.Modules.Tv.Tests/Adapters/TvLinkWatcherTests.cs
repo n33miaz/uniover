@@ -217,4 +217,58 @@ public class TvLinkWatcherTests
         stream.Published.Should().HaveCount(2);
         stream.Published[1].State.Link!.State.Should().Be(TvLinkText.PcOffline);
     }
+
+    [Fact]
+    public void AnAgentBoundWithAStaleReport_IsAnnouncedAsPcOffline()
+    {
+        var stream = new Stream();
+        var presence = new Presence { Fresh = false };
+        var store = new InMemoryTvStateStore();
+        store.Apply(Agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
+        var watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()));
+        var handler = new UniOver.Modules.Tv.Features.Config.BindAgentHandler(
+            null!, null!, null!, null!, store, presence, stream, null!, TimeProvider.System, watcher: watcher,
+            options: Options.Create(new TvModuleOptions()));
+
+        handler.AnnounceNewAgent(TvId, Agent);
+        watcher.Check();
+
+        stream.Published.Should().ContainSingle().Which.State.Link!.State.Should().Be(TvLinkText.PcOffline);
+    }
+
+    private sealed class Selection(UniOver.Modules.Tv.Features.Selection.TvTarget target)
+        : UniOver.Modules.Tv.Features.Selection.ITvCurrentSelection
+    {
+        public UniOver.Modules.Tv.Features.Selection.TvTarget Current => target;
+
+        public bool TryGet(out UniOver.Modules.Tv.Features.Selection.TvTarget? found)
+        {
+            found = target;
+            return true;
+        }
+
+        public void Set(UniOver.Modules.Tv.Features.Selection.TvTarget value)
+        {
+        }
+    }
+
+    [Fact]
+    public void ALinkChangePublishedByARead_BecomesTheBaseline_SoTheNextPassDoesNotRepeatIt()
+    {
+        var store = new InMemoryTvStateStore();
+        store.Apply(Agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
+        var presence = new Presence();
+        var stream = new Stream();
+        var options = Options.Create(new TvModuleOptions());
+        var watcher = new TvLinkWatcher(store, presence, stream, options);
+        watcher.Track(TvId, Agent, TvState.From(store.Last(Agent), agentOnline: true));
+        var target = new UniOver.Modules.Tv.Features.Selection.TvTarget(TvId, Agent, "TV", true);
+        var provider = new TvStateProvider(new Selection(target), store, presence, options, watcher);
+
+        presence.Fresh = false;
+        provider.Current(target);
+        watcher.Check();
+
+        stream.Published.Should().ContainSingle("a leitura já publicou o elo e a passada não repete");
+    }
 }

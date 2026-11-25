@@ -75,7 +75,8 @@ internal sealed class BindAgentHandler(
     TimeProvider time,
     ITvCleanupSettingsPublisher? cleanupPublisher = null,
     IEventBus? events = null,
-    TvLinkWatcher? watcher = null)
+    TvLinkWatcher? watcher = null,
+    Microsoft.Extensions.Options.IOptions<TvModuleOptions>? options = null)
 {
     /// <summary>
     /// Passa o controle da TV para o computador escolhido. Devolve a configuração nova, ou nulo quando o computador não
@@ -209,7 +210,10 @@ internal sealed class BindAgentHandler(
         stream.AdoptUnidentifiedStream(tvId);
         var online = presence.IsOnline(agentSlug);
         state.NoteOnline(agentSlug, online);
-        var announced = TvState.From(state.Last(agentSlug), online, offlineSince: online ? null : presence.OfflineSince(agentSlug));
+        var linkStale = options?.Value.LinkStale ?? new TvModuleOptions().LinkStale;
+        var announced = TvState.From(
+            state.Last(agentSlug), online, offlineSince: online ? null : presence.OfflineSince(agentSlug),
+            reportFresh: presence.HasRecentReport(agentSlug, linkStale));
         if (watcher is not null)
         {
             // Publica e passa a vigiar o computador novo no mesmo passo.
