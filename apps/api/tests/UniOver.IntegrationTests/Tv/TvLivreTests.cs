@@ -458,6 +458,35 @@ public sealed class TvLivreTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Install_KeepsTheNoticeOfAnAcceptedResult_WhenTheAgentDisconnectsWhileWaitingForTheState()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var agent = await ConnectAsync(app, notice: true);
+
+        var request = app.PostAsync($"{Base}/install");
+        var command = await NextAsync(agent, "tv.livre.v1");
+        var result = TvApp.Ok();
+        result["notice"] = "Restaurei o pacote com.tcl.tv; não o remova de novo.";
+        // Só o resultado, sem o estado: a API aceita a resposta e fica esperando o estado dentro da folga (relógio falso).
+        await TvApp.ReplyAsync(agent, command, result);
+        await Task.Delay(300, Ct);
+        request.IsCompleted.Should().BeFalse("a espera do estado só termina quando o relógio anda");
+
+        // O agente cai durante a espera e a janela de reconexão passa: a presença vigente já não anuncia a capacidade.
+        await agent.DisposeAsync();
+        app.PassReconnectGrace();
+        await TvApp.WaitUntilAsync(
+            () => app.Presence.Get(TvApp.AgentSlug) is not { Connected: true },
+            "agente desconectado");
+
+        using var response = await app.AdvanceWhilePendingAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await TvApp.JsonAsync(response)).GetProperty("notice").GetString()
+            .Should().Be("Restaurei o pacote com.tcl.tv; não o remova de novo.");
+    }
+
+    [Fact]
     public async Task Install_IgnoresANoticeFromAnAgentWithoutItsCapability()
     {
         await using var app = await TvApp.StartAsync(postgres);

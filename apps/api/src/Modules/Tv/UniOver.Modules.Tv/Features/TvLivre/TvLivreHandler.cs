@@ -425,13 +425,16 @@ internal sealed class TvLivreHandler(
             return LivreStep.Failed(outcome);
         }
 
+        // O aviso só vale do agente que declara a capacidade dele: os demais nunca o mandam. Decidido na hora em que a
+        // resposta é aceita, antes da espera: se o agente cair durante ela, o aviso de uma resposta já aceita não some.
+        var notice = HasCapability(TvCapabilities.LivreNotice) ? outcome.Notice : null;
+
         if (waitForState)
         {
             await WaitForStateAsync(ticket.RequestId, cancellationToken);
         }
 
-        // O aviso só vale do agente que declara a capacidade dele: os demais nunca o mandam.
-        return LivreStep.Succeeded(HasCapability(TvCapabilities.LivreNotice) ? outcome.Notice : null);
+        return LivreStep.Succeeded(notice);
     }
 
     /// <summary>
