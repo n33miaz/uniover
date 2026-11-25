@@ -1,6 +1,7 @@
 import {
   ANALYSIS_SIDE,
   DARK_PLATE,
+  MAX_CLEAR_TRIM,
   MAX_TRIM,
   analyzeIconEdges,
   cachedIconFit,
@@ -157,12 +158,25 @@ describe('analyzeIconEdges', () => {
     expect(trim.left).toBe(0);
   });
 
-  it('never takes more than the limit from a side, however wide the margin', () => {
+  it('takes a wide transparent margin away entirely, so a small plate fills the tile', () => {
+    // Antes parava em 18% por lado e a placa virava um quadrado pequeno no centro.
     const result = analyzeIconEdges(plateOn(CLEAR, BLACK, 20), 64, 64);
-    expect(MAX_TRIM).toBe(0.18);
     for (const side of [result.trim.left, result.trim.top, result.trim.right, result.trim.bottom]) {
-      expect(side).toBeCloseTo(MAX_TRIM, 5);
+      expect(side).toBeCloseTo(20 / 64, 5);
     }
+    expect(cropSquare(result.trim).size).toBeCloseTo(24 / 64, 5);
+    expect(result.background).toEqual({ r: 18, g: 18, b: 18 });
+  });
+
+  it('does not blow a speck of paint up past the transparent limit', () => {
+    const result = analyzeIconEdges(plateOn(CLEAR, BLACK, 28), 64, 64);
+    expect(MAX_CLEAR_TRIM).toBe(0.4);
+    expect(result.trim.left).toBeCloseTo(MAX_CLEAR_TRIM, 5);
+    expect(result.trim.top).toBeCloseTo(MAX_CLEAR_TRIM, 5);
+  });
+
+  it('still takes at most the frame limit from an opaque frame', () => {
+    expect(MAX_TRIM).toBe(0.18);
     const flat = analyzeIconEdges(plateOn(WHITE, BLUE, 22), 64, 64);
     expect(flat.trim.left).toBeCloseTo(MAX_TRIM, 5);
     expect(flat.trim.bottom).toBeCloseTo(MAX_TRIM, 5);
@@ -172,8 +186,8 @@ describe('analyzeIconEdges', () => {
     const data = pixels(64, (x, y) => (inside(x, 4, 60) && inside(y, 8, 24) ? BLUE : CLEAR), 36);
     const { trim } = analyzeIconEdges(data, 64, 36);
     expect(trim.left).toBeCloseTo(4 / 64, 5);
-    // A margem de cima passa de 18% da altura: o corte para no limite.
-    expect(trim.top).toBeCloseTo(MAX_TRIM, 5);
+    // A margem de cima é só transparente: sai inteira.
+    expect(trim.top).toBeCloseTo(8 / 36, 5);
   });
 
   it('is not fooled by a stray pixel in the margin', () => {

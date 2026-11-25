@@ -5,6 +5,7 @@ import {
   fallbackHue,
   iconSource,
   samsungIconSource,
+  systemAppGlyph,
 } from './app-icon-source';
 
 describe('iconSource', () => {
@@ -87,5 +88,22 @@ describe('fallbackGlyph', () => {
     expect(fallbackGlyph({ ...base, customLabel: '  ', tvLabel: '' })).toBe('3');
     expect(fallbackGlyph({ ...base, customLabel: '★★★' })).toBe('3');
     expect(fallbackGlyph({ ...base, position: 12 })).toBe('12');
+  });
+});
+
+describe('the same values on the TV', () => {
+  // O launcher da TV confere estes mesmos números no teste dele (`FallbackIconTest`).
+  it('gives each package the same fallback color index on both sides', () => {
+    expect(fallbackHue('com.netflix.ninja')).toBe(4);
+    expect(fallbackHue('com.exemplo.som')).toBe(3);
+    expect(fallbackHue('br.com.globo.globoplay')).toBe(0);
+  });
+
+  it('knows which system apps get our own glyph', () => {
+    expect(systemAppGlyph('com.android.tv.settings')).toBe('settings');
+    expect(systemAppGlyph('com.tcl.settings')).toBe('settings');
+    expect(systemAppGlyph('com.vendor.tvsettings')).toBe('settings');
+    expect(systemAppGlyph('com.exemplo.settingsapp')).toBeNull();
+    expect(systemAppGlyph('com.netflix.ninja')).toBeNull();
   });
 });

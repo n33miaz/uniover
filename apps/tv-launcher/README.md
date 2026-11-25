@@ -7,8 +7,12 @@ agente do PC configura tudo por ADB.
 - Funciona em qualquer marca com Android TV ou Google TV (Android 9 em diante), e também em caixas Android.
 - Na fileira, além dos apps: Dormir (opcional), Rede e Entradas (aparecem só se a TV tem a tela; a das entradas depende
   da marca e se confirma na própria TV) e Configurações. O nome do sistema fica pequeno num canto, e os ícones de apps
-  sem o desenho adaptativo são aparados e preenchem o círculo com a cor da placa, como no controle do app.
-- No Modo Dormir, volume, mudo e teclas de mídia passam sem acordar a tela; o tempo para acordar sozinho pode vir no
+  sem o desenho adaptativo são aparados e preenchem o círculo com a cor da placa, como no controle do app: a faixa
+  transparente sai inteira, então nenhum ícone fica como um quadrado pequeno no meio. App sem ícone (ou com ícone todo
+  transparente) mostra a inicial sobre a cor do pacote, e o app de Configurações da TV usa o nosso desenho de
+  engrenagem; as duas coisas são iguais às do controle no app.
+- No Modo Dormir, volume, mudo e teclas de mídia passam sem acordar a tela; as teclas de energia fecham a tela preta e
+  seguem para o sistema, que desliga a TV; o tempo para acordar sozinho pode vir no
   pedido (`--ei br.uniover.launcher.extra.MAX_MINUTES <0 a 720>`) e vale mais que o da configuração.
 - O **nível do app** (`ConfigReceiver.LEVEL`) é um inteiro que só cresce quando o app ganha algo que o agente ou o site
   precisam saber; não é a versão (essa muda a cada publicação). O agente o pergunta por
@@ -225,6 +229,11 @@ adb -s TV shell am start -n br.uniover.launcher/.SleepActivity
 Tela cheia e preta, sem nenhum elemento, com a tela mantida ligada (nada de protetor de tela do sistema) e o brilho
 da janela no mínimo. **Qualquer tecla** do controle acorda (a tecla é consumida: não aperta nada por baixo), e
 também um toque. O áudio continua tocando e o agente continua conectado, porque a TV não desliga.
+
+As teclas de energia (`POWER`, `TV_POWER`, `SLEEP`, `SOFT_SLEEP`, `WAKEUP`) nunca são consumidas: fecham a tela preta
+e seguem para o sistema, no apertar e no soltar, então a TV desliga pelo controle físico e pelo botão de desligar do
+app. Quando a tela sai da frente (a TV entrou em espera ou outro app abriu), o Modo Dormir fecha, e a TV volta ligando
+na home, não num preto.
 `sleep.maxMinutes` na configuração faz o Modo Dormir sair sozinho depois do tempo dado (0 = só com tecla).
 Para acordar pelo ADB: `adb -s TV shell input keyevent KEYCODE_DPAD_CENTER`.
 

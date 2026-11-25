@@ -1,4 +1,5 @@
 import type { TvShortcut } from '../data/tv-types';
+import type { TvIconName } from './tv-icon';
 
 /** O que o azulejo precisa saber de um atalho; `iconDataUri` pode faltar em linhas guardadas antes dos ícones. */
 export type AppIconSubject = Pick<TvShortcut, 'package' | 'position' | 'customLabel' | 'tvLabel'> &
@@ -41,6 +42,25 @@ export function iconSource(value: unknown): string | null {
 /** Imagem local para o alias Tizen quando a própria TV não forneceu uma imagem pelo contrato v2. */
 export function samsungIconSource(packageName: string): string | null {
   return SAMSUNG_ICON_PATHS[packageName] ?? null;
+}
+
+/**
+ * Apps do sistema da TV que aparecem com o desenho do UniOver (o mesmo círculo do TV Livre na TV), nunca com a arte do
+ * fabricante. O launcher da TV lê esta mesma tabela no teste dele: os dois lados nunca divergem.
+ */
+export const SYSTEM_APP_GLYPHS: Readonly<Record<string, TvIconName>> = {
+  'com.android.tv.settings': 'settings',
+  'com.android.settings': 'settings',
+};
+
+/** Fim de nome de pacote que é a tela de configurações de algum fabricante (`com.tcl.settings`, `...tvsettings`). */
+const SETTINGS_SUFFIXES = ['.settings', '.tvsettings'] as const;
+
+/** O desenho do UniOver para um app do sistema da TV, ou `null` para um app comum. */
+export function systemAppGlyph(packageName: string): TvIconName | null {
+  const known = SYSTEM_APP_GLYPHS[packageName];
+  if (known) return known;
+  return SETTINGS_SUFFIXES.some((suffix) => packageName.endsWith(suffix)) ? 'settings' : null;
 }
 
 /** Índice estável (0 a 5) da cor de reserva de um pacote: o mesmo app tem sempre a mesma cor. */

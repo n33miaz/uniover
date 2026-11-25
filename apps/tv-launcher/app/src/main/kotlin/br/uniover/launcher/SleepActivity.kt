@@ -16,7 +16,8 @@ import android.view.WindowManager
  *
  * A TV continua ligada, o áudio continua tocando e o agente continua conectado; só os pixels ficam pretos. Num
  * painel LCD o backlight segue aceso (com brilho residual); em OLED o preto é total. Volume, mudo e as teclas de
- * mídia passam sem acordar a tela ([SleepKeys]). O tempo para acordar sozinho vem do pedido (extra
+ * mídia passam sem acordar a tela; as de energia fecham a tela preta e seguem para o sistema, que desliga a TV
+ * ([SleepKeys]). O tempo para acordar sozinho vem do pedido (extra
  * [EXTRA_MAX_MINUTES]) quando ele traz um, e da configuração quando não.
  */
 class SleepActivity : Activity() {
@@ -24,7 +25,9 @@ class SleepActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Sem isto a TV poderia entrar no protetor de tela do sistema e trocar o preto por outra coisa.
+        // Sem isto a TV poderia entrar no protetor de tela do sistema e trocar o preto por outra coisa. A flag não
+        // segura a TV ligada: a tecla de energia desliga mesmo com ela, e o desligamento por inatividade das TVs
+        // atuais (o tempo de atenção do sistema) não a respeita.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Brilho mínimo da janela. Em muitas TVs não muda nada (o backlight é da imagem do fabricante), mas onde
         // vale, é o mais escuro possível.
@@ -54,6 +57,15 @@ class SleepActivity : Activity() {
         if (maxMinutes > 0) handler.postDelayed({ finish() }, maxMinutes * 60_000L)
     }
 
+    /**
+     * A tela saiu da frente: a TV entrou em espera, apagou a tela ou outro app abriu por cima. Fecha a tela preta, para
+     * a TV nunca voltar a ligar mostrando só preto (o que parece uma TV que não liga).
+     */
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) finish()
+    }
+
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()
@@ -61,9 +73,14 @@ class SleepActivity : Activity() {
 
     /**
      * Qualquer tecla acorda. A tecla é consumida: ela não deve também apertar algo na tela de baixo. As de volume e
-     * mídia seguem para o sistema e a tela continua preta.
+     * mídia seguem para o sistema e a tela continua preta. As de energia fecham a tela e seguem para o sistema, no
+     * apertar e no soltar (há TV que desliga no soltar ou no aperto longo).
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (SleepKeys.isPower(event.keyCode)) {
+            if (event.action == KeyEvent.ACTION_DOWN) finish()
+            return super.dispatchKeyEvent(event)
+        }
         if (SleepKeys.passesThrough(event.keyCode)) return super.dispatchKeyEvent(event)
         if (event.action == KeyEvent.ACTION_DOWN) finish()
         return true

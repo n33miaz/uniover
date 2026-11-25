@@ -3,8 +3,10 @@
  * que alguns apps desenham em volta) e diz quanto aparar para o desenho encher o azulejo. A análise é uma função pura
  * sobre pixels RGBA, sem DOM; a leitura do canvas e o cache em memória ficam no fim do arquivo.
  *
- * Princípio: errar para o lado de não cortar. Cada borda perde no máximo `MAX_TRIM` do lado, e só se corta o que é
- * claramente margem. Um desenho solto sobre o transparente mantém uma folga própria (`FREE_FORM_KEEP`); uma placa de
+ * Princípio: nunca um desenho pequeno no meio do azulejo, e errar para o lado de não cortar o desenho. A faixa
+ * transparente em volta não tem desenho nenhum: ela sai inteira (até `MAX_CLEAR_TRIM` do lado), e um ícone com muita
+ * folga cresce até encher o azulejo. Já a moldura opaca é tinta: dela cada borda perde no máximo `MAX_TRIM` a mais, e
+ * só o que é claramente margem. Um desenho solto sobre o transparente mantém uma folga própria (`FREE_FORM_KEEP`); uma placa de
  * uma cor só (o quadrado arredondado preto do CineVS) é aparada rente, e a cor dela vira o fundo do azulejo, que
  * é o que esconde os cantos transparentes da placa e qualquer fio de arredondamento.
  */
@@ -15,7 +17,7 @@ export interface IconColor {
   readonly b: number;
 }
 
-/** Fração do lado (0 a `MAX_TRIM`) a aparar em cada borda. */
+/** Fração do lado (0 a `MAX_CLEAR_TRIM + MAX_TRIM`) a aparar em cada borda. */
 export interface EdgeTrim {
   readonly left: number;
   readonly top: number;
@@ -31,8 +33,13 @@ export interface EdgeAnalysis {
   readonly blank?: boolean;
 }
 
-/** Quanto de cada lado pode ser aparado: o suficiente para uma margem comum, nunca o desenho. */
+/** Quanto de moldura opaca cada lado pode perder (além da faixa transparente): uma margem comum, nunca o desenho. */
 export const MAX_TRIM = 0.18;
+/**
+ * Quanto de faixa transparente cada lado pode perder. Não há desenho nela, então o teto é só para um pingo de tinta
+ * não virar um borrão ampliado: o desenho que ocupa 20% do lado ainda cresce até encher o azulejo.
+ */
+export const MAX_CLEAR_TRIM = 0.4;
 
 /** Acima disto um pixel conta como tinta; abaixo, como transparente (a sombra suave de um ícone fica de fora). */
 const SOLID_ALPHA = 128;
@@ -157,7 +164,14 @@ function frameInner(rgba: Rgba, width: number, box: Box, frame: IconColor): Box 
   return total > 0 && frameLike / total >= FRAME_EXPOSED_SHARE ? null : inner;
 }
 
-const clampTrim = (value: number) => Math.min(MAX_TRIM, Math.max(0, value));
+/**
+ * O corte de um lado: a faixa transparente (`clear`, até `MAX_CLEAR_TRIM`) mais o que passa dela, que é moldura opaca
+ * (até `MAX_TRIM`).
+ */
+const clampTrim = (value: number, clear: number) => {
+  const free = Math.min(MAX_CLEAR_TRIM, Math.max(0, clear));
+  return free + Math.min(MAX_TRIM, Math.max(0, value - Math.max(0, clear)));
+};
 
 /**
  * Procura a margem do ícone em `rgba` (largura × altura × 4 bytes) e devolve quanto aparar de cada lado e a cor das
@@ -211,10 +225,10 @@ export function analyzeIconEdges(rgba: Rgba, width: number, height: number): Edg
   }
 
   const capped: EdgeTrim = {
-    left: clampTrim(trim.left),
-    top: clampTrim(trim.top),
-    right: clampTrim(trim.right),
-    bottom: clampTrim(trim.bottom),
+    left: clampTrim(trim.left, margins.left - keep),
+    top: clampTrim(trim.top, margins.top - keep),
+    right: clampTrim(trim.right, margins.right - keep),
+    bottom: clampTrim(trim.bottom, margins.bottom - keep),
   };
 
   // O fundo do azulejo é a cor da borda que sobrou, quando ela é de uma placa.

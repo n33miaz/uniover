@@ -69,6 +69,26 @@ describe('AppIcon', () => {
     expect(tile.className).toMatch(/\bhue-[0-5]\b/);
   });
 
+  it('draws the system settings app with our own glyph on the system plate, not the vendor art', () => {
+    for (const pkg of ['com.android.tv.settings', 'com.android.settings', 'com.tcl.settings']) {
+      show(
+        makeShortcut(1, { tvLabel: 'Configurações', package: pkg, iconDataUri: pngIcon(96, 96) }),
+      );
+      expect(image()).toBeNull();
+      expect(fallback()).toBeNull();
+      expect(host.classList.contains('system')).toBe(true);
+      const glyph = host.querySelector('.system-glyph path');
+      expect(glyph?.getAttribute('d')).toContain('M12 8.5a3.5 3.5');
+      expect(host.querySelector('.system-glyph')?.getAttribute('aria-hidden')).toBe('true');
+    }
+  });
+
+  it('keeps an ordinary app on its own icon', () => {
+    show(makeShortcut(1, { package: 'com.exemplo.settingsapp', iconDataUri: pngIcon(96, 96) }));
+    expect(host.classList.contains('system')).toBe(false);
+    expect(image()).not.toBeNull();
+  });
+
   it('a well-known brand without an icon gets a brand-like tint and its mark, never a bundled logo', () => {
     show(makeShortcut(1, { tvLabel: 'Disney+', package: 'com.disney.disneyplus' }));
     expect(image()).toBeNull();

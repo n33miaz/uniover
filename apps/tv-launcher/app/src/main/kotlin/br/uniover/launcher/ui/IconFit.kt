@@ -17,8 +17,10 @@ import kotlin.math.roundToInt
  * chapada que alguns apps desenham em volta), apara o que é claramente margem e usa a cor da placa como fundo do
  * círculo. É o mesmo desenho do azulejo do controle no app (`app-icon-fit.ts`), em Kotlin.
  *
- * Princípio: errar para o lado de não cortar. Cada borda perde no máximo [MAX_TRIM] do lado, e só se corta o que é
- * claramente margem. Um desenho solto sobre o transparente mantém uma folga própria; uma placa de uma cor só é
+ * Princípio: nunca um desenho pequeno no meio do círculo, e errar para o lado de não cortar o desenho. A faixa
+ * transparente em volta não tem desenho nenhum: ela sai inteira (até [MAX_CLEAR_TRIM] do lado), e um ícone com muita
+ * folga cresce até encher o círculo. Já a moldura opaca é tinta: dela cada borda perde no máximo [MAX_TRIM] a mais, e
+ * só o que é claramente margem. Um desenho solto sobre o transparente mantém uma folga própria; uma placa de uma cor só é
  * aparada rente, e a cor dela vira o fundo do círculo (some o quadrado branco dos cantos).
  *
  * A análise ([analyze]) é pura sobre pixels ARGB, sem Android, e é a parte testada.
@@ -32,7 +34,10 @@ object IconFit {
     /** O recorte quadrado, em frações do lado da imagem. */
     data class Crop(val x: Float, val y: Float, val size: Float)
 
+    /** Quanto de moldura opaca cada lado pode perder (além da faixa transparente). */
     const val MAX_TRIM = 0.18f
+    /** Quanto de faixa transparente cada lado pode perder: o desenho que ocupa 20% do lado ainda enche o círculo. */
+    const val MAX_CLEAR_TRIM = 0.4f
     const val ANALYSIS_SIDE = 64
 
     private const val SOLID_ALPHA = 128
@@ -126,7 +131,11 @@ object IconFit {
         return if (total > 0 && frameLike.toFloat() / total >= FRAME_EXPOSED_SHARE) null else inner
     }
 
-    private fun clampTrim(value: Float) = min(MAX_TRIM, max(0f, value))
+    /** O corte de um lado: a faixa transparente ([clear], até [MAX_CLEAR_TRIM]) mais a moldura opaca além dela (até [MAX_TRIM]). */
+    private fun clampTrim(value: Float, clear: Float): Float {
+        val free = min(MAX_CLEAR_TRIM, max(0f, clear))
+        return free + min(MAX_TRIM, max(0f, value - max(0f, clear)))
+    }
 
     /**
      * Procura a margem do ícone em [argb] (largura x altura pixels ARGB) e devolve quanto aparar de cada lado e a cor da
@@ -161,7 +170,12 @@ object IconFit {
                 )
             }
         }
-        val capped = Trim(clampTrim(trim.left), clampTrim(trim.top), clampTrim(trim.right), clampTrim(trim.bottom))
+        val capped = Trim(
+            clampTrim(trim.left, margins.left - keep),
+            clampTrim(trim.top, margins.top - keep),
+            clampTrim(trim.right, margins.right - keep),
+            clampTrim(trim.bottom, margins.bottom - keep),
+        )
         val finalRing = ringOf(
             argb,
             width,
@@ -193,8 +207,16 @@ object IconFit {
      * O ícone pronto para o círculo, ou nulo quando não há o que ajustar (ícone adaptativo, que já vem sangrado, ou sem
      * margem nem placa). Desenha o ícone a [diameter] pixels, com a cor da placa de fundo e o recorte ocupando tudo.
      */
-    fun fitted(icon: Drawable, diameter: Int): Drawable? {
-        if (icon is AdaptiveIconDrawable || diameter < 8) return null
+    fun fitted(icon: Drawable, diameter: Int): Drawable? = fit(icon, diameter).drawable
+
+    /** O resultado do ajuste: o desenho pronto (ou nulo, se não há o que ajustar) e se o ícone não tem tinta nenhuma. */
+    data class Fitted(val drawable: Drawable?, val blank: Boolean)
+
+    private val UNTOUCHED = Fitted(null, false)
+
+    /** Como [fitted], dizendo também quando o ícone é todo transparente (quem o mostra põe a reserva no lugar). */
+    fun fit(icon: Drawable, diameter: Int): Fitted {
+        if (icon is AdaptiveIconDrawable || diameter < 8) return UNTOUCHED
         val analysis = try {
             val sample = Bitmap.createBitmap(ANALYSIS_SIDE, ANALYSIS_SIDE, Bitmap.Config.ARGB_8888)
             drawSquare(icon, Canvas(sample), ANALYSIS_SIDE, 1f, 0f, 0f)
@@ -203,11 +225,12 @@ object IconFit {
             sample.recycle()
             analyze(pixels, ANALYSIS_SIDE, ANALYSIS_SIDE)
         } catch (_: RuntimeException) {
-            return null
+            return UNTOUCHED
         }
+        if (analysis.blank) return Fitted(null, true)
         val crop = cropSquare(analysis.trim)
-        if (!needsFit(analysis, crop)) return null
-        return try {
+        if (!needsFit(analysis, crop)) return UNTOUCHED
+        val drawable = try {
             val bitmap = Bitmap.createBitmap(diameter, diameter, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             analysis.background?.let { canvas.drawColor(it, PorterDuff.Mode.SRC) }
@@ -217,6 +240,7 @@ object IconFit {
         } catch (_: RuntimeException) {
             null
         }
+        return Fitted(drawable, false)
     }
 
     /**
