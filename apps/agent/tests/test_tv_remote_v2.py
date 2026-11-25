@@ -41,7 +41,7 @@ from uniover_agent.contracts.tv_key_v1 import TvKeyV1BodyKey
 from uniover_agent.contracts.tv_key_v2 import TvKeyV2BodyKey
 from uniover_agent.core import SessionState, TvSessionManager
 from uniover_agent.core.tv.handlers import CHANNEL_CLOSED, ValidatedCommand, tv_text_handler
-from uniover_agent.core.tv.session import TvSessionError
+from uniover_agent.core.tv.session import TV_UNREACHABLE, TvSessionError
 from uniover_agent.core.tv.text_edit import RESYNC_ABANDONED, TextReconciler
 from uniover_agent.ports import (
     TextFieldStatus,
@@ -873,6 +873,12 @@ async def test_losing_buffered_ime_does_not_claim_or_repeat_unconfirmed_text(
         assert caught.value.may_have_sent
         assert library.protocol is not before
         assert library.protocol.sent_text() == []
+        # Relato de antes da queda entregue depois da reconexão, com contador menor que o último:
+        # quem o produziu foi a conexão antiga, então não confirma o texto.
+        before.report("éá", sequence=1)
+        with pytest.raises(TvSessionError):
+            await editor.set_text("éá")
+        assert library.protocol.sent_text() == []
         library.protocol.report("dono", sequence=3)
         with pytest.raises(TvSessionError):
             await editor.set_text("éá")
@@ -894,6 +900,30 @@ async def test_a_reset_ime_counter_after_a_reconnect_still_confirms_the_same_fie
         assert library.protocol is not before
         # Mesmo contador de campo, contador de IME reiniciado e menor que o salvo.
         library.protocol.report("éá", sequence=2)
+        await editor.set_text("éá")
+        assert library.protocol.sent_text() == []
+
+
+async def test_a_new_connection_repeating_the_last_ime_counter_does_not_confirm(
+    tmp_path: Path,
+) -> None:
+    """Limitação aceita: um contador reiniciado que coincide com o último visto fica em dúvida.
+
+    Na conexão nova o valor igual ao último relato de antes da queda não se distingue da repetição
+    dele. Na dúvida não confirma: a TV fica inalcançável para este texto, sem apagar nem repetir.
+    """
+    async with _buffered_ime(tmp_path) as (editor, manager, library):
+        before = library.protocol
+        await editor.set_text("éá")
+        before.report("é", sequence=5)
+        before.buffer.abort()
+        await manager.wake()
+        library.protocol.report("éá", sequence=5)
+        with pytest.raises(TvSessionError) as caught:
+            await editor.set_text("éá")
+        assert caught.value.code == TV_UNREACHABLE
+        assert library.protocol.sent_text() == []
+        library.protocol.report("éá", sequence=6)
         await editor.set_text("éá")
         assert library.protocol.sent_text() == []
 
