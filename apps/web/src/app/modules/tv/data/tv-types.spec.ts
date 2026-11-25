@@ -151,6 +151,33 @@ describe('parseState', () => {
   });
 });
 
+describe('parseState: link', () => {
+  const body = { power: 'on', volume: 1, app: null, connection: 'hot', agentOnline: true };
+  const linkOf = (link: unknown) => parseState({ ...body, link })?.link;
+
+  it.each(['pc_offline', 'tv_off', 'tv_standby', 'tv_sleep', 'tv_unresponsive', 'ready'])(
+    'reads "%s"',
+    (state) => {
+      expect(linkOf({ version: 1, state })).toBe(state);
+    },
+  );
+
+  it('accepts the version written as text', () => {
+    expect(linkOf({ version: '1', state: 'ready' })).toBe('ready');
+  });
+
+  it('treats a state or a version it does not know as unconfirmed', () => {
+    expect(linkOf({ version: 1, state: 'algo_novo' })).toBe('unknown');
+    expect(linkOf({ version: 2, state: 'ready' })).toBe('unknown');
+  });
+
+  it('has no link when the API sends none, whatever the rest says', () => {
+    expect(linkOf(undefined)).toBeUndefined();
+    expect(linkOf(null)).toBeUndefined();
+    expect(parseState({ ...body, agentOnline: false, power: 'off' })?.link).toBeUndefined();
+  });
+});
+
 describe('parseShortcuts', () => {
   it('sorts by position and drops entries without id or position', () => {
     const list = parseShortcuts([

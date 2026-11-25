@@ -4,7 +4,7 @@ import { TvFailure } from './data/tv-errors';
 import type { TvPowerSchedule } from './data/tv-api';
 import { TvLink, TvNotice, TvStatus, TvStreamStatus } from './data/tv-store';
 import { withOrder } from './data/tv-order';
-import { TvShortcut, TvState, TvSummary, TvWatchdog } from './data/tv-types';
+import { TvLinkState, TvShortcut, TvState, TvSummary, TvWatchdog } from './data/tv-types';
 
 /** Estado quente padrão dos testes de tela. */
 export const HOT: TvState = {
@@ -126,7 +126,7 @@ export function createFakeTvStore() {
     state: signal<TvState | null>(HOT),
     shortcuts,
     status: signal<TvStatus>('hot'),
-    directReady: signal(false),
+    linkState: signal<TvLinkState | null>('ready'),
     lastKnownStatus: signal<TvStatus | null>('hot'),
     link: signal<TvLink>('ok'),
     canSend: signal(true),

@@ -17,7 +17,7 @@ import {
   tvIconsCacheKey,
   tvStateCacheKey,
 } from './tv-store';
-import { TvShortcut, TvSummary } from './tv-types';
+import { TvShortcut, TvSummary, parseState } from './tv-types';
 
 const PROBLEM = 'https://uniover.app/problems/';
 
@@ -186,6 +186,185 @@ describe('TvStore', () => {
       await flush();
       expect(open).toHaveBeenCalledTimes(1);
       expect(api.wake).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('link state', () => {
+    const linked = (state: string, extra: Record<string, unknown> = {}) => ({
+      ...hot,
+      ...extra,
+      link: { version: 1, state },
+    });
+    /** O que a API serve já passado pelo `parseState`, como o `TvApi` entrega. */
+    const read = (state: string, extra: Record<string, unknown> = {}) =>
+      parseState(linked(state, extra))!;
+    const pending = () => {
+      let resolve!: (value: unknown) => void;
+      let reject!: (reason: unknown) => void;
+      const promise = new Promise((ok, fail) => {
+        resolve = ok;
+        reject = fail;
+      });
+      return { promise, resolve, reject };
+    };
+
+    beforeEach(() => {
+      api.state.mockResolvedValue(read('ready'));
+    });
+
+    it('shows what the read says and follows the stream', async () => {
+      expect(store.linkState()).toBeNull();
+      await started();
+      expect(store.linkState()).toBe('ready');
+      emit('tv.state', linked('tv_off', { power: 'off' }));
+      expect(store.linkState()).toBe('tv_off');
+      emit('tv.state', linked('pc_offline', { agentOnline: false }));
+      expect(store.linkState()).toBe('pc_offline');
+    });
+
+    it('never works the link out from the rest of the state', async () => {
+      api.state.mockResolvedValue(parseState({ ...hot, power: 'off' }));
+      await started();
+      expect(store.state()?.power).toBe('off');
+      expect(store.linkState()).toBeNull();
+    });
+
+    it('drops a read that answers after a newer state came by the stream', async () => {
+      const slow = pending();
+      api.state.mockReturnValueOnce(slow.promise);
+      await started();
+      emit('tv.state', linked('tv_off', { volume: 30 }));
+      slow.resolve(read('ready'));
+      await flush();
+      expect(store.linkState()).toBe('tv_off');
+      expect(store.state()?.volume).toBe(30);
+    });
+
+    it('drops an older read that answers after a newer one', async () => {
+      await started();
+      const older = pending();
+      const newer = pending();
+      api.state.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+      const first = store.refresh();
+      const second = store.refresh();
+      newer.resolve(read('tv_standby'));
+      await flush();
+      older.resolve(read('ready'));
+      await Promise.all([first, second]);
+      expect(store.linkState()).toBe('tv_standby');
+    });
+
+    it('applies reads that answer in the order they were asked', async () => {
+      await started();
+      const older = pending();
+      const newer = pending();
+      api.state.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+      const first = store.refresh();
+      const second = store.refresh();
+      older.resolve(read('tv_off'));
+      await flush();
+      expect(store.linkState()).toBe('tv_off');
+      newer.resolve(read('tv_sleep'));
+      await Promise.all([first, second]);
+      expect(store.linkState()).toBe('tv_sleep');
+    });
+
+    it('keeps the last link when a read fails', async () => {
+      await started();
+      api.state.mockRejectedValue(problem(500));
+      await store.refresh();
+      expect(store.linkState()).toBe('ready');
+    });
+
+    it('ignores a read that fails late with the PC off, after the stream said it is back', async () => {
+      await started();
+      const slow = pending();
+      api.state.mockReturnValueOnce(slow.promise);
+      const reading = store.refresh();
+      emit('tv.state', linked('ready'));
+      slow.reject(problem(503, 'agent-offline'));
+      await reading;
+      expect(store.linkState()).toBe('ready');
+      expect(store.status()).toBe('hot');
+      expect(store.canSend()).toBe(true);
+    });
+
+    it('ignores a command that fails late with the PC off, after a newer state', async () => {
+      await started();
+      const slow = pending();
+      api.sendKey.mockReturnValueOnce(slow.promise);
+      const sending = store.sendKey('MUTE');
+      emit('tv.state', linked('tv_off'));
+      slow.reject(problem(503, 'agent-offline'));
+      expect(await sending).toBe(false);
+      expect(store.linkState()).toBe('tv_off');
+      expect(store.canSend()).toBe(true);
+      expect(store.notice()?.kind).toBe('error');
+    });
+
+    it('stops vouching for the old link when a command confirms the PC is off', async () => {
+      await started();
+      api.sendKey.mockRejectedValueOnce(problem(503, 'agent-offline'));
+      await store.sendKey('MUTE');
+      expect(store.status()).toBe('agent-off');
+      expect(store.linkState()).toBeNull();
+    });
+
+    it('does not let a read asked before that confirmation bring the old link back', async () => {
+      await started();
+      const slow = pending();
+      api.state.mockReturnValueOnce(slow.promise);
+      const reading = store.refresh();
+      api.sendKey.mockRejectedValueOnce(problem(503, 'agent-offline'));
+      await store.sendKey('MUTE');
+      slow.resolve(read('ready'));
+      await reading;
+      expect(store.status()).toBe('agent-off');
+      expect(store.linkState()).toBeNull();
+    });
+
+    it('claims nothing while the device is without network, and never revives a stored link', async () => {
+      await started();
+      online.set(false);
+      expect(store.linkState()).toBeNull();
+      store.stop();
+
+      TestBed.resetTestingModule();
+      configure();
+      identify(ACCOUNT);
+      store = TestBed.inject(TvStore);
+      await started();
+      expect(store.state()).not.toBeNull();
+      online.set(true);
+      expect(store.linkState()).toBeNull();
+    });
+
+    it('does not carry the link of the previous TV to the next one', async () => {
+      const tv = (id: string, isDefault = false): TvSummary => ({
+        id,
+        name: id,
+        isDefault,
+        agentSlug: null,
+        kind: 'android',
+        online: true,
+        capabilities: [],
+      });
+      api.tvs.mockResolvedValue([tv('casa', true), tv('amigo')]);
+      await started();
+      expect(store.linkState()).toBe('ready');
+      const late = pending();
+      const next = pending();
+      api.state.mockReturnValueOnce(late.promise).mockReturnValueOnce(next.promise);
+      const reading = store.refresh();
+
+      store.selectTv('amigo');
+      expect(store.linkState()).toBeNull();
+      late.resolve(read('tv_sleep'));
+      await reading;
+      expect(store.linkState()).toBeNull();
+      next.resolve(read('pc_offline', { agentOnline: false }));
+      await flush();
+      expect(store.linkState()).toBe('pc_offline');
     });
   });
 

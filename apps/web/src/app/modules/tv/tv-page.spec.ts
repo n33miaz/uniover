@@ -95,16 +95,6 @@ describe('TvPage', () => {
   });
 
   describe('header', () => {
-    it('shows the direct indicator only when the TV can use the channel', async () => {
-      expect(root.querySelector('.direct-label')).toBeNull();
-      store.directReady.set(true);
-      await render();
-      expect(root.querySelector('.direct-label')?.textContent?.trim()).toBe('Direto');
-      store.directReady.set(false);
-      await render();
-      expect(root.querySelector('.direct-label')).toBeNull();
-    });
-
     it('has back and menu on the left, the name TV as the h1 in the middle, and state dot and power on the right', () => {
       const back = root.querySelector('a.back')!;
       expect(back.getAttribute('href')).toBe('/');
@@ -202,6 +192,67 @@ describe('TvPage', () => {
         'computador que controla a TV está desligado',
       );
       expect(root.querySelector<HTMLButtonElement>('.power')!.disabled).toBe(true);
+    });
+  });
+
+  describe('link state', () => {
+    const line = () => root.querySelector<HTMLElement>('.link-state');
+
+    it.each([
+      ['pc_offline', 'PC desligado ou sem conexão'],
+      ['tv_off', 'TV desligada'],
+      ['tv_standby', 'TV em standby'],
+      ['tv_sleep', 'TV no Modo Dormir'],
+      ['tv_unresponsive', 'A TV não responde ao PC'],
+      ['ready', 'Tudo pronto'],
+      ['unknown', 'Estado da TV sem confirmação'],
+      [null, 'Estado da TV sem confirmação'],
+    ] as const)('says in plain words what the link "%s" means', async (state, text) => {
+      store.linkState.set(state);
+      await render();
+      expect(line()?.textContent?.trim()).toBe(text);
+      expect(line()?.getAttribute('role')).toBe('status');
+    });
+
+    it('follows the store as the link changes', async () => {
+      expect(line()?.textContent?.trim()).toBe('Tudo pronto');
+      store.linkState.set('tv_off');
+      await render();
+      expect(line()?.textContent?.trim()).toBe('TV desligada');
+    });
+
+    it('stays on screen with the PC off, next to the seal', async () => {
+      store.status.set('pc-off');
+      store.pcOff.set(true);
+      store.linkState.set('pc_offline');
+      await render();
+      expect(root.querySelector('.seal')).not.toBeNull();
+      expect(line()?.textContent?.trim()).toBe('PC desligado ou sem conexão');
+    });
+
+    it('has no line without a configured TV or without access to it', async () => {
+      store.status.set('unconfigured');
+      await render();
+      expect(line()).toBeNull();
+      store.status.set('hot');
+      await render();
+      expect(line()).not.toBeNull();
+      TestBed.inject(SessionState).setUser({
+        id: 'g',
+        email: 'g@example.com',
+        displayName: 'Gi',
+        role: 'guest',
+        permissions: [],
+      });
+      await render();
+      expect(line()).toBeNull();
+    });
+
+    it('puts no label under the name of the TV', () => {
+      expect([...root.querySelector('.head .name')!.children].map((el) => el.tagName)).toEqual([
+        'H1',
+      ]);
+      expect(root.textContent).not.toContain('Direto');
     });
   });
 

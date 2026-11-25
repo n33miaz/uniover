@@ -1430,7 +1430,7 @@ test.describe('aviso passageiro', () => {
     expect(leaving.removed, 'e depois saiu').toBe(true);
   });
 
-  test('fica logo abaixo do cabeçalho e, com a linha do motivo, abaixo dela (sem tapar o "Tentar de Novo")', async ({
+  test('fica logo abaixo do estado da TV e, com a linha do motivo, abaixo dela (sem tapar o "Tentar de Novo")', async ({
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -1439,10 +1439,10 @@ test.describe('aviso passageiro', () => {
     await keyButton(page, 'Mudo').click();
     const toast = page.locator('.toast');
     await expect(toast).toBeVisible();
-    const head = (await page.locator('header.head').boundingBox())!;
+    const state = (await page.locator('.link-state').boundingBox())!;
     const alone = (await toast.boundingBox())!;
-    expect(alone.y).toBeGreaterThanOrEqual(head.y + head.height);
-    expect(alone.y - (head.y + head.height)).toBeLessThanOrEqual(16);
+    expect(alone.y).toBeGreaterThanOrEqual(state.y + state.height);
+    expect(alone.y - (state.y + state.height)).toBeLessThanOrEqual(16);
     // Em cima, não embaixo: o aviso não chega às teclas de baixo.
     const bottom = (await keyButton(page, 'Mudo').boundingBox())!;
     expect(alone.y + alone.height).toBeLessThan(bottom.y);

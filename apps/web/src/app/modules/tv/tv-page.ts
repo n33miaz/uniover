@@ -19,6 +19,7 @@ import { TvAccess } from './data/tv-access';
 import { TvHelpGuides } from './data/tv-help-guides';
 import { TvPrefs } from './data/tv-prefs';
 import { TvRoundKeys } from './data/tv-round-keys';
+import { linkLabel } from './data/tv-status';
 import { TvStore } from './data/tv-store';
 import { AppsPanel } from './panels/apps-panel';
 import { AdbPermissionNotice } from './ui/adb-permission';
@@ -151,6 +152,7 @@ export class TvPage {
   protected readonly hasMenu = computed(
     () => this.access.view() && (this.access.apps() || this.access.control() || this.isOwner()),
   );
+  protected readonly linkText = computed(() => linkLabel(this.store.linkState()));
   /** Sem computador escolhido para a TV: nada de botões que não chegariam a lugar nenhum. */
   protected readonly unconfigured = computed(() => this.store.status() === 'unconfigured');
   /** A TV não tem pareamento válido (recusa confirmada ou nunca pareada); só o dono pode recomeçar o pareamento. */

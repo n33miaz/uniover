@@ -45,7 +45,9 @@ export class TvDirect {
         tv.capabilities.includes(PC_RTC_CAPABILITY) &&
         tv.capabilities.includes(TV_RTC_CAPABILITY);
       untracked(() =>
-        this.channel.setTvTarget(active && control && capable ? { tvId, usable: true, live } : null),
+        this.channel.setTvTarget(
+          active && control && capable ? { tvId, usable: true, live } : null,
+        ),
       );
     });
   }
@@ -73,7 +75,7 @@ export class TvDirect {
     return this.channel.canUseTv();
   }
 
-  /** As teclas desta tela vão pelo canal agora? A mesma conferência do envio (`command`): o rótulo "Direto" só aparece com ela. */
+  /** As teclas desta tela vão pelo canal agora? A mesma conferência do envio (`command`). */
   carriesKeys(): boolean {
     return this.canUse() && this.channel.accepts('tv.key.v3');
   }

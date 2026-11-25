@@ -143,18 +143,6 @@
   display: grid;
   justify-self: center;
 }
-.direct-label,
-.chevron {
-  position: absolute;
-  pointer-events: none;
-}
-.direct-label {
-  inset-inline: 0;
-  inset-block-start: calc(100% - 0.45rem);
-  text-align: center;
-  font-size: 0.65rem;
-  line-height: 1;
-}
 h1 {
   min-width: 0;
   font-size: 1.35rem;
@@ -187,6 +175,8 @@ h1 {
   display: inline-grid;
 }
 .chevron {
+  position: absolute;
+  pointer-events: none;
   top: 50%;
   left: calc(100% + 1px);
   width: 0.95rem;
@@ -230,6 +220,16 @@ h1 {
     font-size: 1.35rem;
   }
 }
+/* O estado do elo: uma linha curta, na largura toda da tela, encostada no cabeçalho. */
+.link-state {
+  flex: none;
+  margin: -4px 0 0;
+  color: var(--a-ink2);
+  font-size: 0.8rem;
+  line-height: 1.25;
+  text-align: center;
+}
+
 /*
  * A linha do motivo entra no fluxo: o palco do controle encolhe o que ela ocupa. É um aviso de estado (cartão com a
  * faixa de atenção à esquerda) e, com o agente fora do ar, leva a única ação possível ao lado do texto.

@@ -90,9 +90,6 @@
           >
         }
       </h1>
-      @if (store.directReady()) {
-        <span class="direct-label" role="status" i18n="@@tv.status.direct">Direto</span>
-      }
     </div>
     <div class="actions">
       <!-- Sem ver a TV não há estado nenhum para mostrar. -->
@@ -116,6 +113,13 @@
       }
     </div>
   </header>
+
+  <!-- O elo entre a tela, o PC e a TV, como a API o publica: uma frase sempre à vista, que muda com o fluxo. -->
+  @if (access.view() && !unconfigured()) {
+    <p class="link-state" role="status" [attr.data-state]="store.linkState() ?? 'unconfirmed'">
+      {{ linkText() }}
+    </p>
+  }
 
   <!--
     O motivo dos botões apagados é de quem tem algum botão: o controle, o desligar ou os atalhos que abrem apps. Com o
