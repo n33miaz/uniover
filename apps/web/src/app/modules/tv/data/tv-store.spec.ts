@@ -310,6 +310,64 @@ describe('TvStore', () => {
       expect(store.linkState()).toBeNull();
     });
 
+    /** Uma TV que aceita os três comandos (abrir a tela de rede exige que o agente o declare). */
+    const startedWithSettingsTv = async () => {
+      api.tvs.mockResolvedValue([
+        {
+          id: 'sala',
+          name: 'Sala',
+          isDefault: true,
+          agentSlug: null,
+          kind: 'android',
+          online: true,
+          capabilities: ['tv.remote', 'tv.kind.android', 'tv.adb', 'tv.settings.open.v1'],
+        } satisfies TvSummary,
+      ]);
+      await started();
+    };
+    const afterPresence = [
+      ['launch', () => store.launch(shortcut(1)), api.launch],
+      ['openSettings', () => store.openSettings('WIFI'), api.openSettings],
+      ['cleanup', () => store.cleanup(), api.cleanup],
+    ] as const;
+
+    it.each(afterPresence)(
+      '%s: a failure is newer than a state that came while waiting for presence',
+      async (_name, command, request) => {
+        await startedWithSettingsTv();
+        const signal = pending();
+        api.presence.mockReturnValueOnce(signal.promise);
+        request.mockRejectedValueOnce(problem(503, 'agent-offline'));
+        const sending = command();
+        await flush();
+        expect(request).not.toHaveBeenCalled();
+        emit('tv.state', linked('ready'));
+        signal.resolve(undefined);
+        expect(await sending).toBe(false);
+        expect(request).toHaveBeenCalledTimes(1);
+        expect(store.status()).toBe('agent-off');
+        expect(store.linkState()).toBeNull();
+        expect(store.canSend()).toBe(false);
+      },
+    );
+
+    it.each(afterPresence)(
+      '%s: a state that came with the request in flight is newer than its failure',
+      async (_name, command, request) => {
+        await startedWithSettingsTv();
+        const slow = pending();
+        request.mockReturnValueOnce(slow.promise);
+        const sending = command();
+        await flush();
+        expect(request).toHaveBeenCalledTimes(1);
+        emit('tv.state', linked('tv_off'));
+        slow.reject(problem(503, 'agent-offline'));
+        expect(await sending).toBe(false);
+        expect(store.linkState()).toBe('tv_off');
+        expect(store.canSend()).toBe(true);
+      },
+    );
+
     it('does not let a read asked before that confirmation bring the old link back', async () => {
       await started();
       const slow = pending();
