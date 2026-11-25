@@ -45,6 +45,8 @@ interface Link {
   readonly parentSessionId: string;
   sessionId: string | null;
   painting: boolean;
+  /** Monitor do último `s.get` enviado (o do pedido em andamento, se houver). */
+  requested?: number;
   watchdog?: ReturnType<typeof setTimeout>;
   renew?: ReturnType<typeof setTimeout>;
 }
@@ -293,7 +295,11 @@ export class ScreenPage {
         assembler: new ScreenViewerFrameAssembler(),
         loop: new ScreenFrameLoop({
           send: (text) => channel.send(text),
-          view: () => this.viewRequest(),
+          view: () => {
+            const view = this.viewRequest();
+            if (view) active.requested = view.monitor;
+            return view;
+          },
           onTimeout: () => {
             if (this.link === active) this.finish(this.state() === 'locked' ? 'locked' : 'failed');
           },
@@ -321,6 +327,8 @@ export class ScreenPage {
       }
       active.sessionId = answer.sessionId;
       if (!answer.scopes.includes('screen')) throw new Error('escopo de tela ausente');
+      // O PC conta os 90 s da sessão a partir da oferta aceita, não do primeiro `s.mon`: a margem vale desde já.
+      active.renew = setTimeout(() => this.renew(active), RENEW_MS);
       channel.addEventListener(
         'open',
         () => {
@@ -404,18 +412,23 @@ export class ScreenPage {
         if (!link.loop.active) {
           clearTimeout(link.watchdog);
           this.phase.set('live');
-          link.renew = setTimeout(() => this.renew(link), RENEW_MS);
           link.loop.start();
-        } else if (
-          before === null ||
-          before.id !== chosen.id ||
-          before.width !== chosen.width ||
-          before.height !== chosen.height
-        ) {
-          // O pedido em andamento termina antes; o próximo já leva o monitor e o tamanho novos. Se o monitor pedido
-          // sumiu, o PC descartou o pedido sem responder: ele é dado como perdido.
-          const gone = before !== null && !message.monitors.some((item) => item.id === before.id);
-          link.loop.restart(gone);
+        } else {
+          // Se o monitor do pedido em andamento (não o selecionado) sumiu, o PC o descartou sem responder: ele é dado
+          // como perdido.
+          const gone =
+            link.requested !== undefined &&
+            !message.monitors.some((item) => item.id === link.requested);
+          if (
+            gone ||
+            before === null ||
+            before.id !== chosen.id ||
+            before.width !== chosen.width ||
+            before.height !== chosen.height
+          ) {
+            // O pedido em andamento termina antes; o próximo já leva o monitor e o tamanho novos.
+            link.loop.restart(gone);
+          }
         }
         break;
       }

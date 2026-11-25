@@ -392,6 +392,64 @@ describe('Tela do PC (página)', () => {
     expect(root.querySelector('.notice')).toBeNull();
   });
 
+  it('counts the 75 s renewal from the accepted offer, not from the first s.mon', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { peer, signaling, action } = setup();
+    action().click();
+    await flush();
+    // O primeiro s.mon demora 18 s (dentro dos 20 s de espera inicial).
+    vi.advanceTimersByTime(18_000);
+    peer.channel.receive(JSON.stringify(MONITOR));
+    for (let second = 18; second < 74; second++) {
+      vi.advanceTimersByTime(1_000);
+      peer.channel.receive(jpegFrame(second));
+      await flush();
+    }
+    expect(signaling.offer).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1_000);
+    await flush(60);
+    expect(signaling.close).toHaveBeenCalledWith('sessao-tela', true);
+    expect(signaling.offer).toHaveBeenCalledTimes(2);
+  });
+
+  it('judges a lost request by the requested monitor, not the selected one', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { fixture, peer, root, requests, action } = setup();
+    action().click();
+    await flush();
+    peer.channel.receive(JSON.stringify(TWO_MONITORS));
+    fixture.detectChanges();
+    expect(requests().map((r) => r['monitor'])).toEqual([7]);
+
+    // Pedido pendente do monitor 7; o usuário escolhe o 3, que some: o pedido do 7 continua valendo.
+    root.querySelectorAll<HTMLButtonElement>('.monitors button')[0].click();
+    peer.channel.receive(
+      JSON.stringify({ k: 's.mon', monitors: [{ id: 7, width: 1920, height: 1080, primary: true }] }),
+    );
+    expect(requests()).toHaveLength(1);
+    peer.channel.receive(jpegFrame(1));
+    await flush();
+    vi.advanceTimersByTime(0);
+    expect(requests().map((r) => r['monitor'])).toEqual([7, 7]);
+  });
+
+  it('drops the pending request when the requested monitor disappears even if another is selected', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { fixture, peer, root, requests, action } = setup();
+    action().click();
+    await flush();
+    peer.channel.receive(JSON.stringify(TWO_MONITORS));
+    fixture.detectChanges();
+
+    // Pedido pendente do monitor 7; o usuário escolhe o 3 e o 7 some: o PC descartou o pedido, que é dado como perdido.
+    root.querySelectorAll<HTMLButtonElement>('.monitors button')[0].click();
+    peer.channel.receive(
+      JSON.stringify({ k: 's.mon', monitors: [{ id: 3, width: 1280, height: 1024, primary: true }] }),
+    );
+    expect(requests().map((r) => r['monitor'])).toEqual([7, 3]);
+    expect(requests()[1]['reset']).toBe(true);
+  });
+
   it('does not reopen after the user stops', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { fixture, signaling, action, open } = setup();
