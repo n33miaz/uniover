@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.79.1](https://github.com/n33miaz/uniover/compare/v0.79.0...v0.79.1) (2026-11-25)
+
+
+### Devices 0.69.3
+
+#### Bug Fixes
+
+* **pc:** keep typed text line in keyboard mode
+* **web:** keep reset after keyboard blur
+
+
+### TV 0.55.0
+
+#### Features
+
+* **tv:** report tv link state from api
+
+#### Bug Fixes
+
+* **tv:** release power keys and fix app icons
+* **tv:** handle blank adaptive icons
+* **web:** bound combined icon crop
+* **tv:** publish link state on expiry
+* **tv:** release link watch on rebind
+* **tv:** keep link baseline on tracked agent
+* **tv:** publish link read under watcher lock
+* **agent:** check tcl tv package before install
+
+
+### Web 0.74.1
+
+#### Bug Fixes
+
+* **pc:** keep typed text line in keyboard mode
+* **web:** keep reset after keyboard blur
+* **contracts:** regenerate openapi for tv link
+
+
+### Agent 0.63.8
+
+#### Bug Fixes
+
+* **agent:** check tcl tv package before install
+* **agent:** check tv package before disable
+
 ## [0.79.0](https://github.com/n33miaz/uniover/compare/v0.78.4...v0.79.0) (2026-11-24)
 
 
