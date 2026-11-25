@@ -67,6 +67,7 @@ STARTUP_WAIT_SECONDS: Final = 1.5
 # Na TV TCL, o gerenciador de teclas envia o POWER a este app de TV ao vivo: sem ele (desinstalado
 # para o usuário 0 por um debloat antigo) a TV não desliga pela tecla física nem pelo controle.
 TCL_TV_PACKAGE: Final = "com.tcl.tv"
+TCL_PACKAGE_MISSING: Final = "tcl_tv_package_missing"
 _TCL_BRAND: Final = "tcl"
 _TCL_MISSING_NOTICE: Final = (
     "O app de TV ao vivo da TCL estava removido e a TV não desligava pelo controle. "
@@ -177,7 +178,12 @@ def is_protected_for_disable(package: str, live: frozenset[str]) -> bool:
     Regra própria (e não a do fechamento de apps): aquela protege tudo que não é "app de uso",
     o que recusaria justamente os apps de fábrica que o dono quer desativar.
     """
-    if package in live or package in PROTECTED_PACKAGES or package in EXTRA_PROTECTED:
+    if (
+        package in live
+        or package in PROTECTED_PACKAGES
+        or package in EXTRA_PROTECTED
+        or package == TCL_TV_PACKAGE
+    ):
         return True
     lowered = package.lower()
     return lowered.startswith(PROTECTED_DISABLE_PREFIXES) or any(
@@ -312,6 +318,7 @@ class TvLivre:
         self._extended = extended
         self._apply_deferred = False
         self._notice: str | None = None
+        self._notice_is_failure = False
         self._adb = adb
         self._apk = apk
         self._state = state
@@ -331,7 +338,13 @@ class TvLivre:
     def take_notice(self) -> str | None:
         """Aviso para o dono deixado pela última ação (o pedido deu certo); lê uma vez."""
         notice, self._notice = self._notice, None
+        self._notice_is_failure = False
         return notice
+
+    @property
+    def notice_is_failure(self) -> bool:
+        """O aviso pendente é de algo que não deu certo (o resultado `ok` não leva texto)."""
+        return self._notice is not None and self._notice_is_failure
 
     # --- leitura ------------------------------------------------------------------------------
 
@@ -577,6 +590,8 @@ class TvLivre:
     async def _install(self) -> None:
         await self._capture_original()
         was_home = await self._resolved_home_package() == PACKAGE
+        # Antes de instalar: é melhor esforço e o aviso não pode se perder se a instalação falhar.
+        await self._ensure_tcl_tv_package()
         apk = await self._apk.fetch()
         result = await self._adb.install(apk.path)
         if "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in result.text:
@@ -593,7 +608,6 @@ class TvLivre:
             # soltou o papel na troca do app, refaz a escolha, e nunca deixa a TV de fábrica.
             if not await self._set_home_activity(HOME_COMPONENT):
                 _log.warning("TV Livre: a atualização perdeu a tela inicial e não a recuperei")
-        await self._ensure_tcl_tv_package()
 
     async def _is_tcl(self) -> bool:
         """Fabricante ou marca TCL (qual dos dois diz TCL varia por modelo)."""
@@ -624,6 +638,7 @@ class TvLivre:
         except AdbError, OSError:
             _log.warning("TV Livre: falha ao conferir %s", TCL_TV_PACKAGE, exc_info=True)
         self._notice = _TCL_FAILED_NOTICE
+        self._notice_is_failure = True
 
     async def _install_for_sleep(self) -> None:
         """`_install` com a mesma vigia do controle que a ação "Instalar" arma em `run`."""
@@ -948,7 +963,10 @@ class TvLivre:
         extra = f" --ei {SLEEP_MINUTES_EXTRA} {minutes}" if minutes is not None else ""
         result = await self._adb.shell(f"am start -n {SLEEP_COMPONENT}{extra}")
         if not result.ok or "Error" in result.text:
-            raise LivreError("sleep_failed", "A TV não abriu o Modo Dormir.")
+            message = "A TV não abriu o Modo Dormir."
+            if self._notice is not None:
+                message = f"{message} {self._notice}"
+            raise LivreError("sleep_failed", message)
 
     # --- auditoria ----------------------------------------------------------------------------
 
@@ -981,9 +999,15 @@ def tv_livre_handler(livre: TvLivre, transport: Transport, envelopes: EnvelopeFa
             return CommandResult(command.id, ResultStatus.REJECTED, "campo 'requestId' ausente")
         outcome = await _run(livre, command.body)
         deferred = livre.take_apply_deferred()
+        failure = livre.notice_is_failure
         notice = livre.take_notice()
         if notice is not None and outcome.status is ResultStatus.OK:
-            outcome = CommandResult("", ResultStatus.OK, notice)
+            if failure:
+                # `ok` não leva texto no contrato: o dono só lê o aviso num resultado com erro (o
+                # estado da TV já foi enviado e o TV Livre foi instalado).
+                outcome = CommandResult("", ResultStatus.FAILED, notice, TCL_PACKAGE_MISSING)
+            else:
+                outcome = CommandResult("", ResultStatus.OK, notice)
         livre.audit(action, outcome.code or "ok", _detail(command.body))
         try:
             state = await livre.read_state()
