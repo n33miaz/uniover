@@ -41,6 +41,8 @@ export const MAX_TRIM = 0.18;
  */
 export const MAX_CLEAR_TRIM = 0.4;
 
+/** Pixels que sobram, no mínimo, em cada eixo depois dos dois cortes opostos: o miolo nunca zera. */
+const MIN_KEPT_PIXELS = 2;
 /** Acima disto um pixel conta como tinta; abaixo, como transparente (a sombra suave de um ícone fica de fora). */
 const SOLID_ALPHA = 128;
 /** Diferença máxima por canal para duas cores valerem como a mesma (absorve o ruído da compressão). */
@@ -173,6 +175,13 @@ const clampTrim = (value: number, clear: number) => {
   return free + Math.min(MAX_TRIM, Math.max(0, value - Math.max(0, clear)));
 };
 
+/** Os dois cortes opostos nunca comem o lado inteiro: sobram ao menos `MIN_KEPT_PIXELS` pixels. */
+function keepSpan(start: number, end: number, pixels: number): [number, number] {
+  const room = 1 - MIN_KEPT_PIXELS / pixels;
+  const total = start + end;
+  return total <= room ? [start, end] : [(start * room) / total, (end * room) / total];
+}
+
 /**
  * Procura a margem do ícone em `rgba` (largura × altura × 4 bytes) e devolve quanto aparar de cada lado e a cor das
  * bordas. Qualquer entrada que não dê para ler com segurança (tamanho pequeno demais, buffer curto) não corta nada.
@@ -224,12 +233,15 @@ export function analyzeIconEdges(rgba: Rgba, width: number, height: number): Edg
     }
   }
 
-  const capped: EdgeTrim = {
+  const raw: EdgeTrim = {
     left: clampTrim(trim.left, margins.left - keep),
     top: clampTrim(trim.top, margins.top - keep),
     right: clampTrim(trim.right, margins.right - keep),
     bottom: clampTrim(trim.bottom, margins.bottom - keep),
   };
+  const [left, right] = keepSpan(raw.left, raw.right, width);
+  const [top, bottom] = keepSpan(raw.top, raw.bottom, height);
+  const capped: EdgeTrim = { left, top, right, bottom };
 
   // O fundo do azulejo é a cor da borda que sobrou, quando ela é de uma placa.
   const finalRing = ringOf(rgba, width, {
