@@ -45,7 +45,7 @@ export function parseViewerMessage(text: string): ScreenViewerMessage {
         >;
         const { id, width, height, primary } = entry;
         if (
-          !whole(id, -MAX_MONITOR_ID, MAX_MONITOR_ID) ||
+          !whole(id, 0, MAX_MONITOR_ID) ||
           !whole(width, 1, MAX_COORD) ||
           !whole(height, 1, MAX_COORD) ||
           typeof primary !== 'boolean' ||
@@ -210,11 +210,17 @@ export class ScreenFrameLoop {
   /**
    * O recorte mudou (outro monitor ou outro tamanho): o próximo pedido leva o recorte novo e recomeça o quadro
    * (`reset`). O pedido em andamento continua até a resposta chegar, para o PC nunca ter dois ao mesmo tempo; sem nenhum
-   * em andamento, pede já.
+   * em andamento, pede já. Com `lost`, o PC descartou o pedido em andamento (o monitor pedido sumiu) e nunca vai
+   * responder: ele é dado como perdido e o pedido novo sai já.
    */
-  restart(): void {
+  restart(lost = false): void {
     if (!this.running) return;
     this.reset = true;
+    if (lost && this.pending) {
+      this.pending = false;
+      this.refresh = false;
+      clearTimeout(this.watchdog);
+    }
     if (this.pending) {
       this.refresh = true;
       return;

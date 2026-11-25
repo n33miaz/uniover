@@ -298,7 +298,7 @@ describe('Tela do PC (página)', () => {
     expect(cursor.style.top).toBe('25%');
   });
 
-  it('shows the locked notice, keeps pulling slowly and clears it with the next frame', async () => {
+  it('shows the locked notice without touching the pending request', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { fixture, peer, root, requests, open } = setup();
     await open();
@@ -306,13 +306,115 @@ describe('Tela do PC (página)', () => {
     peer.channel.receive('{"k":"s.state","state":"locked"}');
     fixture.detectChanges();
     expect(root.querySelector('.notice')?.textContent).toContain('PC bloqueado');
+    // O estado não responde ao pedido: nenhum segundo `s.get` sai com o primeiro ainda em andamento.
     vi.advanceTimersByTime(1_100);
-    expect(requests()).toHaveLength(2);
+    expect(requests()).toHaveLength(1);
 
     peer.channel.receive(jpegFrame(1));
     await flush();
     fixture.detectChanges();
     expect(root.querySelector('.notice')).toBeNull();
+    vi.advanceTimersByTime(250);
+    expect(requests()).toHaveLength(2);
+  });
+
+  it('keeps "PC bloqueado" as a stable notice, not a failure, when the PC closes the session after locking', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { fixture, peer, root, action, open } = setup();
+    await open();
+
+    peer.channel.receive('{"k":"s.state","state":"locked"}');
+    peer.channel.dispatchEvent(new Event('close'));
+    fixture.detectChanges();
+    expect(root.querySelector('.notice')?.textContent).toContain('PC bloqueado');
+    expect(root.textContent).not.toContain('Não foi possível');
+    expect(action().textContent).toContain('Ver a tela');
+
+    vi.advanceTimersByTime(30_000);
+    fixture.detectChanges();
+    expect(root.querySelector('.notice')?.textContent).toContain('PC bloqueado');
+  });
+
+  it('still fails when the session closes without a locked state', async () => {
+    const { fixture, peer, root, open } = setup();
+    await open();
+    peer.channel.dispatchEvent(new Event('close'));
+    fixture.detectChanges();
+    expect(root.querySelector('.notice')?.textContent).toContain('Não foi possível');
+  });
+
+  it('treats the pending request as lost when the monitor in use disappears from s.mon', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { fixture, peer, requests, action } = setup();
+    action().click();
+    await flush();
+    peer.channel.receive(JSON.stringify(TWO_MONITORS));
+    fixture.detectChanges();
+    expect(requests().map((r) => r['monitor'])).toEqual([7]);
+
+    // O monitor 7 sumiu: o PC descarta o pedido sem responder e o cliente não espera por ele.
+    peer.channel.receive(
+      JSON.stringify({ k: 's.mon', monitors: [{ id: 3, width: 1280, height: 1024, primary: true }] }),
+    );
+    expect(requests().map((r) => r['monitor'])).toEqual([7, 3]);
+    expect(requests()[1]['reset']).toBe(true);
+
+    peer.channel.receive(jpegFrame(1));
+    await flush();
+    fixture.detectChanges();
+    vi.advanceTimersByTime(9_000);
+    expect(requests().length).toBeGreaterThanOrEqual(2);
+    expect(peer.close).not.toHaveBeenCalled();
+  });
+
+  it('reopens the screen session by itself before the 90 s limit, without showing a failure', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { fixture, peer, root, signaling, open } = setup();
+    await open();
+    expect(signaling.offer).toHaveBeenCalledTimes(1);
+
+    // O PC vai respondendo (senão o aviso de 10 s sem resposta encerraria antes); aos 75 s a página renova.
+    for (let second = 0; second < 74; second++) {
+      vi.advanceTimersByTime(1_000);
+      peer.channel.receive(jpegFrame(second));
+      await flush();
+    }
+    expect(signaling.offer).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1_000);
+    await flush(60);
+    fixture.detectChanges();
+    expect(signaling.close).toHaveBeenCalledWith('sessao-tela', true);
+    expect(signaling.offer).toHaveBeenCalledTimes(2);
+    expect(root.textContent).not.toContain('Não foi possível');
+
+    peer.channel.receive(JSON.stringify(MONITOR));
+    fixture.detectChanges();
+    expect(root.querySelector('.notice')).toBeNull();
+  });
+
+  it('does not reopen after the user stops', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { fixture, signaling, action, open } = setup();
+    await open();
+    action().click();
+    fixture.detectChanges();
+    vi.advanceTimersByTime(120_000);
+    await flush();
+    expect(signaling.offer).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses an image whose size differs from the frame header', async () => {
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(async () => ({ width: 8000, height: 6000, close: vi.fn() })),
+    );
+    const { fixture, peer, root, open } = setup();
+    await open();
+    peer.channel.receive(jpegFrame(1));
+    await flush();
+    fixture.detectChanges();
+    expect(drawImage).not.toHaveBeenCalled();
+    expect(root.querySelector('.notice')?.textContent).toContain('Não foi possível');
   });
 
   it('shows the elevated window notice', async () => {
