@@ -118,6 +118,7 @@ public static class DevicesModule
         services.AddSingleton<PcClipboardInbox>();
         services.AddSingleton<IAgentPresenceListener>(sp => sp.GetRequiredService<PcClipboardInbox>());
         services.AddSingleton<PcScreenFlag>();
+        services.AddSingleton<PcScreenNetworks>();
         services.AddSingleton<PcDeviceStates>();
         services.AddSingleton<IAgentPresenceListener>(sp => sp.GetRequiredService<PcDeviceStates>());
         services.AddScoped<IAgentMessageHandler, PcAgentMessageHandler>();

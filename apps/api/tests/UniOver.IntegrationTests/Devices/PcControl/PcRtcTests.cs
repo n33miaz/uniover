@@ -174,6 +174,23 @@ public sealed class PcRtcTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task ScreenWithAVpnRangeConfiguredIsRefusedWhenTheClientAddressIsUnknown()
+    {
+        // O servidor de teste não informa o endereço de quem conectou; com a lista definida isso não passa (sem a lista passa, como nos demais testes).
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PcScreen = true, PcScreenNetworks = ["100.64.0.0/10"] });
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+
+        using var response = await PostAsync(app, "offer", new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await ExpectStillOpenAsync(app, agent, parentId);
+        await using var db = app.App.Db();
+        (await db.PairingAudit.CountAsync(a => a.Event.StartsWith("pc_screen"), Ct)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task ScreenIsRefusedForTheOwnerWhileTheFlagIsOff()
     {
         await using var app = await TransportApp.StartAsync(postgres);

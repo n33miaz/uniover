@@ -822,7 +822,8 @@ internal sealed class PcRtcHandler(
     ITvDirectChannels? tv = null,
     PcRtcTickets? tickets = null,
     TimeProvider? time = null,
-    PcScreenFlag? screenFlag = null)
+    PcScreenFlag? screenFlag = null,
+    PcScreenNetworks? screenNetworks = null)
 {
     /// <summary>O agente carrega a biblioteca na primeira oferta (cerca de um segundo) e junta os candidatos; o prazo dele é de 12 s, e o desta espera é maior para a recusa dele chegar antes.</summary>
     public static readonly TimeSpan OfferTimeout = TimeSpan.FromSeconds(15);
@@ -867,6 +868,7 @@ internal sealed class PcRtcHandler(
         if (requested.HasFlag(PcRtcScopes.Screen) && (!isScreen || !isOwner || sessionFamily is null
             || request.ParentSessionId is null || request.ParentSessionId == Guid.Empty
             || screenFlag?.Enabled != true
+            || screenNetworks?.Allows(client.Ip) == false
             || !await grants.HasAsync(userId, AccessPermissions.PcScreen, cancellationToken)))
         {
             return PcProblems.DirectForbidden();
