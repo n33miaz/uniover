@@ -16574,6 +16574,11 @@ export interface components {
       showMedia: boolean;
       startPage: string;
     };
+    TvLink: {
+      state: string;
+      /** Format: int32 */
+      version: number | string;
+    };
     TvListResponse: {
       items: components['schemas']['TvSummary'][];
     };
@@ -16630,6 +16635,7 @@ export interface components {
       agentOnline: boolean;
       app: null | string;
       connection: string;
+      link?: null | components['schemas']['TvLink'];
       /** Format: date-time */
       offlineSince?: null | string;
       power: string;

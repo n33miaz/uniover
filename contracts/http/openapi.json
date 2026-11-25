@@ -8118,6 +8118,26 @@
         ],
         "type": "object"
       },
+      "TvLink": {
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "version",
+          "state"
+        ],
+        "type": "object"
+      },
       "TvListResponse": {
         "properties": {
           "items": {
@@ -8345,6 +8365,16 @@
           },
           "connection": {
             "type": "string"
+          },
+          "link": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TvLink"
+              }
+            ]
           },
           "offlineSince": {
             "format": "date-time",
