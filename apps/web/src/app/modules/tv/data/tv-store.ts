@@ -298,7 +298,8 @@ export class TvStore {
 
   /**
    * O elo que a API publicou por último para a TV em uso; `null` quando não há o que afirmar (nada lido ainda, API que não
-   * o manda ou aparelho sem rede, em que o último valor já não descreve o agora).
+   * o manda ou aparelho sem rede, em que o último valor já não descreve o agora). A queda de conexão o apaga de vez: na
+   * volta, só uma leitura pedida depois dela ou um evento novo do fluxo o traz.
    */
   readonly linkState = computed<TvLinkState | null>(() =>
     this.currentAccount() && this.link() !== 'offline' ? (this._state()?.link ?? null) : null,
@@ -449,6 +450,8 @@ export class TvStore {
   private stateClock = 0;
   /** O número do que o estado atual reflete: resposta ou falha de um pedido anterior a ele não o altera mais. */
   private stateStamp = 0;
+  /** O número da última queda de conexão: o elo de uma leitura pedida antes dela não vale mais. */
+  private linkVoidedAt = 0;
   /** A TV de quem são o estado e o fluxo de agora (`null` = ainda não se sabe qual a API escolheu). */
   private resolvedId: string | null = null;
   /** O fluxo está aberto e o aquecimento armado: só acontece com a tela viva E com permissão de ver a TV. */
@@ -513,6 +516,14 @@ export class TvStore {
       const state = this.state();
       const live = state?.connection === 'hot' && state.agentOnline !== false;
       untracked(() => this.direct.setLive(live));
+    });
+    // Sem conexão o elo conhecido deixa de descrever o agora, e a volta dela, sozinha, não o confirma de novo.
+    effect(() => {
+      if (this.link() !== 'offline') return;
+      untracked(() => {
+        this.linkVoidedAt = this.ticket();
+        this._state.update((state) => (state?.link ? { ...state, link: null } : state));
+      });
     });
   }
 
@@ -1243,7 +1254,8 @@ export class TvStore {
     // O agente voltou: o que a TV oferece (as capacidades) só chega depois do `hello` dele, então a lista se renova.
     const previous = this._state();
     if (previous && !previous.agentOnline && state.agentOnline) void this.refreshTvs();
-    this._state.set(state);
+    // O resto de uma resposta pedida antes da queda ainda serve; o elo dela, não.
+    this._state.set(stamp < this.linkVoidedAt && state.link ? { ...state, link: null } : state);
     this._seenAt.set(Date.now());
     if (state.agentOnline) this._notConfigured.set(false);
     this.persist();
@@ -1427,6 +1439,11 @@ export class TvStore {
    */
   private absorb(failure: TvFailure, asked: number): void {
     if (asked <= this.stateStamp) return;
+    if (failure.kind !== 'not-configured' && failure.kind !== 'agent-offline') return;
+    // Falha aceita é o que se sabe de mais novo, com ou sem estado lido: uma leitura pedida antes dela não a desfaz.
+    this.stateStamp = asked;
+    // Ela também responde à primeira leitura: sem isto o esqueleto ficaria à espera de uma resposta que será descartada.
+    this.stateWatch.done();
     if (failure.kind === 'not-configured') this._notConfigured.set(true);
     if (failure.kind === 'agent-offline') {
       // O servidor disse "fora do ar" fora da graça de presença (dentro dela a falha é `agent-reconnecting`, que não entra
@@ -1434,7 +1451,6 @@ export class TvStore {
       this._agentUnavailable.set(true);
       const state = this._state();
       if (!state) return;
-      this.stateStamp = asked;
       this._state.set({
         ...state,
         agentOnline: false,

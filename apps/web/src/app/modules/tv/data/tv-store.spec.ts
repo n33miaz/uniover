@@ -339,6 +339,39 @@ describe('TvStore', () => {
       expect(store.linkState()).toBeNull();
     });
 
+    it('does not bring the old link back after a drop, until a new read or event confirms it', async () => {
+      await started();
+      const asked = pending();
+      api.state.mockReturnValueOnce(asked.promise);
+      const reading = store.refresh();
+      online.set(false);
+      TestBed.tick();
+      online.set(true);
+      TestBed.tick();
+      expect(store.linkState()).toBeNull();
+
+      // Pedida antes da queda: o resto do estado vale, o elo não.
+      asked.resolve(read('ready', { volume: 31 }));
+      await reading;
+      expect(store.state()?.volume).toBe(31);
+      expect(store.linkState()).toBeNull();
+
+      api.state.mockRejectedValueOnce(problem(500));
+      await store.refresh();
+      expect(store.linkState()).toBeNull();
+
+      await store.refresh();
+      expect(store.linkState()).toBe('ready');
+
+      serverState.set('offline');
+      TestBed.tick();
+      serverState.set('ok');
+      TestBed.tick();
+      expect(store.linkState()).toBeNull();
+      emit('tv.state', linked('tv_off'));
+      expect(store.linkState()).toBe('tv_off');
+    });
+
     it('does not carry the link of the previous TV to the next one', async () => {
       const tv = (id: string, isDefault = false): TvSummary => ({
         id,
@@ -2839,6 +2872,36 @@ describe('TvStore', () => {
       await started();
       expect(store.status()).toBe('agent-off');
       expect(store.canSend()).toBe(false);
+    });
+
+    it.each(['agent-offline', 'agent-not-configured'])(
+      'a read asked before a confirmed "%s" does not undo it, even with no state yet',
+      async (type) => {
+        const gate = deferred<unknown>();
+        api.state.mockReturnValue(gate.promise);
+        api.wake.mockRejectedValueOnce(problem(503, type));
+        await started();
+        gate.resolve(hot);
+        await flush();
+        expect(store.state()).toBeNull();
+        expect(store.status()).toBe(type === 'agent-offline' ? 'agent-off' : 'unconfigured');
+        expect(store.notConfigured()).toBe(type === 'agent-not-configured');
+        expect(store.canSend()).toBe(false);
+        // A falha respondeu à espera: nem esqueleto, nem erro de prazo depois.
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(store.stateLoading()).toBe(false);
+      },
+    );
+
+    it('a failure that is not confirmed does not make an earlier read stale', async () => {
+      const gate = deferred<unknown>();
+      api.state.mockReturnValue(gate.promise);
+      api.wake.mockRejectedValueOnce(problem(500, 'internal'));
+      await started();
+      gate.resolve(hot);
+      await flush();
+      expect(store.state()?.volume).toBe(hot.volume);
+      expect(store.status()).toBe('hot');
     });
 
     it('a state read that fails with something that is not confirmed stays green until the deadline', async () => {
