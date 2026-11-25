@@ -12,7 +12,7 @@ namespace UniOver.Modules.Tv.Adapters;
 /// </summary>
 internal sealed class TvStateProvider(
     ITvCurrentSelection selection, ITvStateStore state, ITvAgentPresence presence, ITvStreamPublisher stream,
-    IOptions<TvModuleOptions> options)
+    IOptions<TvModuleOptions> options, TvLinkWatcher watcher)
 {
     public async ValueTask<TvState> CurrentAsync(CancellationToken cancellationToken)
     {
@@ -34,6 +34,9 @@ internal sealed class TvStateProvider(
         {
             stream.PublishState(target.Id, view);
         }
+
+        // O elo também muda só com o tempo: a vigia passa a conhecer esta TV e o elo que a tela acabou de ver.
+        watcher.Track(target.Id, agentId, view);
 
         return view;
     }
