@@ -22,8 +22,11 @@ internal sealed class TvLinkWatcher(
 
     private sealed record Watched(Guid TvId, string? LinkState);
 
-    /// <summary>Passa a vigiar o agente da TV e guarda o elo que acabou de ser publicado (ou lido) para ela.</summary>
-    public void Track(Guid tvId, string? agentSlug, TvState published)
+    /// <summary>
+    /// Passa a vigiar o agente da TV. Só o primeiro registro grava o elo visto como linha de base; quem já é vigiado mantém o
+    /// último elo publicado, para que uma mudança que uma leitura enxergou (e não publicou) ainda saia na próxima passada.
+    /// </summary>
+    public void Track(Guid tvId, string? agentSlug, TvState observed)
     {
         if (string.IsNullOrWhiteSpace(agentSlug))
         {
@@ -32,7 +35,12 @@ internal sealed class TvLinkWatcher(
 
         lock (_gate)
         {
-            Note(tvId, agentSlug, published);
+            if (_watched.TryGetValue(agentSlug, out var current) && current.TvId == tvId)
+            {
+                return;
+            }
+
+            Note(tvId, agentSlug, observed);
         }
     }
 

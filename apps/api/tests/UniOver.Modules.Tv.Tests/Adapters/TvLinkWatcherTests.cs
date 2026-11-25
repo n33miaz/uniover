@@ -182,4 +182,39 @@ public class TvLinkWatcherTests
 
         stream.Published.Select(p => p.State.Link!.State).Should().Equal(TvLinkText.PcOffline, TvLinkText.Ready);
     }
+
+    [Fact]
+    public void ALinkChangeSeenByARead_IsStillPublishedByTheNextPass()
+    {
+        var (watcher, presence, stream) = Rig();
+        presence.Fresh = false;
+        var read = TvState.From(new InMemoryTvStateStore().Last(Agent), agentOnline: true, reportFresh: false);
+
+        watcher.Track(TvId, Agent, read);
+        watcher.Check();
+
+        var (tvId, state) = stream.Published.Should().ContainSingle().Subject;
+        tvId.Should().Be(TvId);
+        state.Link!.State.Should().Be(TvLinkText.PcOffline);
+    }
+
+    [Fact]
+    public void AnAgentBoundWithTheWatcher_IsPublishedAndWatched()
+    {
+        var stream = new Stream();
+        var presence = new Presence();
+        var store = new InMemoryTvStateStore();
+        var watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()));
+        var handler = new UniOver.Modules.Tv.Features.Config.BindAgentHandler(
+            null!, null!, null!, null!, store, presence, stream, null!, TimeProvider.System, watcher: watcher);
+
+        handler.AnnounceNewAgent(TvId, Agent);
+        stream.Published.Should().ContainSingle();
+
+        presence.Fresh = false;
+        watcher.Check();
+
+        stream.Published.Should().HaveCount(2);
+        stream.Published[1].State.Link!.State.Should().Be(TvLinkText.PcOffline);
+    }
 }

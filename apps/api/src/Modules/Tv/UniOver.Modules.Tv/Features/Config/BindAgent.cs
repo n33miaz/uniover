@@ -204,12 +204,21 @@ internal sealed class BindAgentHandler(
     /// As telas abertas passam a mostrar o computador novo na hora. Publica sempre, e não só quando a presença "mudou":
     /// o computador novo pode nunca ter sido visto pelo módulo, e sem isto a tela ficaria com o estado do antigo.
     /// </summary>
-    private void AnnounceNewAgent(Guid tvId, string agentSlug)
+    internal void AnnounceNewAgent(Guid tvId, string agentSlug)
     {
         stream.AdoptUnidentifiedStream(tvId);
         var online = presence.IsOnline(agentSlug);
         state.NoteOnline(agentSlug, online);
-        stream.PublishState(tvId, TvState.From(state.Last(agentSlug), online, offlineSince: online ? null : presence.OfflineSince(agentSlug)));
+        var announced = TvState.From(state.Last(agentSlug), online, offlineSince: online ? null : presence.OfflineSince(agentSlug));
+        if (watcher is not null)
+        {
+            // Publica e passa a vigiar o computador novo no mesmo passo.
+            watcher.Publish(tvId, agentSlug, announced);
+        }
+        else
+        {
+            stream.PublishState(tvId, announced);
+        }
     }
 }
 
