@@ -1,5 +1,6 @@
 """O que cada item do menu da bandeja faz: "Sair" fecha só o ícone, e o balão é só para falha."""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -8,13 +9,18 @@ import pytest
 from uniover_agent.adapters.tray_controller import (
     CLOSED_FLAG,
     NOTIFIED_FILE,
+    VIEWING_MESSAGE,
+    VIEWING_TITLE,
     TrayController,
     TrayEnv,
 )
-from uniover_agent.core.tray_model import TrayInputs
+from uniover_agent.core.tray_model import VIEWING_RESUMES_WITHIN, TrayInputs
 from uniover_agent.ports.diagnostics import Severity
 
 NOW = datetime(2026, 10, 31, 15, 0, tzinfo=UTC)
+FIRST = "a" * 32
+SECOND = "b" * 32
+BALLOON = (VIEWING_MESSAGE, VIEWING_TITLE)
 
 
 class World:
@@ -30,16 +36,21 @@ class World:
         self.deliver = True
         self.records: list[tuple[str, Severity, str]] = []
         self.stopped = 0
+        self.now = NOW
+        self.stop_requests: list[str] = []
+        # Falso: aquela visualização já tinha acabado quando o pedido chegou.
+        self.stop_reaches = True
 
     def env(self) -> TrayEnv:
         return TrayEnv(
             base=self.base,
-            now=lambda: NOW,
+            now=lambda: self.now,
             read_inputs=lambda _: self.inputs,
             open_url=self.opened_urls.append,
             open_file=self.opened_files.append,
             notify=self._notify,
             stop=self._stop,
+            stop_screen=self._stop_screen,
             record=lambda kind, severity, detail: self.records.append((kind, severity, detail)),
             site_url="https://uniover.example",
             version=lambda: "b" * 40,
@@ -52,6 +63,15 @@ class World:
 
     def _stop(self) -> None:
         self.stopped += 1
+
+    def _stop_screen(self, session: str) -> bool:
+        self.stop_requests.append(session)
+        return self.stop_reaches
+
+    def viewing(self, session: str | None, after: float = 2) -> None:
+        """Passa o tempo e diz quem está vendo na próxima leitura."""
+        self.now += timedelta(seconds=after)
+        self.inputs = replace(self.inputs, now=self.now, screen_session=session)
 
     def controller(self) -> TrayController:
         return TrayController(self.env())
@@ -133,6 +153,144 @@ def test_an_unknown_item_is_a_diagnostic_too(world: World) -> None:
     world.controller().handle("explodir")
 
     assert world.records[0][:2] == ("tray.action_failed", "error")
+
+
+class TestViewingBalloon:
+    def test_it_opens_once_when_viewing_starts(self, world: World) -> None:
+        controller = world.controller()
+        controller.refresh()
+        assert world.balloons == []
+        for _ in range(3):
+            world.viewing(FIRST)
+            controller.refresh()
+
+        assert world.balloons == [BALLOON]
+
+    def test_the_session_the_app_renews_is_the_same_viewing(self, world: World) -> None:
+        controller = world.controller()
+        # A primeira sessão dura a vida inteira dela, com a bandeja lendo a cada 2 s.
+        for _ in range(45):
+            world.viewing(FIRST)
+            controller.refresh()
+        world.viewing(None)
+        controller.refresh()
+        world.viewing(SECOND, after=5)
+        controller.refresh()
+
+        assert world.balloons == [BALLOON]
+
+    def test_a_viewing_long_after_the_last_one_warns_again(self, world: World) -> None:
+        controller = world.controller()
+        world.viewing(FIRST)
+        controller.refresh()
+        world.viewing(None)
+        controller.refresh()
+        world.viewing(SECOND, after=VIEWING_RESUMES_WITHIN.total_seconds() + 1)
+        controller.refresh()
+
+        assert world.balloons == [BALLOON, BALLOON]
+
+    def test_it_waits_until_the_balloon_can_be_delivered(self, world: World) -> None:
+        controller = world.controller()
+        world.deliver = False
+        world.viewing(FIRST)
+        controller.refresh()
+        world.deliver = True
+        for _ in range(2):
+            world.viewing(FIRST)
+            controller.refresh()
+
+        assert world.balloons == [BALLOON]
+
+    def test_a_tray_that_opens_in_the_middle_stays_quiet(self, world: World) -> None:
+        controller = world.controller()
+        world.viewing(FIRST)
+        controller.refresh(announce=False)
+        world.viewing(FIRST)
+        controller.refresh()
+
+        assert world.balloons == []
+
+    def test_a_viewing_that_starts_right_after_the_icon_opens_warns(self, world: World) -> None:
+        controller = world.controller()
+        controller.refresh(announce=False)
+        world.viewing(FIRST)
+        controller.refresh()
+
+        assert world.balloons == [BALLOON]
+
+
+class TestStopSharingTheScreen:
+    def test_it_asks_to_end_the_viewing_and_leaves_the_tray_and_agent_alone(
+        self, world: World
+    ) -> None:
+        controller = world.controller()
+        world.viewing(FIRST)
+        controller.refresh()
+
+        controller.handle("stop_screen", FIRST)
+
+        assert world.stop_requests == [FIRST]
+        assert world.stopped == 0
+        assert world.runtime_files() == set()
+
+    def test_an_old_request_is_never_moved_to_the_current_viewing(self, world: World) -> None:
+        controller = world.controller()
+        world.viewing(SECOND)
+        controller.refresh()
+
+        controller.handle("stop_screen", FIRST)
+
+        assert world.stop_requests == [FIRST]
+
+    @pytest.mark.parametrize("session", [None, ""])
+    def test_without_a_viewing_in_the_menu_nothing_is_asked(
+        self, world: World, session: str | None
+    ) -> None:
+        controller = world.controller()
+        world.viewing(SECOND)
+        controller.refresh()
+
+        controller.handle("stop_screen", session)
+
+        assert world.stop_requests == []
+        assert world.records == []
+
+    def test_no_balloon_while_the_stopped_viewing_is_still_leaving(self, world: World) -> None:
+        controller = world.controller()
+        world.viewing(FIRST)
+        controller.refresh()
+        controller.handle("stop_screen", FIRST)
+        world.viewing(FIRST)
+        controller.refresh()
+
+        assert world.balloons == [BALLOON]
+
+    def test_a_new_request_from_the_device_warns_at_once(self, world: World) -> None:
+        controller = world.controller()
+        world.viewing(FIRST)
+        controller.refresh()
+        controller.handle("stop_screen", FIRST)
+        world.viewing(None)
+        controller.refresh()
+        world.viewing(SECOND)
+        controller.refresh()
+
+        assert world.balloons == [BALLOON, BALLOON]
+
+    def test_a_request_that_arrives_too_late_does_not_repeat_the_warning(
+        self, world: World
+    ) -> None:
+        controller = world.controller()
+        world.viewing(FIRST)
+        controller.refresh()
+        world.stop_reaches = False
+        controller.handle("stop_screen", FIRST)
+        world.viewing(SECOND)
+        controller.refresh()
+
+        # A seguinte emenda na anterior: continua sendo a mesma visualização.
+        assert world.balloons == [BALLOON]
 
 
 class TestUpdateFailureBalloon:

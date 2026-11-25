@@ -19,6 +19,7 @@ STATES = {
     "reconnecting": (0xC2, 0x6A, 0x00),
     "error": (0xB7, 0x1C, 0x1C),
     "updating": (0x1F, 0x6F, 0xD1),
+    "viewing": (0x7B, 0x2F, 0xBE),
 }
 SEAL = (0xFF, 0x5C, 0x45)
 WHITE = (255, 255, 255)
@@ -130,8 +131,12 @@ def test_every_icon_the_tray_can_ask_for_exists() -> None:
         for offset in (timedelta(0), timedelta(days=1))
         for outcome in ("not_checked", "updating", "failed", "blocked", "rolled_back", "updated")
     }
+    names |= {
+        view_of(TrayInputs(now=now, screen_session="a" * 32, update_outcome=outcome)).icon_file
+        for outcome in ("not_checked", "failed")
+    }
 
-    assert names
+    assert {"viewing.ico", "viewing-attention.ico"} <= names
     assert all((assets_dir() / name).is_file() for name in names), names
 
 

@@ -43,6 +43,7 @@ MAX_MONITOR = 2**31 - 1
 MONITOR_RECHECK_FRAMES = 30
 CURSOR_INTERVAL = 1 / 30
 STATE_INTERVAL = 0.25
+STOP_INTERVAL = 0.2
 FRAME_MAGIC = b"UOSF"
 FRAME_VERSION = 1
 # Cabeçalho de 16 bytes: magic, versão, flags (reservado), largura, altura, sequência, tamanho.
@@ -207,6 +208,10 @@ def _remote_is_lan(peer: Any) -> bool:
         return False
 
 
+# A sinalização à bandeja: entrega a consulta "o dono mandou parar?" (`None` se não há como pedir).
+Viewing = Callable[[], AbstractContextManager[Callable[[], bool] | None]]
+
+
 @dataclass(frozen=True)
 class Probes:
     """Leituras opcionais do desktop; sem elas a sessão só envia quadros."""
@@ -311,15 +316,33 @@ class ScreenSession:
         self,
         capture: Callable[[FrameRequest, int | None], Capture],
         memory: Callable[[], int],
-        viewing: Callable[[], AbstractContextManager[None]],
+        viewing: Viewing,
         probes: Probes | None = None,
     ) -> None:
         async with asyncio.timeout_at(min(self.auth_deadline, monotonic() + FRAME_TIMEOUT)):
             await self.ready.wait()
         if self.closed.is_set():
             return
-        with viewing():
-            await self.send_frames(capture, memory, probes or Probes())
+        with viewing() as stop_requested:
+            stopper = (
+                None
+                if stop_requested is None
+                else asyncio.create_task(self.watch_stop(stop_requested))
+            )
+            try:
+                await self.send_frames(capture, memory, probes or Probes())
+            finally:
+                if stopper is not None:
+                    stopper.cancel()
+                    await asyncio.gather(stopper, return_exceptions=True)
+
+    async def watch_stop(self, requested: Callable[[], bool]) -> None:
+        """O dono mandou parar pela bandeja: a sessão acaba, e só uma oferta nova abre outra."""
+        while not self.closed.is_set():
+            if requested():
+                self.closed.set()
+                return
+            await asyncio.sleep(STOP_INTERVAL)
 
     async def report_state(self, state: str) -> None:
         """Avisa só quando o estado muda; o bloqueio encerra a sessão depois do aviso sair."""
@@ -475,6 +498,8 @@ class ScreenSession:
                     )
                 for offset in range(0, len(payload), CHUNK_BYTES):
                     await self.wait_buffer(4 * CHUNK_BYTES - 1)
+                    if self.closed.is_set():
+                        return
                     self.channel.send(payload[offset : offset + CHUNK_BYTES])
                 await self.wait_buffer(0)
 
@@ -489,7 +514,7 @@ class ScreenSession:
         offer: Offer,
         pipe_closed: asyncio.Event,
         reply: Callable[[dict[str, str]], None],
-        viewing: Callable[[], AbstractContextManager[None]],
+        viewing: Viewing,
         probes: Probes | None = None,
     ) -> None:
         async def connect_and_stream() -> None:

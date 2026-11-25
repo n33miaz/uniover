@@ -3,6 +3,7 @@
 A cor do disco diz como o agente está (conectado, reconectando, com erro, atualizando); o selo de
 atenção é independente da cor e só aparece quando algo pede olhar (hoje, uma atualização que
 falhou). Assim um agente conectado que não conseguiu se atualizar continua verde, mas com o selo.
+Enquanto um aparelho vê a tela do PC, o estado "vendo" passa à frente de todos os outros.
 """
 
 from dataclasses import dataclass
@@ -12,8 +13,9 @@ from typing import Final, Literal
 from uniover_agent.core.net_status import NetProblem
 from uniover_agent.core.update_report import UPDATING_STALE_AFTER
 
-TrayState = Literal["connected", "reconnecting", "error", "updating"]
-MenuAction = Literal["open", "status", "log", "update", "restart", "quit"]
+ConnectionState = Literal["connected", "reconnecting", "error", "updating"]
+TrayState = ConnectionState | Literal["viewing"]
+MenuAction = Literal["stop_screen", "open", "status", "log", "update", "restart", "quit"]
 
 # Desconectado há menos que isto é "reconectando" (queda de rede, API acordando); depois disso é
 # erro.
@@ -27,6 +29,9 @@ ATTENTION_OUTCOMES: Final = frozenset({"failed", "blocked", "rolled_back"})
 BALLOON_OUTCOMES: Final = frozenset({"failed", "rolled_back"})
 # Uma falha mais velha que isto não vira balão num ícone que acabou de abrir.
 BALLOON_FRESH_FOR: Final = timedelta(hours=24)
+# O app reabre a tela ao fim da vida de cada sessão: voltar dentro deste prazo é a mesma
+# visualização, sem balão novo.
+VIEWING_RESUMES_WITHIN: Final = timedelta(seconds=30)
 TOOLTIP_LIMIT: Final = 120
 
 _STATE_TEXT: Final[dict[TrayState, str]] = {
@@ -34,7 +39,9 @@ _STATE_TEXT: Final[dict[TrayState, str]] = {
     "reconnecting": "reconectando",
     "error": "sem conexão",
     "updating": "atualizando",
+    "viewing": "tela sendo vista",
 }
+_VIEWING_TITLE: Final = "UniOver: um aparelho está vendo a tela"
 # Uma queda mais curta que isto não ganha motivo: um tropeço de DNS não vira "sem internet".
 NET_PROBLEM_AFTER: Final = timedelta(seconds=60)
 # Motivo da queda, curto (cabe na legenda do ícone, cortada em 63 caracteres, e na linha de estado
@@ -76,7 +83,8 @@ class TrayInputs:
     heartbeat_age: timedelta | None = None
     # Por que o agente não alcança a API, segundo ele mesmo (nulo quando não se sabe).
     net_problem: NetProblem | None = None
-    viewing_screen: bool = False
+    # Identificador da visualização da tela em curso; nulo quando ninguém está vendo.
+    screen_session: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,7 +94,8 @@ class TrayView:
     title: str
     # Motivo da queda, só quando sem conexão há algum tempo e o agente soube dizer.
     problem: NetProblem | None = None
-    viewing_screen: bool = False
+    # A visualização que o "Parar de mostrar a tela" encerra; nulo esconde o item do menu.
+    screen_session: str | None = None
 
     @property
     def status_text(self) -> str:
@@ -102,11 +111,7 @@ class TrayView:
     @property
     def icon_file(self) -> str:
         """O `.ico` desta combinação (um por estado, com e sem o selo)."""
-        return (
-            f"{self.state}-attention.ico"
-            if self.attention or self.viewing_screen
-            else f"{self.state}.ico"
-        )
+        return f"{self.state}-attention.ico" if self.attention else f"{self.state}.ico"
 
 
 def _tv_text(inputs: TrayInputs) -> str:
@@ -118,6 +123,11 @@ def _tv_text(inputs: TrayInputs) -> str:
 
 
 def decide_state(inputs: TrayInputs) -> TrayState:
+    """O aviso de que alguém vê a tela nunca é encoberto por outro estado."""
+    return "viewing" if inputs.screen_session else connection_state(inputs)
+
+
+def connection_state(inputs: TrayInputs) -> ConnectionState:
     """Atualizando manda (o agente reinicia no meio); sem sinal de vida é erro mesmo se o arquivo
     diz "conectado"."""
     if inputs.update_outcome == "updating" and (
@@ -154,11 +164,11 @@ def tooltip(
 ) -> str:
     """Texto do balãozinho ao parar o mouse; o Windows corta em 127 caracteres, então fica curto."""
     text = f"UniOver: {_PROBLEM_TEXT[problem] if problem else _STATE_TEXT[state]}"
-    if inputs.viewing_screen:
-        text = f"UniOver: medição de tela ativa - {text.removeprefix('UniOver: ')}"
+    if state == "viewing":
+        text = _VIEWING_TITLE
     if state == "connected":
         text += f" - {_tv_text(inputs)}"
-    if attention:
+    if attention and state != "viewing":  # não cabe na legenda do ícone; o selo já avisa
         text += " - atenção: falha na atualização"
     return text[:TOOLTIP_LIMIT]
 
@@ -168,17 +178,18 @@ def view_of(inputs: TrayInputs) -> TrayView:
     attention = needs_attention(inputs)
     problem = net_problem(state, inputs)
     return TrayView(
-        state, attention, tooltip(state, attention, inputs, problem), problem, inputs.viewing_screen
+        state, attention, tooltip(state, attention, inputs, problem), problem, inputs.screen_session
     )
 
 
 def status_summary(view: TrayView, inputs: TrayInputs, version: str | None) -> str:
     """O que o item "Status" mostra: uma linha por assunto, sem dado pessoal."""
-    lines = [f"Agente: {_PROBLEM_TEXT[view.problem] if view.problem else _STATE_TEXT[view.state]}"]
-    if view.state == "connected":
+    link = connection_state(inputs)
+    lines = [f"Agente: {_PROBLEM_TEXT[view.problem] if view.problem else _STATE_TEXT[link]}"]
+    if link == "connected":
         lines.append(f"TV: {_tv_text(inputs)}")
-    if view.viewing_screen:
-        lines.append("Medição de tela ativa")
+    if view.screen_session:
+        lines.append("Tela: um aparelho está vendo")
     if view.hint:
         lines.append(view.hint)
     if view.attention:
@@ -198,7 +209,9 @@ class MenuEntry:
 
 
 # `None` é um separador. O "Sair" só fecha o ícone: o agente segue (ver `adapters/tray.py`).
+# O "Parar de mostrar a tela" só aparece enquanto alguém vê (ver `TrayView.screen_session`).
 MENU: Final[tuple[MenuEntry | None, ...]] = (
+    MenuEntry("stop_screen", "Parar de mostrar a tela"),
     MenuEntry("open", "Abrir UniOver", default=True),
     MenuEntry("status", "Status"),
     MenuEntry("log", "Ver Registro"),
@@ -208,6 +221,13 @@ MENU: Final[tuple[MenuEntry | None, ...]] = (
     None,
     MenuEntry("quit", "Sair"),
 )
+
+
+def menu_for(screen_session: str | None) -> tuple[MenuEntry | None, ...]:
+    """Os itens visíveis agora: sem ninguém vendo a tela, não há o que parar."""
+    if screen_session:
+        return MENU
+    return tuple(entry for entry in MENU if entry is None or entry.action != "stop_screen")
 
 
 def should_notify_update_failure(

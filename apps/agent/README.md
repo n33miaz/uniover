@@ -621,7 +621,8 @@ janela, faz `uv sync --no-dev` e `uv run --no-dev`; se o agente cair, volta com 
 `%LOCALAPPDATA%\UniOver\runtime\venv`. O registro fica em `%LOCALAPPDATA%\UniOver\logs\agent.log`.
 
 **Bandeja.** Perto do relógio aparece o ícone do UniOver: um disco redondo com a marca, cuja cor diz o estado
-(verde conectado, laranja reconectando, vermelho sem conexão, azul atualizando). Quando algo pede atenção (hoje, uma
+(verde conectado, laranja reconectando, vermelho sem conexão, azul atualizando, roxo enquanto um aparelho vê a tela do
+PC). Quando algo pede atenção (hoje, uma
 atualização que falhou) um selo vermelho-alaranjado aparece no canto inferior direito, recortando o disco, sem mudar a cor dele. A dica traz o
 estado e o nome da TV. O menu tem Abrir UniOver, Status, Ver Registro, Atualizar Agora, Reiniciar e Sair.
 O supervisor abre a bandeja em toda instalação Windows, com TV Samsung, Android ou sem TV configurada. O atalho
@@ -634,8 +635,14 @@ agente para manter o controle disponível. Para interromper o início do agente,
   do Windows atual começar) ou até a pessoa abrir o atalho **UniOver** do menu Iniciar (`tools\tray-open.vbs`,
   que apaga o sinal e chama o lançador; o ícone volta em poucos segundos). O supervisor cria esse atalho ao subir, se
   faltar, para ele chegar também a quem já tinha o UniOver instalado. Uma atualização não traz o ícone de volta.
-- **Balão do Windows só em falha de atualização**, uma vez por resultado (`runtime\tray-notified.json`). Atualizar,
-  conectar, reiniciar e o resto não abrem balão.
+- **Tela do PC sendo vista.** Enquanto um aparelho vê a tela, o ícone fica roxo (esse estado passa à frente dos
+  outros), a dica avisa e o menu ganha **Parar de mostrar a tela**. O processo da tela publica o identificador da
+  visualização num objeto nomeado do Windows e espera um evento com esse nome: o pedido de parar encerra a sessão da
+  tela, sem tocar no controle do PC, e um pedido atrasado não acha evento nenhum, então nunca derruba a seguinte. A tela
+  só abre de novo com um pedido novo do aparelho. Nenhuma janela abre.
+- **Balão do Windows sozinho só em dois casos:** falha de atualização, uma vez por resultado
+  (`runtime\tray-notified.json`), e quando um aparelho começa a ver a tela (uma sessão que volta em até 30 s é a mesma
+  visualização). Atualizar, conectar, reiniciar e o resto não abrem balão.
 - **Todo erro vai para o diagnóstico.** Falha de atualização (`update.failed`, `update.rejected`, `update.sync_failed`,
   `update.rollback_failed`, em severidade `error`, escritas pelo agente e pelo supervisor) e falhas do próprio ícone
   (componente `tray`) entram na fila `runtime\diagnostics.jsonl`, vão para "Erros dos Agentes" em Sistema e geram o

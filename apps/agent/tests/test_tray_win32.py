@@ -4,6 +4,7 @@ import ctypes
 import sys
 import uuid
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from PIL import Image
@@ -16,6 +17,7 @@ from uniover_agent.adapters.tray_win32 import (
     own_image_path,
     small_icon_size,
 )
+from uniover_agent.core.tray_model import TrayInputs
 
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="chamadas do Windows")
 
@@ -85,6 +87,40 @@ def test_without_an_ico_file_the_icon_falls_back_to_pystray() -> None:
 
     assert icon._icon_handle
     icon._release_icon()
+
+
+@windows_only
+@pytest.mark.parametrize("session", [None, "a" * 32])
+def test_the_native_menu_offers_to_stop_only_the_viewing_it_shows(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, session: str | None
+) -> None:
+    """O menu de reserva (pystray), montado de verdade e sem pôr ícone na bandeja."""
+    from uniover_agent.adapters import tray  # noqa: PLC0415
+
+    built: list[tray.SharpIcon] = []
+    asked: list[str] = []
+    monkeypatch.setenv("UNIOVER_TRAY_NATIVE", "0")
+    monkeypatch.setenv("UNIOVER_CONFIG_FILE", str(tmp_path / "agent.toml"))
+    monkeypatch.setattr(
+        tray, "read_tray_inputs", lambda now: TrayInputs(now=now, screen_session=session)
+    )
+
+    def stop_screen(value: str) -> bool:
+        asked.append(value)
+        return True
+
+    monkeypatch.setattr(tray, "request_screen_stop", stop_screen)
+    monkeypatch.setattr(tray.SharpIcon, "run", lambda icon, setup=None: built.append(icon))
+
+    assert tray._run(tmp_path, cast(Any, None)) == 0
+
+    [icon] = built
+    entries = {str(item.text): item for item in icon.menu}
+    assert ("Parar de mostrar a tela" in entries) is (session is not None)
+    assert "Abrir UniOver" in entries
+    if session is not None:
+        entries["Parar de mostrar a tela"](icon)
+    assert asked == ([] if session is None else [session])
 
 
 @windows_only

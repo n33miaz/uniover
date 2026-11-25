@@ -29,6 +29,8 @@ const STATES = {
   reconnecting: '#C26A00',
   error: '#B71C1C',
   updating: '#1F6FD1',
+  // Um aparelho está vendo a tela do PC.
+  viewing: '#7B2FBE',
 };
 
 const ATTENTION = /\s*<g id="attention">[\s\S]*?<\/g>\n?/;

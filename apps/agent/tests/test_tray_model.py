@@ -12,6 +12,7 @@ from uniover_agent.core.tray_model import (
     RECONNECT_GRACE,
     TrayInputs,
     decide_state,
+    menu_for,
     needs_attention,
     should_notify_update_failure,
     status_summary,
@@ -19,6 +20,7 @@ from uniover_agent.core.tray_model import (
 )
 
 NOW = datetime(2026, 10, 31, 15, 0, tzinfo=UTC)
+VIEWING = "a" * 32
 
 
 def inputs(**changes: object) -> TrayInputs:
@@ -35,14 +37,61 @@ def test_connected_agent_is_green_without_the_seal() -> None:
     assert view.title == "UniOver: conectado - Sala ligada"
 
 
-def test_viewing_screen_shows_the_seal_and_the_measurement_status() -> None:
-    current = inputs(viewing_screen=True, power="on", tv_name="Sala")
+def test_viewing_the_screen_has_its_own_state_icon_and_tooltip() -> None:
+    current = inputs(screen_session=VIEWING, power="on", tv_name="Sala")
     view = view_of(current)
 
-    assert not view.attention
-    assert view.icon_file == "connected-attention.ico"
-    assert view.title == "UniOver: medição de tela ativa - conectado - Sala ligada"
-    assert "Medição de tela ativa" in status_summary(view, current, None).splitlines()
+    assert (view.state, view.attention, view.screen_session) == ("viewing", False, VIEWING)
+    assert view.icon_file == "viewing.ico"
+    assert view.status_text == "Tela sendo vista"
+    assert view.title == "UniOver: um aparelho está vendo a tela"
+    assert len(view.title) <= 63  # o host corta a legenda em 63 caracteres
+    assert status_summary(view, current, None).splitlines() == [
+        "Agente: conectado",
+        "TV: Sala ligada",
+        "Tela: um aparelho está vendo",
+    ]
+
+
+def test_the_icon_goes_to_viewing_and_back_with_the_session() -> None:
+    states = [
+        view_of(inputs(screen_session=session)).state for session in (None, VIEWING, "b" * 32, None)
+    ]
+
+    assert states == ["connected", "viewing", "viewing", "connected"]
+    assert view_of(inputs()).screen_session is None
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"connected": False, "since": None},
+        {"connected": False, "net_problem": "no_internet"},
+        {"heartbeat_age": HEARTBEAT_STALE + timedelta(seconds=1)},
+        {"update_outcome": "updating", "update_checked_at": NOW},
+    ],
+)
+def test_nothing_hides_that_the_screen_is_being_seen(changes: dict[str, object]) -> None:
+    view = view_of(inputs(screen_session=VIEWING, **changes))
+
+    assert (view.state, view.problem, view.hint) == ("viewing", None, "")
+    assert view.icon_file == "viewing.ico"
+
+
+def test_viewing_with_a_failed_update_keeps_the_seal() -> None:
+    view = view_of(inputs(screen_session=VIEWING, update_outcome="failed", update_checked_at=NOW))
+
+    assert view.icon_file == "viewing-attention.ico"
+    assert view.title == "UniOver: um aparelho está vendo a tela"
+
+
+def test_the_stop_item_exists_only_while_someone_is_viewing() -> None:
+    def labels(session: str | None) -> list[str]:
+        return [entry.label for entry in menu_for(session) if entry is not None]
+
+    assert labels(VIEWING)[0] == "Parar de mostrar a tela"
+    assert labels(None) == labels(VIEWING)[1:]
+    assert "Parar de mostrar a tela" not in labels(None)
 
 
 def test_a_fresh_drop_is_reconnecting_and_an_old_one_is_an_error() -> None:
@@ -120,7 +169,7 @@ def test_every_combination_names_an_icon_file() -> None:
 
 
 def test_the_menu_has_the_five_items_plus_update_now_in_order() -> None:
-    entries = [entry for entry in MENU if entry is not None]
+    entries = [entry for entry in menu_for(None) if entry is not None]
 
     assert [entry.label for entry in entries] == [
         "Abrir UniOver",
@@ -141,7 +190,7 @@ def test_the_menu_has_the_five_items_plus_update_now_in_order() -> None:
     assert [entry.label for entry in entries if entry.default] == ["Abrir UniOver"]
     # "Sair" é sempre o último e vem depois de um separador.
     assert MENU[-1] is entries[-1]
-    assert MENU[-2] is None
+    assert menu_for(None)[-2] is None
 
 
 def test_status_summary_is_short_and_has_no_personal_data() -> None:
