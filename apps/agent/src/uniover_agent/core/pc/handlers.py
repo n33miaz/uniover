@@ -14,6 +14,12 @@ from typing import Any, Final
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.envelopes import EnvelopeFactory
 from uniover_agent.core.handle_command import Handler
+from uniover_agent.core.pc.absolute import (
+    ABS_POINTER_TYPE,
+    TAP_TYPE,
+    AbsoluteTarget,
+    PcPointerAbsolute,
+)
 from uniover_agent.core.pc.apps import PcApp
 from uniover_agent.core.pc.click_pacer import ClickPacer
 from uniover_agent.core.pc.clock_offset import ClockOffset
@@ -314,6 +320,36 @@ def pc_click_v2_handler(
     return run
 
 
+def pc_tap_handler(pointer: PcPointerAbsolute, pacer: ClickPacer | None = None) -> Handler:
+    """`pc.tap.v1`: o ponteiro no ponto tocado da tela e o clique ali, num lote só. O arranjo
+    dos monitores mudado volta como `stale_layout`; a janela de administrador, como
+    `elevated_window`."""
+
+    def handle(command: Command) -> CommandResult:
+        body = command.body
+        target = AbsoluteTarget.from_body(body)
+        button = str(body["button"])
+        action = str(body["action"])
+        if pacer is not None and action in _PACED_ACTIONS:
+            pacer.mark(button)
+        pointer.tap(target, button, action, body.get("modifiers") or ())
+        return _ok(command)
+
+    return _guarded(handle)
+
+
+def pc_pointer_abs_handler(
+    pointer: PcPointerAbsolute, *, burst: RefusalBurst | None = None
+) -> Handler:
+    """`pc.pointer.abs.v1`: o ponteiro na posição absoluta (o arrasto sobre a imagem da tela)."""
+
+    def handle(command: Command) -> CommandResult:
+        pointer.move_to(AbsoluteTarget.from_body(command.body))
+        return _ok(command)
+
+    return _guarded(handle, noisy=False, burst=burst or RefusalBurst("posições do ponteiro"))
+
+
 def pc_key_handler(pc: PcInput) -> Handler:
     """`pc.key.v1`."""
 
@@ -519,6 +555,7 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     volume_changed: Callable[[], None] | None = None,
     foreground: PcForeground | None = None,
     extra: Mapping[str, Handler] | None = None,
+    absolute: PcPointerAbsolute | None = None,
 ) -> dict[str, Handler]:
     """Todos os comandos `pc.*` que este agente executa quando o controle está ligado.
 
@@ -533,6 +570,9 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     volume (o aviso do nível sai atrás dele). `foreground` lê o programa da frente: com ele, a tecla
     e o texto que trazem `target` só saem com aquele programa na frente (ver `focus`). `extra` são
     comandos que devolvem dados (ver `replies`), já prontos: aqui só ganham a validade dos comandos.
+    `absolute` é o ponteiro absoluto da tela do PC: com ele entram o `pc.tap.v1` (o `UP` isento da
+    idade, como no clique) e o `pc.pointer.abs.v1` (com a validade do movimento), que só chegam pelo
+    canal direto com a tela aberta (a faixa recusa os dois pela nuvem).
     """
     offset = clock or ClockOffset()
     clicks = pacer or ClickPacer()
@@ -606,6 +646,15 @@ def pc_handlers(  # noqa: PLR0913 - portas e relógio trocáveis para os testes
     }
     for message_type, handle in (extra or {}).items():
         handlers[message_type] = fresh(handle, MAX_COMMAND_AGE_SECONDS)
+    if absolute is not None:
+        handlers[TAP_TYPE] = fresh(
+            noted(pc_tap_handler(absolute, clicks)),
+            MAX_COMMAND_AGE_SECONDS,
+            exempt=lambda command: command.body.get("action") == "UP",
+        )
+        handlers[ABS_POINTER_TYPE] = fresh(
+            noted(pc_pointer_abs_handler(absolute)), MAX_POINTER_AGE_SECONDS, quiet=True
+        )
     if audio is not None:
         handlers["pc.volume.v1"] = fresh(
             noted(pc_volume_handler(audio, changed=volume_changed)), MAX_COMMAND_AGE_SECONDS

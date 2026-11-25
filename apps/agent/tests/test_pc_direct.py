@@ -168,6 +168,7 @@ class Lab:
         pacer: ClickPacer | None = None,
         pc: Any | None = None,
         screen_factory: Callable[[], ScreenPeer] | None = None,
+        absolute: Any | None = None,
     ) -> None:
         self.clock = FakeClock()
         self.gate = EnvelopeGate(AGENT_ID)
@@ -186,6 +187,7 @@ class Lab:
             use=PcUseTracker(),
             pacer=pacer,
             audio=self.audio,
+            absolute=absolute,
         )
         self.click_gate = asyncio.Event()
         if block_clicks:
@@ -220,6 +222,7 @@ class Lab:
             settings=settings or DirectSettings(tick_seconds=0.005),
             announce_reconcile=announce_reconcile,
             screen_factory=screen_factory,
+            absolute=absolute is not None,
         )
         handlers.update(pc_rtc_handlers(self.service, self.transport, self.envelopes))
         # A faixa e os `pc.rtc.*` usam os mesmos handlers do agente de verdade.

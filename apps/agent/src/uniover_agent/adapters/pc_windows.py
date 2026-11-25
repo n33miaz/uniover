@@ -20,6 +20,7 @@ from typing import Any, Final, NoReturn, Protocol
 from uniover_agent.adapters import pc_inputs
 from uniover_agent.adapters.pc_inputs import RawInput
 from uniover_agent.adapters.process import run_hidden
+from uniover_agent.core.pc.absolute import AbsoluteTarget, LayoutChanged, MonitorArea, locate
 from uniover_agent.ports.pc import (
     CAUSE_ELEVATED_WINDOW,
     CAUSE_SESSION_LOCKED,
@@ -71,6 +72,41 @@ INTEGRITY_HIGH: Final = 0x3000
 INTEGRITY_SYSTEM: Final = 0x4000
 # Nome do desktop do usuário logado; a tela de bloqueio e o UAC rodam em outro (`Winlogon`).
 USER_DESKTOP: Final = "default"
+
+
+# `DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2`: com ele a thread lê os retângulos em pixels físicos
+# de cada monitor, como a tela ao vivo (que liga o mesmo modo no processo dela) os anuncia.
+PER_MONITOR_AWARE_V2: Final = -4
+
+
+class _MonitorLike(Protocol):
+    @property
+    def id(self) -> int: ...
+    @property
+    def left(self) -> int: ...
+    @property
+    def top(self) -> int: ...
+    @property
+    def width(self) -> int: ...
+    @property
+    def height(self) -> int: ...
+
+
+def read_physical_layout(
+    set_context: Callable[[int], int], enumerate_monitors: Callable[[], Sequence[_MonitorLike]]
+) -> list[MonitorArea]:
+    """Os monitores em pixels físicos: a enumeração roda com a thread no modo de DPI por monitor
+    (o processo do agente não liga modo nenhum, e sem isso um monitor a 125 % ou 150 % viria em
+    pixels lógicos) e o modo anterior volta no fim. A ordem e os números são os da tela ao vivo."""
+    previous = set_context(PER_MONITOR_AWARE_V2)
+    try:
+        return [
+            MonitorArea(item.id, item.left, item.top, item.width, item.height)
+            for item in enumerate_monitors()
+        ]
+    finally:
+        if previous:
+            set_context(previous)
 
 
 def integrity_name(level: int | None) -> str:
@@ -319,6 +355,50 @@ if sys.platform == "win32":
         )
         return cause, detail
 
+    _user32.SetThreadDpiAwarenessContext.argtypes = (ctypes.c_void_p,)
+    _user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+    _user32.WindowFromPoint.argtypes = (wintypes.POINT,)
+    _user32.WindowFromPoint.restype = wintypes.HWND
+    _user32.GetAncestor.argtypes = (wintypes.HWND, wintypes.UINT)
+    _user32.GetAncestor.restype = wintypes.HWND
+    _GA_ROOT = 2
+
+    def _set_thread_dpi_context(context: int) -> int:
+        return int(_user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(context)) or 0)
+
+    def _read_layout() -> list[MonitorArea]:
+        # A mesma enumeração da tela ao vivo (os números de `s.mon`), lida aqui na hora do envio.
+        from uniover_agent.adapters.pc_screen_monitors import list_monitors  # noqa: PLC0415
+
+        return read_physical_layout(_set_thread_dpi_context, list_monitors)
+
+    def _elevated_at(x: int, y: int) -> bool:
+        """A janela sob o pixel físico `(x, y)` é de um processo com integridade acima da deste (o
+        Windows descarta o clique nela de propósito, UIPI). Nunca lê o título nem o programa."""
+        previous = _set_thread_dpi_context(PER_MONITOR_AWARE_V2)
+        try:
+            window = _user32.WindowFromPoint(wintypes.POINT(x, y))
+            root = _user32.GetAncestor(window, _GA_ROOT) if window else None
+        finally:
+            if previous:
+                _set_thread_dpi_context(previous)
+        if not root:
+            return False
+        pid = wintypes.DWORD(0)
+        _user32.GetWindowThreadProcessId(root, ctypes.byref(pid))
+        if not pid.value:
+            return False
+        process = _kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+        if not process:
+            target = INTEGRITY_HIGH if ctypes.get_last_error() == _ERROR_ACCESS_DENIED else None
+        else:
+            try:
+                target = _process_integrity(process)
+            finally:
+                _kernel32.CloseHandle(process)
+        own = _process_integrity(_kernel32.GetCurrentProcess())
+        return target is not None and own is not None and target > own
+
     def _send_input(inputs: Sequence[RawInput]) -> None:
         if not inputs:
             return
@@ -375,6 +455,12 @@ if sys.platform == "win32":
         return params[2], speed.value
 
 else:
+
+    def _read_layout() -> list[MonitorArea]:
+        raise PcUnsupported(_UNSUPPORTED)
+
+    def _elevated_at(x: int, y: int) -> bool:
+        return False
 
     def _foreground_image() -> str | None:
         return None
@@ -439,7 +525,7 @@ class WindowsPcInput:
     agente e o temporizador roda em outra thread, daí a trava.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - o envio, o relógio e as leituras do sistema são trocáveis
         self,
         send: Sender | None = None,
         *,
@@ -447,8 +533,12 @@ class WindowsPcInput:
         dead_man_seconds: float = DEAD_MAN_SECONDS,
         start_timer: TimerStarter = _start_timer,
         key_probe: KeyProbe | None = None,
+        layout: Callable[[], Sequence[MonitorArea]] | None = None,
+        elevated_at: Callable[[int, int], bool] | None = None,
     ) -> None:
         self._send = send or (_send_input if sys.platform == "win32" else _refuse_unsupported)
+        self._layout = layout or _read_layout
+        self._elevated_at = elevated_at or _elevated_at
         self._key_probe = key_probe or _key_is_down
         self._monotonic = monotonic
         self._dead_man = dead_man_seconds
@@ -493,6 +583,47 @@ class WindowsPcInput:
             # O que já está segurado (o Alt do Alt+Tab) não é apertado nem solto por este clique.
             held = frozenset(identity[0] for identity in self._held_keys)
             self._dispatch(pc_inputs.click_inputs(button, action, modifiers, held))
+
+    def move_to(self, target: AbsoluteTarget) -> None:
+        """O ponteiro no ponto pedido da tela (o arrasto depois de um `tap` com `DOWN`). Conta como
+        tráfego para a soltura automática, como o movimento relativo."""
+        with self._lock:
+            _point, (nx, ny) = locate(self._layout(), target)
+            self._dispatch(pc_inputs.abs_move_inputs(nx, ny))
+
+    def tap(
+        self, target: AbsoluteTarget, button: str, action: str, modifiers: Sequence[str] = ()
+    ) -> None:
+        """O ponteiro no ponto e o clique ali, num lote só (a soltura de um lote parcial e a
+        automática valem como no `click`). O `UP` sempre solta: com o arranjo mudado (ou ilegível)
+        ele sai sem mover, e a janela de administrador não o barra. Para os outros, uma janela de
+        administrador sob o ponto recusa o toque antes de enviar (o Windows descartaria o clique
+        sem dizer nada)."""
+        with self._lock:
+            held = frozenset(identity[0] for identity in self._held_keys)
+            clicks = pc_inputs.click_inputs(button, action, modifiers, held)
+            try:
+                point, (nx, ny) = locate(self._layout(), target)
+            except LayoutChanged, OSError:
+                if action != "UP":
+                    raise
+                self._dispatch(clicks)
+                return
+            if action != "UP" and self._point_elevated(*point):
+                raise PcInputRefused(
+                    "janela de administrador no ponto tocado",
+                    CAUSE_ELEVATED_WINDOW,
+                    "janela sob o ponto com integridade acima deste processo",
+                )
+            self._dispatch([*pc_inputs.abs_move_inputs(nx, ny), *clicks])
+
+    def _point_elevated(self, x: int, y: int) -> bool:
+        try:
+            return self._elevated_at(x, y)
+        except Exception as exc:
+            # Medir é só para dizer a causa: sem a medida o toque segue (o Windows decide).
+            _log.debug("integridade da janela sob o toque não medida: %s", exc)
+            return False
 
     def key(
         self, key: str, modifiers: Sequence[str], *, repeat: int = 1, action: str = "PRESS"

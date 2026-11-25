@@ -72,6 +72,11 @@ from uniover_agent.core import (
     pc_rtc_handlers,
     volume_after_hello,
 )
+from uniover_agent.core.pc.absolute import (
+    ABS_POINTER_TYPE,
+    PC_ABS_CAPABILITY,
+    PcPointerAbsolute,
+)
 from uniover_agent.core.pc.devices import DeviceApprovals
 from uniover_agent.core.pc.direct import (
     PC_SCREEN_CAPABILITY,
@@ -460,6 +465,9 @@ def build_pc(  # noqa: PLR0913, PLR0915 - portas trocáveis para os testes, toda
         (lambda: main_call(volume.soon)) if main_call is not None else volume.soon
     )
     outcomes = _power_outcomes(transport, envelopes, clock_now, power_marker)
+    # O toque na imagem da tela do PC: o adaptador do Windows sabe; os handlers só são alcançados
+    # pelo canal direto com a tela aberta (a faixa recusa os dois tipos pela nuvem).
+    absolute = pc_input if isinstance(pc_input, PcPointerAbsolute) else None
     handlers = pc_handlers(
         pc_input,
         # O mesmo adaptador responde, mais abaixo, se a hibernação está ligada.
@@ -482,12 +490,13 @@ def build_pc(  # noqa: PLR0913, PLR0915 - portas trocáveis para os testes, toda
             use,
             clipboard_read=settings.pc_clipboard_read,
         ),
+        absolute=absolute,
     )
     capabilities = _capabilities()
     if devices is not None:
         capabilities.append(PC_DEVICE_CAPABILITY)
     direct: PcDirectService | None = None
-    silent_types = set(PC_SILENT_TYPES)
+    silent_types = set(PC_SILENT_TYPES) | {ABS_POINTER_TYPE}
     if settings.pc_direct and lane_gate is not None and direct_available():
         direct = _build_direct(
             settings,
@@ -500,12 +509,16 @@ def build_pc(  # noqa: PLR0913, PLR0915 - portas trocáveis para os testes, toda
             direct_factory,
             on_main(record),
             devices,
+            absolute=absolute is not None,
         )
         handlers.update(pc_rtc_handlers(direct, sender, lane_envelopes))
         silent_types |= RTC_SILENT_TYPES
         capabilities.extend((PC_RTC_CAPABILITY, RECONCILE_CAPABILITY))
         if sys.platform == "win32" and devices is not None:
             capabilities.append(PC_SCREEN_CAPABILITY)
+            # O toque na imagem da tela: só com a tela, e só pelo canal direto com ela aberta.
+            if absolute is not None:
+                capabilities.append(PC_ABS_CAPABILITY)
     lane = PcLane(
         HandleCommand(handlers, clock_now),
         lane_envelopes,
@@ -636,6 +649,8 @@ def _build_direct(  # noqa: PLR0913, PLR0917 - dependências da montagem
     factory: DirectPeerFactory | None,
     record: Callable[[str, str, str], None] | None,
     devices: DeviceApprovals | None = None,
+    *,
+    absolute: bool = False,
 ) -> PcDirectService:
     async def notify_closed(session_id: str, reason: str, tv: TvCounts | None) -> None:
         envelope = envelopes.pc_rtc_closed(
@@ -676,6 +691,7 @@ def _build_direct(  # noqa: PLR0913, PLR0917 - dependências da montagem
         devices=devices,
         announce_reconcile=announce_reconcile,
         screen_factory=ScreenProcess if sys.platform == "win32" and devices is not None else None,
+        absolute=absolute,
     )
 
 

@@ -12,11 +12,21 @@ import {
 } from '@angular/core';
 import {
   DirectChannel,
+  DirectNotSent,
   DirectSignaling,
   PC_RTC_FACTORY,
   gatherDirectIce,
 } from '../../../core/direct/direct-channel';
+import { pcFailureOf } from '../data/pc-failure';
+import { PcStore } from '../data/pc-store';
 import { PcScreenAccess } from '../data/screen-access';
+import {
+  DEFAULT_SCREEN_TOUCH,
+  ImageView,
+  ScreenTouch,
+  tapTarget,
+  type TouchPoint,
+} from '../data/screen-touch';
 import {
   ScreenFrameLoop,
   ScreenViewerFrameAssembler,
@@ -26,6 +36,7 @@ import {
   type ScreenViewState,
   type ScreenViewerFrame,
 } from '../data/screen-viewer';
+import { PadGesture } from '../input/pad-gesture';
 
 const START_TIMEOUT_MS = 20_000;
 /** A API encerra a sessão de tela em 90 s; a página reabre sozinha um pouco antes, sem o usuário perceber mais que um piscar. */
@@ -34,6 +45,9 @@ const RENEW_MS = 75_000;
 const MAX_WIDTH = 1280;
 /** O menor que o PC aceita. */
 const MIN_WIDTH = 128;
+
+/** Como o dedo age na imagem: toca no ponto (posição absoluta) ou move o ponteiro como no touchpad. */
+type TouchMode = 'direct' | 'pad';
 
 type Phase = 'idle' | 'connecting' | 'live' | 'paused' | 'locked' | 'failed';
 
@@ -81,27 +95,67 @@ interface Link {
           }
         </div>
       }
-      <div class="stage" [hidden]="!hasFrame()">
-        <canvas
-          #surface
-          width="1"
-          height="1"
-          aria-label="Tela do PC"
-          i18n-aria-label="@@pc.screen.canvas"
-        ></canvas>
-        @if (pointer(); as spot) {
-          <svg
-            class="cursor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-            [style.left.%]="spot.left"
-            [style.top.%]="spot.top"
-          >
-            <path [attr.d]="'M5 3l14 8-6 2-3 6z'" />
-          </svg>
-        }
+      @if (access.touch() && hasFrame()) {
+        <div
+          class="tools"
+          role="group"
+          aria-label="Toque na tela"
+          i18n-aria-label="@@pc.screen.touch"
+        >
+          <button type="button" [attr.aria-pressed]="mode() === 'pad'" (click)="toggleMode()">
+            @if (mode() === 'direct') {
+              <span i18n="@@pc.screen.mode.direct">Toque direto</span>
+            } @else {
+              <span i18n="@@pc.screen.mode.pad">Touchpad</span>
+            }
+          </button>
+          @if (mode() === 'direct') {
+            <button type="button" [attr.aria-pressed]="scrolling()" (click)="toggleScroll()">
+              <span i18n="@@pc.screen.scroll">Rolar</span>
+            </button>
+            @if (zoomed()) {
+              <button type="button" (click)="resetZoom()">
+                <span i18n="@@pc.screen.zoom.reset">Zoom 1x</span>
+              </button>
+            }
+          }
+        </div>
+      }
+      <div
+        #stage
+        class="stage"
+        [class.touch]="access.touch()"
+        [hidden]="!hasFrame()"
+        (pointerdown)="onDown($event)"
+        (pointermove)="onMove($event)"
+        (pointerup)="onUp($event)"
+        (pointercancel)="onCancel()"
+      >
+        <div class="view" [style.transform]="viewTransform()">
+          <canvas
+            #surface
+            width="1"
+            height="1"
+            aria-label="Tela do PC"
+            i18n-aria-label="@@pc.screen.canvas"
+          ></canvas>
+          @if (pointer(); as spot) {
+            <svg
+              class="cursor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              [style.left.%]="spot.left"
+              [style.top.%]="spot.top"
+            >
+              <path [attr.d]="'M5 3l14 8-6 2-3 6z'" />
+            </svg>
+          }
+        </div>
       </div>
       @if (notice(); as text) {
+        <p class="note notice" role="status">{{ text }}</p>
+      }
+      @if (touchNotice(); as text) {
         <p class="note notice" role="status">{{ text }}</p>
       }
       @if (!canOpen() && phase() === 'idle') {
@@ -137,6 +191,37 @@ interface Link {
       border-radius: var(--radius);
       overflow: hidden;
       background: var(--a-surface);
+    }
+    .stage.touch {
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+    .view {
+      position: relative;
+      transform-origin: 0 0;
+    }
+    .tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+    .tools button {
+      min-height: 44px;
+      padding: 0 var(--space-4);
+      border: 1px solid var(--a-line);
+      border-radius: var(--radius);
+      background: var(--a-surface);
+      color: var(--a-ink);
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .tools button[aria-pressed='true'] {
+      background: var(--a-accent-soft);
+      border-color: var(--a-accent);
     }
     canvas {
       display: block;
@@ -193,7 +278,11 @@ export class ScreenPage {
   private readonly signaling = inject(DirectSignaling);
   private readonly factory = inject(PC_RTC_FACTORY);
   private readonly doc = inject(DOCUMENT);
+  private readonly store = inject(PcStore);
   private readonly surface = viewChild<ElementRef<HTMLCanvasElement>>('surface');
+  private readonly stage = viewChild<ElementRef<HTMLElement>>('stage');
+  private readonly view = new ImageView(1, 1);
+  private readonly zoom = signal({ scale: 1, panX: 0, panY: 0 });
   private link: Link | null = null;
 
   protected readonly phase = signal<Phase>('idle');
@@ -202,6 +291,34 @@ export class ScreenPage {
   protected readonly cursor = signal<ScreenCursor | null>(null);
   protected readonly state = signal<ScreenViewState>('ok');
   protected readonly hasFrame = signal(false);
+  protected readonly mode = signal<TouchMode>('direct');
+  protected readonly scrolling = signal(false);
+  protected readonly touchNotice = signal<string | null>(null);
+  protected readonly zoomed = computed(() => this.zoom().scale > 1);
+  protected readonly viewTransform = computed(() => {
+    const { scale, panX, panY } = this.zoom();
+    return scale === 1 ? null : `translate(${panX}px, ${panY}px) scale(${scale})`;
+  });
+
+  /** Os dedos no modo "toque direto": clique, clique direito, duplo e arrasto pela posição absoluta. */
+  private readonly touch = new ScreenTouch(
+    {
+      tap: (button, action, at) => this.tapAt(button, action, at),
+      drag: (at) => this.dragTo(at),
+      pinch: (factor, center, dx, dy) => this.pinchView(factor, center, dx, dy),
+      scroll: (dx, dy) => this.store.scrollPointer(dx, dy),
+    },
+    DEFAULT_SCREEN_TOUCH,
+  );
+
+  /** Os dedos no modo touchpad sobre a imagem: o movimento relativo de sempre. */
+  private readonly pad = new PadGesture({
+    move: (dx, dy, elapsedMs) => this.store.movePointer(dx, dy, elapsedMs),
+    scroll: (dx, dy, elapsedMs) => this.store.scrollPointer(dx, dy, elapsedMs),
+    tap: (button) => void this.store.click(button),
+    dragStart: () => void this.store.startDrag(),
+    dragEnd: () => void this.store.release(),
+  });
 
   protected readonly canOpen = computed(
     () => this.access.allowed() && this.factory !== null && this.direct.pcSessionId() !== null,
@@ -351,9 +468,149 @@ export class ScreenPage {
     }
   }
 
+  protected toggleMode(): void {
+    this.settleTouch();
+    this.mode.update((mode) => (mode === 'direct' ? 'pad' : 'direct'));
+  }
+
+  protected toggleScroll(): void {
+    this.settleTouch();
+    this.scrolling.update((on) => !on);
+    this.touch.scrolling = this.scrolling();
+  }
+
+  protected resetZoom(): void {
+    this.view.reset();
+    this.syncZoom();
+  }
+
+  protected onDown(event: PointerEvent): void {
+    if (!this.access.touch() || !this.hasFrame()) return;
+    event.preventDefault();
+    (event.currentTarget as Element | null)?.setPointerCapture?.(event.pointerId);
+    const at = this.pointOf(event);
+    if (!at) return;
+    const id = event.pointerId ?? 0;
+    if (this.mode() === 'pad') {
+      if (!this.pad.active) this.store.beginGesture();
+      this.pad.down(id, at.x, at.y, event.timeStamp);
+    } else {
+      this.touch.down(id, at.x, at.y, event.timeStamp);
+    }
+  }
+
+  protected onMove(event: PointerEvent): void {
+    const at = this.pointOf(event);
+    if (!at) return;
+    const id = event.pointerId ?? 0;
+    if (this.mode() === 'pad') this.pad.move(id, at.x, at.y, event.timeStamp);
+    else this.touch.move(id, at.x, at.y);
+  }
+
+  protected onUp(event: PointerEvent): void {
+    const id = event.pointerId ?? 0;
+    if (this.mode() === 'pad') {
+      this.pad.up(id, event.timeStamp);
+      if (!this.pad.active) this.store.endGesture();
+    } else {
+      this.touch.up(id, event.timeStamp);
+    }
+  }
+
+  protected onCancel(): void {
+    this.settleTouch();
+  }
+
+  /** O que estiver apertado é solto e o que esperava um segundo toque é descartado: o botão nunca fica preso. */
+  private settleTouch(): void {
+    const padDragging = this.pad.dragging;
+    this.touch.cancel();
+    this.pad.cancel();
+    if (padDragging) void this.store.release();
+  }
+
+  private box(): { width: number; height: number } | null {
+    const stage = this.stage()?.nativeElement;
+    if (!stage || stage.clientWidth <= 0 || stage.clientHeight <= 0) return null;
+    this.view.resize(stage.clientWidth, stage.clientHeight);
+    return { width: stage.clientWidth, height: stage.clientHeight };
+  }
+
+  /** O ponto do dedo em pixels do quadro da imagem (sem a borda do quadro). */
+  private pointOf(event: PointerEvent): TouchPoint | null {
+    const stage = this.stage()?.nativeElement;
+    if (!stage) return null;
+    const rect = stage.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left - stage.clientLeft,
+      y: event.clientY - rect.top - stage.clientTop,
+    };
+  }
+
+  private targetAt(at: TouchPoint) {
+    const monitor = this.current();
+    const box = this.box();
+    return monitor && box ? tapTarget(monitor, this.view.toImage(at), box) : null;
+  }
+
+  private tapAt(
+    button: 'LEFT' | 'RIGHT',
+    action: 'CLICK' | 'DOUBLE' | 'DOWN' | 'UP',
+    at: TouchPoint,
+  ): void {
+    const target = this.targetAt(at);
+    if (!target) return;
+    if (!this.direct.accepts('pc.tap.v1')) {
+      this.touchNotice.set(this.noChannelText());
+      return;
+    }
+    this.direct.command('pc.tap.v1', { ...target, button, action }).then(
+      () => this.touchNotice.set(null),
+      (error: unknown) => this.touchNotice.set(this.refusal(error)),
+    );
+  }
+
+  private dragTo(at: TouchPoint): void {
+    const target = this.targetAt(at);
+    if (!target) return;
+    try {
+      this.direct.sendAbsolute(target);
+    } catch (error) {
+      this.touchNotice.set(this.refusal(error));
+    }
+  }
+
+  private pinchView(factor: number, center: TouchPoint, dx: number, dy: number): void {
+    this.box();
+    this.view.pinch(factor, center, dx, dy);
+    this.syncZoom();
+  }
+
+  private syncZoom(): void {
+    this.zoom.set({ scale: this.view.scale, panX: this.view.panX, panY: this.view.panY });
+  }
+
+  private refusal(error: unknown): string {
+    if (error instanceof DirectNotSent) return this.noChannelText();
+    const code = (error as { error?: { agentError?: unknown } } | null)?.error?.agentError;
+    if (code === 'stale_layout') {
+      return $localize`:@@pc.screen.stale:Os monitores do PC mudaram. Espere a imagem atualizar e toque de novo.`;
+    }
+    const failure = pcFailureOf(error);
+    return failure.kind === 'elevated'
+      ? $localize`:@@pc.screen.tap.elevated:Há uma janela de administrador nesse ponto: o Windows não deixa clicar nela daqui.`
+      : $localize`:@@pc.screen.tap.failed:O toque não chegou ao PC.`;
+  }
+
+  private noChannelText(): string {
+    return $localize`:@@pc.screen.tap.channel:O toque na tela precisa do canal direto com o PC, que não está ativo agora.`;
+  }
+
   protected selectMonitor(id: number): void {
     const link = this.link;
     if (!link || id === this.monitorId() || !this.monitors().some((item) => item.id === id)) return;
+    this.settleTouch();
+    this.resetZoom();
     this.monitorId.set(id);
     link.loop.restart();
   }
@@ -426,6 +683,9 @@ export class ScreenPage {
             before.width !== chosen.width ||
             before.height !== chosen.height
           ) {
+            // Um toque que esperava o segundo e o zoom eram do quadro antigo: um clique atrasado cairia no lugar errado.
+            this.settleTouch();
+            this.resetZoom();
             // O pedido em andamento termina antes; o próximo já leva o monitor e o tamanho novos.
             link.loop.restart(gone);
           }
@@ -486,6 +746,9 @@ export class ScreenPage {
       return;
     }
     this.link = null;
+    this.settleTouch();
+    this.resetZoom();
+    this.touchNotice.set(null);
     clearTimeout(link.watchdog);
     clearTimeout(link.renew);
     link.loop.stop();

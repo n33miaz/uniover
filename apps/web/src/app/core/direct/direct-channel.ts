@@ -106,6 +106,7 @@ export type DirectCommandType =
   | 'pc.text.v3'
   | 'pc.media.v1'
   | 'pc.pointer.zoom.v1'
+  | 'pc.tap.v1'
   | 'pc.volume.v1';
 
 /**
@@ -117,6 +118,7 @@ const CHANNEL_LISTED_TYPES: ReadonlySet<DirectCommandType> = new Set<DirectComma
   'pc.text.v2',
   'pc.text.v3',
   'pc.pointer.zoom.v1',
+  'pc.tap.v1',
   'pc.volume.v1',
   // As da TV só existem num canal que a API concedeu com o escopo `tv`: o `ready` as lista, e só então valem.
   'tv.key.v3',
@@ -128,6 +130,17 @@ const CHANNEL_LISTED_TYPES: ReadonlySet<DirectCommandType> = new Set<DirectComma
  * 460 ms medidos) não ajuda, e a nuvem não custa nada. O sinal de vida mede a cada segundo.
  */
 export const DIRECT_TV_MAX_RTT_MS = 250;
+
+/** O ponto tocado na imagem da tela: o monitor, a posição relativa nele e o tamanho dele que o app viu. */
+export interface DirectAbsoluteTarget {
+  readonly m: number;
+  readonly u: number;
+  readonly v: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+const MAX_ABS_SEQ = 2_147_483_647;
 
 /** O comando nem saiu (o canal não está aberto agora): quem chama segue pela nuvem, sem risco de repetir. */
 export class DirectNotSent extends Error {}
@@ -415,6 +428,8 @@ export class DirectChannel {
 
   // Os totais do ponteiro desde que o canal abriu, e o número da última mensagem.
   private seq = 0;
+  /** A última posição absoluta (toque na imagem da tela do PC) enviada: cresce a cada posição e o toque leva o maior. */
+  private absSeq = 0;
   private totals = { x: 0, y: 0, w: 0, h: 0 };
 
   constructor() {
@@ -614,6 +629,35 @@ export class DirectChannel {
   }
 
   /**
+   * A posição do dedo sobre a imagem da tela do PC, relativa ao monitor `m` (`u` e `v` de 0 a 65535; `w` e `h` são o tamanho
+   * que o app viu em `s.mon`). Vai no canal do ponteiro, sem resposta: a seguinte corrige a que se perder. Lança
+   * {@link DirectNotSent} se o canal não está aberto ou o agente não declarou o toque na tela.
+   */
+  sendAbsolute(target: DirectAbsoluteTarget): void {
+    const link = this.link;
+    if (
+      !link ||
+      !this.open() ||
+      !this.grantedScopes().includes('pc') ||
+      !this.channelTypes.has('pc.pointer.abs.v1')
+    ) {
+      throw new DirectNotSent();
+    }
+    if (link.pointer.readyState !== 'open' || link.pointer.bufferedAmount > MAX_BUFFERED_BYTES) {
+      return;
+    }
+    const next = this.absSeq + 1;
+    if (next > MAX_ABS_SEQ) throw new DirectNotSent();
+    try {
+      link.pointer.send(JSON.stringify({ k: 'abs', s: next, ...target }));
+      this.absSeq = next;
+      this.usage.note(link.sessionId);
+    } catch {
+      // o canal fechou agora: o `close` já derruba o estado
+    }
+  }
+
+  /**
    * Manda um comando no canal de entrada e espera a resposta do agente. Se o canal não está aberto, lança
    * {@link DirectNotSent} (nada saiu). Se ele cai ou o agente não responde no prazo depois de enviado, o resultado é
    * incerto: o erro tem o mesmo formato da nuvem (504) e o comando NÃO é reenviado por outro caminho.
@@ -637,6 +681,8 @@ export class DirectChannel {
       cs: this.cloudSeq,
       ce: this.cloudEpoch,
     };
+    // O toque na imagem leva o maior número de posição absoluta já enviado: as que ainda estiverem a caminho não o ultrapassam.
+    if (type === 'pc.tap.v1') message['a'] = this.absSeq;
     // O total do ponteiro de agora só acompanha o que é do PC (o clique nunca passa na frente do movimento); a TV não tem ponteiro.
     if (type.startsWith('pc.')) {
       message['p'] = {

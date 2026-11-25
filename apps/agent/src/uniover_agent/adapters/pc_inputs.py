@@ -18,6 +18,9 @@ MOUSE_MIDDLEDOWN: Final = 0x0020
 MOUSE_MIDDLEUP: Final = 0x0040
 MOUSE_WHEEL: Final = 0x0800
 MOUSE_HWHEEL: Final = 0x1000
+# Posição absoluta (0 a 65535) sobre o desktop virtual inteiro, não só o monitor principal.
+MOUSE_VIRTUALDESK: Final = 0x4000
+MOUSE_ABSOLUTE: Final = 0x8000
 
 # Eventos do teclado (KEYEVENTF_*).
 KEY_EXTENDED: Final = 0x0001
@@ -164,6 +167,18 @@ def _key(vk: int, *, extended: bool = False, up: bool = False) -> RawInput:
 def move_inputs(dx: int, dy: int) -> list[RawInput]:
     """Movimento relativo do ponteiro (os pixels passam pela aceleração do Windows)."""
     return [RawInput("mouse", MOUSE_MOVE, _clamp(dx, MAX_POINTER), _clamp(dy, MAX_POINTER))]
+
+
+def abs_move_inputs(nx: int, ny: int) -> list[RawInput]:
+    """O ponteiro levado à posição absoluta `(nx, ny)` do desktop virtual (0 a 65535 em cada eixo).
+
+    Sem aceleração do Windows e sem depender do DPI de quem envia: o pixel sai de `absolute.py`."""
+    flags = MOUSE_MOVE | MOUSE_ABSOLUTE | MOUSE_VIRTUALDESK
+    return [RawInput("mouse", flags, _clamp_unsigned(nx), _clamp_unsigned(ny))]
+
+
+def _clamp_unsigned(value: int) -> int:
+    return max(0, min(value, 0xFFFF))
 
 
 def scroll_inputs(horizontal: int, vertical: int) -> list[RawInput]:

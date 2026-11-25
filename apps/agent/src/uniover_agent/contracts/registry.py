@@ -31,6 +31,7 @@ from .pc_key_v2 import PcKeyV2Message
 from .pc_media_query_v1 import PcMediaQueryV1Message
 from .pc_media_state_v1 import PcMediaStateV1Message
 from .pc_media_v1 import PcMediaV1Message
+from .pc_pointer_abs_v1 import PcPointerAbsV1Message
 from .pc_pointer_v1 import PcPointerV1Message
 from .pc_pointer_zoom_v1 import PcPointerZoomV1Message
 from .pc_power_outcome_ack_v1 import PcPowerOutcomeAckV1Message
@@ -44,6 +45,7 @@ from .pc_rtc_closed_v1 import PcRtcClosedV1Message
 from .pc_rtc_offer_v1 import PcRtcOfferV1Message
 from .pc_rtc_reconcile_v1 import PcRtcReconcileV1Message
 from .pc_rtc_reconciled_v1 import PcRtcReconciledV1Message
+from .pc_tap_v1 import PcTapV1Message
 from .pc_text_v1 import PcTextV1Message
 from .pc_text_v2 import PcTextV2Message
 from .pc_text_v3 import PcTextV3Message
@@ -102,6 +104,7 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.media.query.v1": PcMediaQueryV1Message,
     "pc.media.state.v1": PcMediaStateV1Message,
     "pc.media.v1": PcMediaV1Message,
+    "pc.pointer.abs.v1": PcPointerAbsV1Message,
     "pc.pointer.v1": PcPointerV1Message,
     "pc.pointer.zoom.v1": PcPointerZoomV1Message,
     "pc.power.outcome.ack.v1": PcPowerOutcomeAckV1Message,
@@ -115,6 +118,7 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.rtc.offer.v1": PcRtcOfferV1Message,
     "pc.rtc.reconcile.v1": PcRtcReconcileV1Message,
     "pc.rtc.reconciled.v1": PcRtcReconciledV1Message,
+    "pc.tap.v1": PcTapV1Message,
     "pc.text.v1": PcTextV1Message,
     "pc.text.v2": PcTextV2Message,
     "pc.text.v3": PcTextV3Message,

@@ -32,6 +32,13 @@ módulo garante é o resto:
   modo que um aperto atrasado do canal nunca cai depois de um soltar da nuvem;
 - sem mensagem por `idle_seconds`, sem autenticar a tempo ou além da vida máxima, o canal é fechado.
 
+O toque na imagem da tela do PC (`pc.tap.v1` no canal de entrada, `pc.pointer.abs.v1` como `abs` no
+do ponteiro) só passa com a tela ao vivo aberta e ligada a ESTE canal: a tela só abre com a flag da
+API, para o dono com `pc:screen` e de um aparelho aprovado aqui, então o toque herda as mesmas
+regras. Sem ela o toque é recusado (`not_allowed`), exceto o `UP`, que solta o botão sempre. A
+posição absoluta que chega depois de uma mais nova (`s`) é descartada, e o toque aceito leva o maior
+`s` que o app já mandou (`a`): uma posição atrasada nunca move o ponteiro depois do toque.
+
 O ponteiro viaja como TOTAL ACUMULADO com número de sequência, num canal sem retransmissão: a
 mensagem perdida não perde caminho (a seguinte traz a soma), a que chega fora de ordem é ignorada.
 Cada comando da entrada leva também o total do ponteiro no instante em que foi dado, e o agente o
@@ -63,6 +70,7 @@ from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.envelope_gate import Accepted, EnvelopeGate
 from uniover_agent.core.envelopes import EnvelopeFactory
 from uniover_agent.core.handle_command import Handler
+from uniover_agent.core.pc.absolute import ABS_POINTER_TYPE, MAX_ABS_SEQ, TAP_TYPE
 from uniover_agent.core.pc.clock_offset import ClockOffset
 from uniover_agent.core.pc.devices import (
     DEVICE_DENIED,
@@ -140,6 +148,8 @@ TV_BLOCKED_KEY: Final = "POWER"
 CHANNEL_V2_TYPES: Final = frozenset(
     {"pc.click.v2", "pc.text.v2", "pc.text.v3", "pc.pointer.zoom.v1", "pc.volume.v1"}
 )
+# O toque na tela do PC: o `ready` os lista só no agente que os sabe (com a tela ao vivo).
+ABSOLUTE_TYPES: Final = frozenset({TAP_TYPE, ABS_POINTER_TYPE})
 # O que, chegando pela nuvem, fecha o canal em uso: os comandos de entrada (clique, tecla, texto,
 # mídia e segurar). O movimento do mouse NÃO está aqui: ele chega sem espera (a API responde antes
 # de o agente o ler), então um movimento atrasado da nuvem é normal logo depois da troca de caminho,
@@ -410,6 +420,8 @@ class _Session:
     last_rx: float = 0.0
     violations: int = 0
     pointer_seq: int = 0
+    # O maior `s` de posição absoluta já aplicado (ou coberto por um toque aceito).
+    abs_seq: int = 0
     totals: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
     lost_pointers: int = 0
     dropped: int = 0
@@ -447,7 +459,7 @@ def _as_millis(value: object) -> float | None:
 
 def _is_release(message_type: str, body: dict[str, Any]) -> bool:
     """Soltar um botão ou um modificador: nunca expira e nunca espera vaga no limite."""
-    return message_type in ("pc.click.v1", "pc.key.v2") and body.get("action") == "UP"
+    return message_type in ("pc.click.v1", "pc.key.v2", TAP_TYPE) and body.get("action") == "UP"
 
 
 def _press_cost(message_type: str, body: dict[str, Any]) -> int:
@@ -496,10 +508,16 @@ class PcDirectService:
         devices: DeviceApprovals | None = None,
         announce_reconcile: AnnounceReconcile | None = None,
         screen_factory: Callable[[], ScreenPeer] | None = None,
+        absolute: bool = False,
     ) -> None:
         self._factory = factory
         self._screen_factory = screen_factory
+        # O toque na tela (`pc.tap.v1`, `pc.pointer.abs.v1`): só com a tela ao vivo neste agente.
+        self._absolute = absolute and screen_factory is not None
         self._screen: tuple[str, ScreenPeer] | None = None
+        # O canal de controle ao qual a tela aberta está ligada; só depois de a tela responder à
+        # oferta (antes disso, ou fechada, nenhum toque passa).
+        self._screen_parent: str | None = None
         self._screen_lifecycle = asyncio.Lock()
         self._screen_exit: asyncio.Task[None] | None = None
         self._screen_disconnects = 0
@@ -703,6 +721,7 @@ class PcDirectService:
                 if disconnects != self._screen_disconnects:
                     raise DirectRefused(REFUSED_CLOSED)
                 self._check_screen_offer(session_id, device_id, parent_session_id)
+            parent_id = parent_session_id
             peer = factory()
             screen = (session_id, peer)
             self._screen = screen
@@ -716,6 +735,7 @@ class PcDirectService:
                 )
                 if self._screen is not screen:
                     raise DirectRefused(REFUSED_CLOSED)
+                self._screen_parent = parent_id
             except (Exception, asyncio.CancelledError) as error:
                 self._stop_screen(session_id)
                 if isinstance(error, (DirectRefused, asyncio.CancelledError)):
@@ -766,6 +786,7 @@ class PcDirectService:
         screen = self._screen
         if screen is not None and (session_id is None or screen[0] == session_id):
             self._screen = None
+            self._screen_parent = None
             self._remember_closed(screen[0])
             screen[1].stop()
             self._screen_exit = asyncio.create_task(screen[1].wait())
@@ -1009,6 +1030,8 @@ class PcDirectService:
                 # da TV). Um agente anterior não manda o campo: o app não manda v2 pelo canal.
                 # `sc`: os escopos que o canal tem, para o app saber de onde vem cada recusa.
                 caps = set(CHANNEL_V2_TYPES) if SCOPE_PC in session.scopes else set()
+                if self._absolute and SCOPE_PC in session.scopes:
+                    caps |= ABSOLUTE_TYPES
                 if SCOPE_TV in session.scopes:
                     caps |= TV_TYPES
                 self._send(
@@ -1098,7 +1121,7 @@ class PcDirectService:
             return False
         return hmac.compare_digest(token.encode("utf-8"), session.token.encode("utf-8"))
 
-    def _on_command(  # noqa: PLR0911 - uma recusa por regra, cada uma com o seu código
+    def _on_command(  # noqa: PLR0911, PLR0912 - uma recusa por regra, cada uma com código
         self, session: _Session, data: dict[str, Any], now: float
     ) -> None:
         command_id = data.get("i")
@@ -1122,9 +1145,10 @@ class PcDirectService:
         if isinstance(message_type, str) and message_type in TV_TYPES and isinstance(body, dict):
             self._on_tv_command(session, data, command_id, message_type, body, now, refuse)
             return
+        is_tap = message_type == TAP_TYPE and self._absolute
         if (
             not isinstance(message_type, str)
-            or message_type not in INPUT_TYPES
+            or (message_type not in INPUT_TYPES and not is_tap)
             or not isinstance(body, dict)
             # Um canal sem o escopo `pc` não leva comando do PC: a API não o concedeu.
             or SCOPE_PC not in session.scopes
@@ -1132,6 +1156,10 @@ class PcDirectService:
             refuse("not_allowed", violation=True)
             return
         release = _is_release(message_type, body)
+        if is_tap and not release and not self._screen_open_for(session):
+            # A tela fechou (ou nunca abriu) neste canal: o app pode não saber ainda, não é abuso.
+            refuse("not_allowed")
+            return
         # Os tetos são conferidos já (a enxurrada é barrada antes de qualquer trabalho), mas só
         # são COBRADOS depois de o pedido passar na idade, na prontidão e no esquema: uma recusa
         # por `invalid_message`, `not_ready` ou `expired` não gasta vaga nem balde de ninguém.
@@ -1162,6 +1190,11 @@ class PcDirectService:
         for rate, cost in charges:
             rate.charge(now, cost)
         self._accepted(session)
+        if is_tap:
+            # As posições que o app mandou antes deste toque já não valem: o toque leva o ponto.
+            covered = _as_int(data.get("a"))
+            if covered is not None and 0 < covered <= MAX_ABS_SEQ:
+                session.abs_seq = max(session.abs_seq, covered)
 
         def answered(result: CommandResult) -> None:
             ok = result.status.value == "ok"
@@ -1281,6 +1314,9 @@ class PcDirectService:
         if kind == "ping":
             self._on_ping(session, data)
             return
+        if kind == "abs" and self._absolute and SCOPE_PC in session.scopes:
+            self._on_absolute(session, data, now)
+            return
         if kind != "ptr" or SCOPE_PC not in session.scopes:
             self._violation(session)
             return
@@ -1288,6 +1324,42 @@ class PcDirectService:
             session.dropped += 1
             return  # o total acumulado da próxima mensagem cobre o que ficou de fora
         self._apply_snapshot(session, data, heartbeat=data.get("hb") == 1)
+
+    def _screen_open_for(self, session: _Session) -> bool:
+        """A tela ao vivo está aberta e ligada a este canal de controle (o autenticado de agora)."""
+        return (
+            self._screen is not None
+            and self._screen_parent is not None
+            and self._screen_parent == session.id
+            and self._current is session
+            and session.authenticated
+            and not session.closed
+        )
+
+    def _on_absolute(self, session: _Session, data: dict[str, Any], now: float) -> None:
+        """Uma posição absoluta do dedo sobre a imagem da tela (`s` crescente, sem resposta)."""
+        if not self._screen_open_for(session):
+            session.dropped += 1  # a tela fechou: o app para de mandar assim que souber
+            return
+        seq = _as_int(data.get("s"))
+        if seq is None or not 0 < seq <= MAX_ABS_SEQ:
+            self._violation(session)
+            return
+        if seq <= session.abs_seq:
+            session.dropped += 1  # chegou depois de uma mais nova (ou de um toque): já não vale
+            return
+        if not session.pointer_rate.allow(now):
+            session.dropped += 1  # a próxima posição corrige: absoluta não acumula erro
+            return
+        body: dict[str, Any] = {key: data.get(key) for key in ("m", "u", "v", "w", "h")}
+        body["seq"] = seq
+        accepted = self._validate(ABS_POINTER_TYPE, body, 0.0)
+        if accepted is None:
+            self._violation(session)
+            return
+        session.abs_seq = seq
+        self._accepted(session)
+        self._submit(accepted.command, None)
 
     def _on_ping(self, session: _Session, data: dict[str, Any]) -> None:
         sent = _as_millis(data.get("t"))
