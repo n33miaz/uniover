@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from uniover_agent.core.tv.livre import FILES_DIR, HOME_COMPONENT, PACKAGE
+from uniover_agent.core.tv.livre import FILES_DIR, HOME_COMPONENT, PACKAGE, TCL_TV_PACKAGE
 from uniover_agent.ports import AdbTimeout, LaunchableApp
 from uniover_agent.ports.tv_livre import LauncherApk, LauncherApkError, ShellResult
 
@@ -36,6 +36,9 @@ class FakeAndroid:
         noise: bool = False,
     ) -> None:
         self.noise = noise
+        self.manufacturer = "Google"
+        self.brand = "google"
+        self.tcl_tv_installed = True  # o app de TV ao vivo da TCL, para o usuário 0
         # O nível que o launcher responde; `None` é um launcher que não conhece a pergunta.
         self.level: int | None = 2
         # O pacote do app que está na frente (`None`: o ADB não diz nada).
@@ -126,6 +129,16 @@ class FakeAndroid:
             return ShellResult(False, "Error: falha simulada")
         if command == "getprop ro.build.version.sdk":
             return ShellResult(True, f"{self.sdk}\n")
+        if command == "getprop ro.product.manufacturer":
+            return ShellResult(True, f"{self.manufacturer}\n")
+        if command == "getprop ro.product.brand":
+            return ShellResult(True, f"{self.brand}\n")
+        if command == f"pm list packages --user 0 {TCL_TV_PACKAGE}":
+            present = self.tcl_tv_installed
+            return ShellResult(True, f"package:{TCL_TV_PACKAGE}\n" if present else "")
+        if command == f"cmd package install-existing {TCL_TV_PACKAGE}":
+            self.tcl_tv_installed = True
+            return ShellResult(True, f"Package {TCL_TV_PACKAGE} installed for user: 0\n")
         if command == "pm list features":
             features = (
                 "feature:android.software.leanback\n"

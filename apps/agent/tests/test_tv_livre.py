@@ -25,6 +25,7 @@ from uniover_agent.core.tv.livre import (
     FILES_DIR,
     HOME_COMPONENT,
     PACKAGE,
+    TCL_TV_PACKAGE,
     LivreError,
     LivreStateFile,
     PhotoStaging,
@@ -209,6 +210,64 @@ async def test_install_failure_has_a_stable_code(tmp_path: Path) -> None:
     livre, android, _, _ = make(tmp_path, android)
 
     await expect_error(livre, {"action": "install"}, "install_failed")
+
+
+# --- pacote de TV ao vivo da TCL -------------------------------------------------------------
+
+
+def tcl_android(*, present: bool) -> FakeAndroid:
+    android = FakeAndroid()
+    android.manufacturer, android.brand = "TCL", "TCL"
+    android.tcl_tv_installed = present
+    return android
+
+
+async def test_install_on_tcl_with_the_tv_package_present_does_nothing_more(
+    tmp_path: Path,
+) -> None:
+    livre, android, _, _ = make(tmp_path, tcl_android(present=True))
+
+    await livre.run({"action": "install"})
+
+    assert not any("install-existing" in command for command in android.log)
+    assert livre.take_notice() is None
+
+
+async def test_install_on_tcl_restores_the_missing_tv_package_and_warns(tmp_path: Path) -> None:
+    livre, android, _, _ = make(tmp_path, tcl_android(present=False))
+
+    await livre.run({"action": "install"})
+
+    assert f"cmd package install-existing {TCL_TV_PACKAGE}" in android.log
+    assert android.tcl_tv_installed is True
+    notice = livre.take_notice()
+    assert notice is not None
+    assert TCL_TV_PACKAGE in notice
+    assert livre.take_notice() is None  # o aviso é lido uma vez
+
+
+async def test_install_on_tcl_survives_a_failed_restore_and_warns(tmp_path: Path) -> None:
+    android = tcl_android(present=False)
+    android.fail.add("install-existing")
+    livre, android, _, _ = make(tmp_path, android)
+
+    await livre.run({"action": "install"})  # não levanta: o TV Livre já foi instalado
+
+    assert android.installed is True
+    notice = livre.take_notice()
+    assert notice is not None
+    assert "não consegui restaurá-lo" in notice
+
+
+async def test_install_on_other_brands_never_touches_the_tcl_package(tmp_path: Path) -> None:
+    android = FakeAndroid()
+    android.tcl_tv_installed = False
+    livre, android, _, _ = make(tmp_path, android)
+
+    await livre.run({"action": "install"})
+
+    assert not any(TCL_TV_PACKAGE in command for command in android.log)
+    assert livre.take_notice() is None
 
 
 # --- aplicar a configuração ------------------------------------------------------------------
