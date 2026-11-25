@@ -28,9 +28,21 @@ public class TvLinkWatcherTests
     {
         public List<(Guid TvId, TvState State)> Published { get; } = [];
 
+        public Action? OnPublish { get; set; }
+
+        public Task? Pending { get; set; }
+
         public void PublishState(TvState state) => Published.Add((Guid.Empty, state));
 
-        public void PublishState(Guid tvId, TvState state) => Published.Add((tvId, state));
+        public void PublishState(Guid tvId, TvState state)
+        {
+            lock (Published)
+            {
+                Published.Add((tvId, state));
+            }
+
+            OnPublish?.Invoke();
+        }
 
         public void PublishShortcuts(IReadOnlyList<TvShortcut> shortcuts)
         {
@@ -104,5 +116,70 @@ public class TvLinkWatcherTests
         watcher.Check();
 
         stream.Published.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void WhenTheTvMovesToAnotherAgent_TheOldAgentIsNoLongerPublishedToIt()
+    {
+        var (watcher, presence, stream) = Rig();
+
+        watcher.Release(TvId, Agent);
+        presence.Fresh = false;
+        watcher.Check();
+
+        stream.Published.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void WhenAnotherAgentReportsForTheTv_TheOldOneStopsBeingWatched()
+    {
+        var (watcher, presence, stream) = Rig();
+        watcher.Track(TvId, "pc-novo", TvState.From(null, agentOnline: true));
+
+        presence.Fresh = false;
+        watcher.Check();
+
+        stream.Published.Should().OnlyContain(p => p.State.Link!.State == TvLinkText.PcOffline);
+        stream.Published.Should().ContainSingle("só o agente atual da TV é vigiado");
+    }
+
+    [Fact]
+    public void ReleasingAnAgentNowBoundToAnotherTv_KeepsItWatched()
+    {
+        var (watcher, presence, stream) = Rig();
+
+        watcher.Release(Guid.NewGuid(), Agent);
+        presence.Fresh = false;
+        watcher.Check();
+
+        stream.Published.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ACheckRacingAReport_NeverPublishesItsOlderViewAfterTheReport()
+    {
+        var store = new InMemoryTvStateStore();
+        store.Apply(Agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
+        var presence = new Presence();
+        TvLinkWatcher? watcher = null;
+        var stream = new Stream();
+        var ready = TvState.From(store.Last(Agent), agentOnline: true);
+        stream.OnPublish = () =>
+        {
+            // Um relato chega justo enquanto a passada publica: precisa esperar a passada, e vencer depois.
+            stream.Pending = Task.Run(() => watcher!.Publish(TvId, Agent, ready));
+            Thread.Sleep(100);
+            stream.OnPublish = null;
+        };
+        watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()));
+        watcher.Track(TvId, Agent, ready);
+
+        presence.Fresh = false;
+        watcher.Check();
+        await stream.Pending!;
+        presence.Fresh = true;
+        watcher.Check();
+
+        stream.Published.Select(p => p.State.Link!.State).Should().Equal(TvLinkText.PcOffline, TvLinkText.Ready);
     }
 }

@@ -6,6 +6,7 @@ using Npgsql;
 using UniOver.BuildingBlocks.Web;
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Contracts;
 using UniOver.SharedKernel;
 using UniOver.Modules.Identity.Contracts;
@@ -73,7 +74,8 @@ internal sealed class BindAgentHandler(
     TvConfigView view,
     TimeProvider time,
     ITvCleanupSettingsPublisher? cleanupPublisher = null,
-    IEventBus? events = null)
+    IEventBus? events = null,
+    TvLinkWatcher? watcher = null)
 {
     /// <summary>
     /// Passa o controle da TV para o computador escolhido. Devolve a configuração nova, ou nulo quando o computador não
@@ -161,6 +163,7 @@ internal sealed class BindAgentHandler(
         agents.Set(binding);
         if (changed)
         {
+            watcher?.Release(tv.Id, previousSlug);
             AnnounceNewAgent(tv.Id, binding.AgentSlug!);
             await PublishCleanupAsync(previousSlug, tv.AgentSlug, cancellationToken);
         }
