@@ -932,9 +932,11 @@ export class TvStore {
     this._sent.update((count) => count + 1);
     // O prazo conta desde o toque, inclusive a espera do sinal de presença.
     const done = this.slow.begin('tv');
-    const asked = this.ticket();
+    let asked = 0;
     try {
       await this.presence();
+      // Numerado só agora: o que o fluxo trouxe durante a espera não torna velha a falha deste pedido.
+      asked = this.ticket();
       await this.api.launch(shortcut.id);
       if (this.live(epoch)) {
         const name = shortcutLabel(shortcut);
@@ -960,9 +962,11 @@ export class TvStore {
       return false;
     }
     const done = this.slow.begin('tv');
-    const asked = this.ticket();
+    let asked = 0;
     try {
       await this.presence();
+      // Numerado só agora: o que o fluxo trouxe durante a espera não torna velha a falha deste pedido.
+      asked = this.ticket();
       await this.api.openSettings(screen);
       this.adbPermission.confirmed();
       if (this.live(epoch)) {
@@ -1002,9 +1006,11 @@ export class TvStore {
     this._sent.update((count) => count + 1);
     // A limpeza leva até ~25 s de propósito: o aviso vem com o prazo longo, contado desde o toque.
     const done = this.slow.begin('tv', 'long');
-    const asked = this.ticket();
+    let asked = 0;
     try {
       await this.presence();
+      // Numerado só agora: o que o fluxo trouxe durante a espera não torna velha a falha deste pedido.
+      asked = this.ticket();
       const result = await this.api.cleanup();
       this.adbPermission.confirmed();
       if (this.live(epoch)) {
