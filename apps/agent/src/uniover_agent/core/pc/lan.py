@@ -1,8 +1,9 @@
 """O que é "a rede de casa" para o canal direto: só endereços privados, de enlace local ou ULA.
 
 O canal direto existe para o celular e o PC na MESMA rede, mas a regra olha só a faixa do endereço:
-uma VPN roteada que use endereço privado (RFC1918) não se distingue de uma rede local. Vale em dois lugares: os
-candidatos ICE (da oferta e os tardios que a API repassa) e o endereço do par que de fato conectou.
+uma VPN roteada que use endereço privado (RFC1918) não se distingue de uma rede local. Vale em dois
+lugares: os candidatos ICE (da oferta e os tardios que a API repassa) e o endereço do par que de
+fato conectou.
 Na dúvida a resposta é "não": nome (inclusive `.local`), endereço público, CGNAT, loopback,
 multicast, `::ffff:` e qualquer coisa que não seja um literal de IP não são rede de casa.
 """
