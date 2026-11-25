@@ -293,6 +293,23 @@ describe('iconFit', () => {
   });
 });
 
+describe('combined trim on a frame around a tiny core', () => {
+  it('always leaves at least two pixels per axis, so the crop is never empty', () => {
+    const data = pixels(64, (x, y) => {
+      if (inside(x, 31, 33) && inside(y, 31, 33)) return BLACK;
+      return inside(x, 24, 40) && inside(y, 24, 40) ? WHITE : CLEAR;
+    });
+    const result = analyzeIconEdges(data, 64, 64);
+    expect(1 - result.trim.left - result.trim.right).toBeGreaterThanOrEqual(2 / 64 - 1e-9);
+    expect(1 - result.trim.top - result.trim.bottom).toBeGreaterThanOrEqual(2 / 64 - 1e-9);
+    const crop = cropSquare(result.trim);
+    expect(crop.size).toBeGreaterThan(0);
+    const fit = iconFit(result);
+    expect(fit.transform).not.toContain('Infinity');
+    expect(fit.transform).not.toContain('NaN');
+  });
+});
+
 describe('reading the pixels of an image', () => {
   const image = (width: number, height: number) =>
     ({ naturalWidth: width, naturalHeight: height }) as HTMLImageElement;
