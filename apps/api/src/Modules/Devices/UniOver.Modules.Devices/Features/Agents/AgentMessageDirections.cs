@@ -60,6 +60,9 @@ internal static class AgentMessageDirections
         AgentMessageTypes.PcClipboardSetV1,
         AgentMessageTypes.PcPointerV1,
         AgentMessageTypes.PcPointerZoomV1,
+        // Pelo contrato vão no sentido dos comandos, mas só pelo canal direto (o agente as recusa pela nuvem); a API não as manda.
+        AgentMessageTypes.PcPointerAbsV1,
+        AgentMessageTypes.PcTapV1,
         AgentMessageTypes.PcPowerV1,
         AgentMessageTypes.PcPowerV2,
         AgentMessageTypes.PcRtcCandidateV1,

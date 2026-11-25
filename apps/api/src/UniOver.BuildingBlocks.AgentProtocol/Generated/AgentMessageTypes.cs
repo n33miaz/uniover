@@ -76,6 +76,9 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>pc.media.v1</c>.</summary>
     public const string PcMediaV1 = "pc.media.v1";
 
+    /// <summary>Tipo de mensagem <c>pc.pointer.abs.v1</c>.</summary>
+    public const string PcPointerAbsV1 = "pc.pointer.abs.v1";
+
     /// <summary>Tipo de mensagem <c>pc.pointer.v1</c>.</summary>
     public const string PcPointerV1 = "pc.pointer.v1";
 
@@ -114,6 +117,9 @@ public static class AgentMessageTypes
 
     /// <summary>Tipo de mensagem <c>pc.rtc.reconciled.v1</c>.</summary>
     public const string PcRtcReconciledV1 = "pc.rtc.reconciled.v1";
+
+    /// <summary>Tipo de mensagem <c>pc.tap.v1</c>.</summary>
+    public const string PcTapV1 = "pc.tap.v1";
 
     /// <summary>Tipo de mensagem <c>pc.text.v1</c>.</summary>
     public const string PcTextV1 = "pc.text.v1";
@@ -234,6 +240,7 @@ public static class AgentMessageTypes
         PcMediaQueryV1,
         PcMediaStateV1,
         PcMediaV1,
+        PcPointerAbsV1,
         PcPointerV1,
         PcPointerZoomV1,
         PcPowerOutcomeAckV1,
@@ -247,6 +254,7 @@ public static class AgentMessageTypes
         PcRtcOfferV1,
         PcRtcReconcileV1,
         PcRtcReconciledV1,
+        PcTapV1,
         PcTextV1,
         PcTextV2,
         PcTextV3,

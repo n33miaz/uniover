@@ -40,4 +40,14 @@ describe('PcScreenAccess', () => {
       }).allowed(),
     ).toBe(false);
   });
+
+  it('only offers the touch when the PC also declares pc.abs.v1', () => {
+    expect(setup({ capabilities: ['pc.screen.v1'] }).touch()).toBe(false);
+    TestBed.resetTestingModule();
+    expect(setup({ capabilities: ['pc.screen.v1', 'pc.abs.v1'] }).touch()).toBe(true);
+  });
+
+  it('never offers the touch without the screen itself', () => {
+    expect(setup({ capabilities: ['pc.abs.v1'] }).touch()).toBe(false);
+  });
 });

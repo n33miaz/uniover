@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
@@ -5,6 +6,7 @@ import {
   DirectSignaling,
   PC_RTC_FACTORY,
 } from '../../../core/direct/direct-channel';
+import { PcStore } from '../data/pc-store';
 import { PcScreenAccess } from '../data/screen-access';
 import { ScreenPage } from './screen.page';
 
@@ -70,7 +72,25 @@ async function flush(times = 12): Promise<void> {
 
 function setup() {
   const allowed = signal(true);
+  const touchOn = signal(false);
   const parent = signal<string | null>('sessao-pc');
+  const direct = {
+    pcSessionId: parent,
+    command: vi.fn<(type: string, body: Record<string, unknown>) => Promise<void>>(
+      async () => undefined,
+    ),
+    accepts: vi.fn(() => true),
+    sendAbsolute: vi.fn(),
+  };
+  const store = {
+    movePointer: vi.fn(),
+    scrollPointer: vi.fn(),
+    click: vi.fn(async () => null),
+    startDrag: vi.fn(async () => null),
+    release: vi.fn(async () => null),
+    beginGesture: vi.fn(),
+    endGesture: vi.fn(),
+  };
   const peer = new FakeConnection();
   const signaling = {
     offer: vi.fn(async () => ({
@@ -83,10 +103,11 @@ function setup() {
   };
   TestBed.configureTestingModule({
     providers: [
-      { provide: DirectChannel, useValue: { pcSessionId: parent } },
+      { provide: DirectChannel, useValue: direct },
+      { provide: PcStore, useValue: store },
       { provide: DirectSignaling, useValue: signaling },
       { provide: PC_RTC_FACTORY, useValue: () => peer },
-      { provide: PcScreenAccess, useValue: { allowed } },
+      { provide: PcScreenAccess, useValue: { allowed, touch: touchOn } },
     ],
   });
   const fixture = TestBed.createComponent(ScreenPage);
@@ -103,7 +124,20 @@ function setup() {
     peer.channel.receive(JSON.stringify(MONITOR));
     fixture.detectChanges();
   }
-  return { fixture, root, peer, signaling, allowed, parent, action, requests, open };
+  return {
+    fixture,
+    root,
+    peer,
+    signaling,
+    allowed,
+    parent,
+    action,
+    requests,
+    open,
+    direct,
+    store,
+    touchOn,
+  };
 }
 
 describe('Tela do PC (página)', () => {
@@ -354,7 +388,10 @@ describe('Tela do PC (página)', () => {
 
     // O monitor 7 sumiu: o PC descarta o pedido sem responder e o cliente não espera por ele.
     peer.channel.receive(
-      JSON.stringify({ k: 's.mon', monitors: [{ id: 3, width: 1280, height: 1024, primary: true }] }),
+      JSON.stringify({
+        k: 's.mon',
+        monitors: [{ id: 3, width: 1280, height: 1024, primary: true }],
+      }),
     );
     expect(requests().map((r) => r['monitor'])).toEqual([7, 3]);
     expect(requests()[1]['reset']).toBe(true);
@@ -424,7 +461,10 @@ describe('Tela do PC (página)', () => {
     // Pedido pendente do monitor 7; o usuário escolhe o 3, que some: o pedido do 7 continua valendo.
     root.querySelectorAll<HTMLButtonElement>('.monitors button')[0].click();
     peer.channel.receive(
-      JSON.stringify({ k: 's.mon', monitors: [{ id: 7, width: 1920, height: 1080, primary: true }] }),
+      JSON.stringify({
+        k: 's.mon',
+        monitors: [{ id: 7, width: 1920, height: 1080, primary: true }],
+      }),
     );
     expect(requests()).toHaveLength(1);
     peer.channel.receive(jpegFrame(1));
@@ -444,7 +484,10 @@ describe('Tela do PC (página)', () => {
     // Pedido pendente do monitor 7; o usuário escolhe o 3 e o 7 some: o PC descartou o pedido, que é dado como perdido.
     root.querySelectorAll<HTMLButtonElement>('.monitors button')[0].click();
     peer.channel.receive(
-      JSON.stringify({ k: 's.mon', monitors: [{ id: 3, width: 1280, height: 1024, primary: true }] }),
+      JSON.stringify({
+        k: 's.mon',
+        monitors: [{ id: 3, width: 1280, height: 1024, primary: true }],
+      }),
     );
     expect(requests().map((r) => r['monitor'])).toEqual([7, 3]);
     expect(requests()[1]['reset']).toBe(true);
@@ -523,5 +566,166 @@ describe('Tela do PC (página)', () => {
     vi.advanceTimersByTime(10_500);
     fixture.detectChanges();
     expect(root.querySelector('.notice')?.textContent).toContain('Não foi possível');
+  });
+
+  describe('touch on the image', () => {
+    /** Dá ao quadro o tamanho de 400 x 225 na tela (o jsdom não mede nada) e devolve o disparo de dedos. */
+    function stageOf(root: HTMLElement) {
+      const stage = root.querySelector<HTMLElement>('.stage')!;
+      Object.defineProperty(stage, 'clientWidth', { value: 400 });
+      Object.defineProperty(stage, 'clientHeight', { value: 225 });
+      stage.getBoundingClientRect = () => ({ left: 10, top: 20 }) as DOMRect;
+      const fire = (type: string, x: number, y: number, pointer = 1) => {
+        const event = new MouseEvent(type, { clientX: 10 + x, clientY: 20 + y, bubbles: true });
+        Object.defineProperty(event, 'pointerId', { value: pointer });
+        stage.dispatchEvent(event);
+      };
+      return { stage, fire };
+    }
+
+    async function touching() {
+      const kit = setup();
+      kit.touchOn.set(true);
+      await kit.open();
+      // O primeiro quadro desenhado é o que mostra a imagem (e a barra de toque).
+      kit.peer.channel.receive(jpegFrame(1));
+      await flush();
+      kit.fixture.detectChanges();
+      return { ...kit, ...stageOf(kit.root) };
+    }
+
+    beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+
+    it('a tap sends one tap at the point, relative to the monitor and with the size the app saw', async () => {
+      const { fire, direct } = await touching();
+      fire('pointerdown', 200, 112.5);
+      fire('pointerup', 200, 112.5);
+      expect(direct.command).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(400);
+      expect(direct.command).toHaveBeenCalledOnce();
+      expect(direct.command).toHaveBeenCalledWith('pc.tap.v1', {
+        m: 7,
+        u: 32768,
+        v: 32768,
+        w: 1920,
+        h: 1080,
+        button: 'LEFT',
+        action: 'CLICK',
+      });
+    });
+
+    it('does nothing when the PC does not declare the touch (the screen is only for viewing)', async () => {
+      const kit = setup();
+      await kit.open();
+      kit.peer.channel.receive(jpegFrame(1));
+      await flush();
+      kit.fixture.detectChanges();
+      const { fire } = stageOf(kit.root);
+      fire('pointerdown', 20, 20);
+      fire('pointerup', 20, 20);
+      vi.advanceTimersByTime(400);
+      expect(kit.direct.command).not.toHaveBeenCalled();
+      expect(kit.root.querySelector('.tools')).toBeNull();
+    });
+
+    it('does not send the tap to an agent whose channel did not list it', async () => {
+      const { fire, direct, fixture, root } = await touching();
+      direct.accepts.mockReturnValue(false);
+      fire('pointerdown', 20, 20);
+      fire('pointerup', 20, 20);
+      vi.advanceTimersByTime(400);
+      fixture.detectChanges();
+      expect(direct.command).not.toHaveBeenCalled();
+      expect(root.querySelector('.notice')?.textContent).toContain('canal direto');
+    });
+
+    it('a changed monitor layout is told to the person, who waits for the new image', async () => {
+      const { fire, direct, fixture, root } = await touching();
+      direct.command.mockRejectedValueOnce(
+        new HttpErrorResponse({ status: 502, error: { agentError: 'stale_layout' } }),
+      );
+      fire('pointerdown', 20, 20);
+      fire('pointerup', 20, 20);
+      vi.advanceTimersByTime(400);
+      await flush();
+      fixture.detectChanges();
+      expect(root.querySelector('.notice')?.textContent).toContain('monitores do PC mudaram');
+    });
+
+    it('an administrator window says why the click did not happen', async () => {
+      const { fire, direct, fixture, root } = await touching();
+      direct.command.mockRejectedValueOnce(
+        new HttpErrorResponse({ status: 502, error: { agentError: 'elevated_window' } }),
+      );
+      fire('pointerdown', 20, 20);
+      fire('pointerup', 20, 20);
+      vi.advanceTimersByTime(400);
+      await flush();
+      fixture.detectChanges();
+      expect(root.querySelector('.notice')?.textContent).toContain('janela de administrador');
+    });
+
+    it('a drag sends DOWN, absolute positions and UP, and the UP goes even if the page closes in the middle', async () => {
+      const { fire, direct, fixture } = await touching();
+      fire('pointerdown', 100, 100);
+      fire('pointerup', 100, 100);
+      vi.advanceTimersByTime(50);
+      fire('pointerdown', 100, 100);
+      vi.advanceTimersByTime(250);
+      fire('pointermove', 200, 150);
+      expect(direct.command).toHaveBeenCalledWith(
+        'pc.tap.v1',
+        expect.objectContaining({ action: 'DOWN', button: 'LEFT' }),
+      );
+      expect(direct.sendAbsolute).toHaveBeenLastCalledWith({
+        m: 7,
+        u: 32768,
+        v: 43690,
+        w: 1920,
+        h: 1080,
+      });
+      fixture.destroy();
+      expect(direct.command).toHaveBeenLastCalledWith(
+        'pc.tap.v1',
+        expect.objectContaining({ action: 'UP', button: 'LEFT' }),
+      );
+    });
+
+    it('a layout change drops the tap that was waiting for its second touch', async () => {
+      const { fire, direct, peer } = await touching();
+      fire('pointerdown', 100, 100);
+      fire('pointerup', 100, 100);
+      peer.channel.receive(
+        JSON.stringify({
+          k: 's.mon',
+          monitors: [{ id: 7, width: 800, height: 600, primary: true }],
+        }),
+      );
+      vi.advanceTimersByTime(1000);
+      expect(direct.command).not.toHaveBeenCalled();
+    });
+
+    it('in touchpad mode the finger moves the pointer by steps and never sends a tap on the image', async () => {
+      const { fire, direct, store, fixture, root } = await touching();
+      root.querySelector<HTMLButtonElement>('.tools button')!.click();
+      fixture.detectChanges();
+      fire('pointerdown', 100, 100);
+      fire('pointermove', 140, 100);
+      fire('pointerup', 140, 100);
+      expect(store.movePointer).toHaveBeenCalled();
+      expect(store.beginGesture).toHaveBeenCalledOnce();
+      expect(store.endGesture).toHaveBeenCalledOnce();
+      expect(direct.command).not.toHaveBeenCalled();
+      expect(direct.sendAbsolute).not.toHaveBeenCalled();
+    });
+
+    it('the mode button says which mode is on, in Portuguese', async () => {
+      const { fixture, root } = await touching();
+      const button = root.querySelector<HTMLButtonElement>('.tools button')!;
+      expect(button.textContent).toContain('Toque direto');
+      button.click();
+      fixture.detectChanges();
+      expect(root.querySelector('.tools button')!.textContent).toContain('Touchpad');
+    });
   });
 });

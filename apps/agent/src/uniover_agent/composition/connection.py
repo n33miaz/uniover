@@ -153,6 +153,7 @@ from uniover_agent.core.diagnostics import (
 )
 from uniover_agent.core.disk_alarm import DiskAlarm
 from uniover_agent.core.loop_progress import LoopProgress
+from uniover_agent.core.pc.absolute import PC_ABS_CAPABILITY
 from uniover_agent.core.pc.clock_offset import ClockOffset
 from uniover_agent.core.pc.devices import DeviceApprovals
 from uniover_agent.core.pc.direct import PC_SCREEN_CAPABILITY
@@ -247,6 +248,7 @@ API_LISTED_CAPABILITIES = frozenset(
         PC_VOLUME_CAPABILITY,
         PC_RTC_CAPABILITY,
         PC_SCREEN_CAPABILITY,
+        PC_ABS_CAPABILITY,
         TV_RTC_CAPABILITY,
         RECONCILE_CAPABILITY,
         PC_OP_CAPABILITY,

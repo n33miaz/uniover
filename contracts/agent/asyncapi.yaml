@@ -145,6 +145,16 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.pointer.zoom.v1.schema.json'
+      pcPointerAbs:
+        name: pc.pointer.abs.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.pointer.abs.v1.schema.json'
+      pcTap:
+        name: pc.tap.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.tap.v1.schema.json'
       pcVolume:
         name: pc.volume.v1
         contentType: application/json
@@ -631,6 +641,20 @@ operations:
     summary: A API envia o zoom da pinça (Ctrl apertado e a roda do mouse).
     messages:
       - $ref: '#/channels/agentCommands/messages/pcPointerZoom'
+  sendPcPointerAbs:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: A posição absoluta do ponteiro sobre a imagem da tela do PC (só pelo canal direto, com a tela aberta).
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcPointerAbs'
+  sendPcTap:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: O toque na imagem da tela do PC, que leva o ponteiro ao ponto e clica ali (só pelo canal direto, com a tela aberta).
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcTap'
   sendPcVolume:
     action: send
     channel:

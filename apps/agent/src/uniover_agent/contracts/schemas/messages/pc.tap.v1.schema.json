@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/pc.tap.v1.schema.json",
+  "title": "pc.tap.v1",
+  "description": "API para agente: toque na imagem da tela do PC. Leva o ponteiro ao ponto tocado e clica ali, num lote só do sistema (o movimento e o clique nunca se separam). `m` é o monitor como a tela ao vivo o anunciou em `s.mon` (o `id`), e `w` e `h` são a largura e a altura dele em pixels físicos nesse mesmo anúncio. `u` e `v` (0 a 65535) são a posição relativa dentro do monitor: 0 é a borda esquerda (ou de cima) e 65535 o último pixel da direita (ou de baixo). O agente lê os monitores de novo no momento do envio, em pixels físicos e ciente do DPI de cada monitor, e leva o ponteiro ao pixel pela posição absoluta do desktop virtual (o resultado não depende da escala do Windows nem da aceleração do mouse). Se o monitor `m` não existe mais ou mudou de tamanho, a recusa é `stale_layout` e o app espera o próximo `s.mon`. `button` e `action` seguem o `pc.click.v1`: `CLICK` e `DOUBLE` apertam e soltam; `DOWN` e `UP` são as pontas de um arrasto, com o `pc.pointer.abs.v1` no meio. O botão nunca fica preso: o `UP` sempre passa (nem a idade, nem o arranjo dos monitores, nem a janela de administrador o barram; se o arranjo mudou, ele solta sem mover), e a soltura automática do agente vale como no `pc.click.v1`. `modifiers` (opcional, só com `CLICK` e `DOUBLE`) como no `pc.click.v2`. Num ponto coberto por uma janela de administrador o Windows não deixa clicar: a recusa é `elevated_window`, sem enviar o clique. Só existe no canal direto (WebRTC) de controle do PC já autenticado, de um aparelho aprovado, e só enquanto a tela ao vivo daquele mesmo canal está aberta (o que exige a flag `pc_screen` da API, o dono e a permissão `pc:screen`); pela nuvem o agente a recusa com `not_allowed`. O agente só a aceita se declarou a capacidade `pc.abs.v1` (depois de a API listá-la em `features`) e a lista no `ready` do canal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "pc.tap.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "operationId": {
+      "$ref": "../envelope.schema.json#/$defs/operationId"
+    },
+    "deviceId": {
+      "$ref": "../envelope.schema.json#/$defs/deviceId"
+    },
+    "deviceName": {
+      "$ref": "../envelope.schema.json#/$defs/deviceName"
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "m",
+        "u",
+        "v",
+        "w",
+        "h",
+        "button",
+        "action"
+      ],
+      "properties": {
+        "m": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 63
+        },
+        "u": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "v": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "w": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32767
+        },
+        "h": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32767
+        },
+        "button": {
+          "enum": [
+            "LEFT",
+            "RIGHT",
+            "MIDDLE"
+          ]
+        },
+        "action": {
+          "enum": [
+            "CLICK",
+            "DOUBLE",
+            "DOWN",
+            "UP"
+          ]
+        },
+        "modifiers": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "CTRL",
+              "ALT",
+              "SHIFT"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

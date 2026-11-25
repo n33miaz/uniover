@@ -24,6 +24,7 @@ from typing import Final
 from uniover_agent.core.domain import Command, CommandResult, ResultStatus
 from uniover_agent.core.envelopes import EnvelopeFactory
 from uniover_agent.core.handle_command import HandleCommand
+from uniover_agent.core.pc.absolute import ABS_POINTER_TYPE, DIRECT_ONLY_TYPES, TAP_TYPE
 from uniover_agent.core.pc.devices import (
     DEVICE_DENIED,
     DEVICE_PENDING,
@@ -38,7 +39,9 @@ from uniover_agent.ports import Sender, TransportError
 _log = logging.getLogger(__name__)
 
 # Os comandos do PC que têm `UP`.
-_RELEASE_TYPES = frozenset({"pc.click.v1", "pc.key.v2"})
+_RELEASE_TYPES = frozenset({"pc.click.v1", "pc.key.v2", TAP_TYPE})
+# Recusa de um comando que só existe pelo canal direto (o toque na tela do PC) e chegou pela nuvem.
+NOT_ALLOWED: Final = "not_allowed"
 # Teto de comandos do PC esperando a vez. Acima disso, os dois movimentos pendentes mais NOVOS que
 # estão lado a lado e podem ser somados viram um só: o movimento é relativo, então o caminho (a
 # soma) se preserva, e nada que veio antes de um clique ou tecla passa para depois dele. Sem par
@@ -175,6 +178,16 @@ class PcLane:
         na fila. De um aparelho que o dono ainda não aprovou (ou recusou), ou sem aparelho
         identificado enquanto não se sabe se a API faz a aprovação, ele nem entra, e nem fecha o
         canal direto do aparelho aprovado."""
+        if command.type in DIRECT_ONLY_TYPES:
+            # O toque na tela só vale pelo canal direto, com a tela aberta naquele mesmo canal: pela
+            # nuvem nem entra na fila (e não fecha o canal em uso).
+            self._reply_later(
+                command,
+                CommandResult(
+                    command.id, ResultStatus.REJECTED, "só pelo canal direto", NOT_ALLOWED
+                ),
+            )
+            return
         if self._devices is not None:
             decision = self._devices.check(command.device_id, command.device_name)
             if decision is not DeviceDecision.APPROVED:
@@ -399,6 +412,12 @@ class PcLane:
         silent = self._silent_types
         for index in range(len(queue) - 2, -1, -1):
             (older, older_at), (newer, _) = queue[index], queue[index + 1]
+            if older.type == ABS_POINTER_TYPE == newer.type:
+                # Posição absoluta: a mais nova vale pelas duas (nada fica entre elas).
+                del queue[index]
+                self._direct_ids.discard(older.id)
+                self._warn_overflow("somando")
+                return
             if older.type == POINTER_TYPE == newer.type and older.type in silent:
                 merged = merge_pointer_commands(older, newer)
                 if merged is not None:
@@ -445,6 +464,8 @@ class PcLane:
         handler descarta, calado), só vizinhos do mesmo tipo e da mesma origem (nunca atravessa
         um clique ou tecla) e o resultado leva o `id` e o `ts` do mais novo.
         """
+        if first.type == ABS_POINTER_TYPE:
+            return self._newest_position(first)
         stale = self._pointer_stale
         if stale is None or first.type != POINTER_TYPE or stale(first):
             return first
@@ -467,6 +488,19 @@ class PcLane:
         if count >= COALESCE_WARNING:
             _log.info("faixa do PC: %d movimentos atrasados somados num só", count)
         return merged
+
+    def _newest_position(self, first: Command) -> Command:
+        """Das posições absolutas vizinhas que já esperam, só a mais nova sai: o ponteiro vai ao
+        último ponto do dedo de uma vez (nunca atravessa um toque, que leva o ponto dele)."""
+        newest = first
+        while self._queue:
+            candidate, _ = self._queue[0]
+            if candidate.type != ABS_POINTER_TYPE:
+                break
+            self._queue.popleft()
+            self._direct_ids.discard(newest.id)
+            newest = candidate
+        return newest
 
     async def _execute(self, command: Command, queued_at: float) -> None:
         """Executa um comando da faixa e responde SEM prender a faixa: o envio do resultado (rede)

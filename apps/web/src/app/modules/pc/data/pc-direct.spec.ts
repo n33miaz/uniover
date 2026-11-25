@@ -136,7 +136,12 @@ function setup(initial: PcStatus | null = status({ capabilities: [PC_RTC_CAPABIL
 }
 
 /** Abre o canal até o fim: oferta, resposta, os dois canais abertos e o `ready` do agente. */
-async function openChannel(direct: PcDirect, connections: FakeConnection[], index = 0) {
+async function openChannel(
+  direct: PcDirect,
+  connections: FakeConnection[],
+  index = 0,
+  ready: Record<string, unknown> = {},
+) {
   direct.start();
   await vi.waitFor(() => expect(connections[index]?.channels).toHaveLength(2));
   const connection = connections[index]!;
@@ -144,7 +149,7 @@ async function openChannel(direct: PcDirect, connections: FakeConnection[], inde
   connection.channel('pointer').open();
   connection.channel('input').open();
   await vi.waitFor(() => expect(connection.channel('input').last('auth')).toBeDefined());
-  connection.channel('input').receive({ k: 'ready' });
+  connection.channel('input').receive({ k: 'ready', ...ready });
   await vi.waitFor(() => expect(direct.mode()).toBe('direct'));
   return { connection, pointer: connection.channel('pointer'), input: connection.channel('input') };
 }
@@ -1293,5 +1298,72 @@ describe('PcDirect: what the agent of the channel accepts', () => {
     second.channel('input').receive({ k: 'ready' });
     await vi.waitFor(() => expect(direct.mode()).toBe('direct'));
     expect(direct.accepts('pc.text.v2')).toBe(false);
+  });
+});
+
+describe('PcDirect touch on the screen image', () => {
+  const TARGET = { m: 1, u: 100, v: 200, w: 1920, h: 1080 };
+  const LISTED = { caps: ['pc.tap.v1', 'pc.pointer.abs.v1'] };
+
+  it('only sends the absolute position to an agent that listed it in the ready', async () => {
+    const { direct, connections } = setup();
+    const { pointer } = await openChannel(direct, connections);
+    expect(() => direct.sendAbsolute(TARGET)).toThrow(DirectNotSent);
+    expect(pointer.sent.filter((m) => m['k'] === 'abs')).toHaveLength(0);
+    expect(direct.accepts('pc.tap.v1')).toBe(false);
+  });
+
+  it('sends positions on the pointer channel with a growing sequence number', async () => {
+    const { direct, connections } = setup();
+    const { pointer } = await openChannel(direct, connections, 0, LISTED);
+    direct.sendAbsolute(TARGET);
+    direct.sendAbsolute({ ...TARGET, u: 300 });
+    expect(pointer.sent.filter((m) => m['k'] === 'abs')).toEqual([
+      { k: 'abs', s: 1, ...TARGET },
+      { k: 'abs', s: 2, ...TARGET, u: 300 },
+    ]);
+  });
+
+  it('the tap carries the highest position number already sent, so a late position cannot pass it', async () => {
+    const { direct, connections } = setup();
+    const { input } = await openChannel(direct, connections, 0, LISTED);
+    direct.sendAbsolute(TARGET);
+    direct.sendAbsolute(TARGET);
+    void direct
+      .command('pc.tap.v1', { ...TARGET, button: 'LEFT', action: 'UP' })
+      .catch(() => undefined);
+    expect(input.last('cmd')).toMatchObject({
+      t: 'pc.tap.v1',
+      a: 2,
+      b: { ...TARGET, button: 'LEFT', action: 'UP' },
+    });
+    expect(direct.accepts('pc.tap.v1')).toBe(true);
+  });
+
+  it('skips a position when the channel buffer is full without using its number', async () => {
+    const { direct, connections } = setup();
+    const { pointer } = await openChannel(direct, connections, 0, LISTED);
+    pointer.bufferedAmount = 10_000_000;
+    direct.sendAbsolute(TARGET);
+    pointer.bufferedAmount = 0;
+    direct.sendAbsolute(TARGET);
+    expect(pointer.sent.filter((m) => m['k'] === 'abs')).toEqual([{ k: 'abs', s: 1, ...TARGET }]);
+  });
+
+  it('a refusal for a changed monitor layout comes back as an agent error the screen can read', async () => {
+    const { direct, connections } = setup();
+    const { input } = await openChannel(direct, connections, 0, LISTED);
+    const sending = direct.command('pc.tap.v1', { ...TARGET, button: 'LEFT', action: 'CLICK' });
+    input.receive({ k: 'ack', i: input.last('cmd')!['i'], ok: false, c: 'stale_layout' });
+    const error = (await sending.catch((e: unknown) => e)) as HttpErrorResponse;
+    expect(error.error).toEqual({ agentError: 'stale_layout' });
+  });
+
+  it('nothing goes out with the channel closed', () => {
+    const { direct } = setup();
+    expect(() => direct.sendAbsolute(TARGET)).toThrow(DirectNotSent);
+    return expect(
+      direct.command('pc.tap.v1', { ...TARGET, button: 'LEFT', action: 'CLICK' }),
+    ).rejects.toBeInstanceOf(DirectNotSent);
   });
 });
