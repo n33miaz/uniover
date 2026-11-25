@@ -359,3 +359,49 @@ def test_the_livre_extension_only_reaches_the_hello_after_the_api_lists_it() -> 
         capabilities, lambda feature: feature == EXTENDED_CAPABILITY
     ) == (CAPABILITY, EXTENDED_CAPABILITY)
     assert declarable_capabilities(capabilities, lambda _: True) == tuple(capabilities)
+
+
+def tcl_without_package() -> FakeAndroid:
+    android = FakeAndroid()
+    android.manufacturer, android.brand = "TCL", "TCL"
+    android.tcl_tv_installed = False
+    android.fail.add("install-existing")
+    return android
+
+
+async def test_a_failed_tcl_restore_reaches_the_owner_in_an_otherwise_ok_result(
+    tmp_path: Path,
+) -> None:
+    handler, _, _, _ = build(tmp_path, tcl_without_package())
+
+    result = await handler(command({"action": "install"}))
+
+    assert result.status is ResultStatus.FAILED
+    assert result.code == livre_module.TCL_PACKAGE_MISSING
+    assert "com.tcl.tv" in result.detail
+
+
+async def test_a_restored_tcl_package_keeps_the_result_ok(tmp_path: Path) -> None:
+    android = FakeAndroid()
+    android.manufacturer, android.brand = "TCL", "TCL"
+    android.tcl_tv_installed = False
+    handler, _, _, _ = build(tmp_path, android)
+
+    result = await handler(command({"action": "install"}))
+
+    assert result.status is ResultStatus.OK
+
+
+async def test_sleep_auto_install_failure_keeps_the_tcl_notice_with_the_error(
+    tmp_path: Path,
+) -> None:
+    android = tcl_without_package()
+    android.installed = False
+    android.fail.add("SleepActivity")
+    handler, _, _, _ = build(tmp_path, android)
+
+    result = await handler(command({"action": "sleep"}))
+
+    assert (result.status, result.code) == (ResultStatus.FAILED, "sleep_failed")
+    assert "Modo Dormir" in result.detail
+    assert "com.tcl.tv" in result.detail

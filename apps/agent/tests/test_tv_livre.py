@@ -1203,3 +1203,28 @@ async def test_a_livre_action_that_fails_still_settles_the_remote_guard(tmp_path
     await expect_error(livre, {"action": "install"}, "unsupported")
     await livre.run({"action": "status"})
     assert guard.calls == ["expect", "settle"]  # `status` só lê o suporte: não arma nada
+
+
+async def test_tcl_package_is_checked_before_the_launcher_install(tmp_path: Path) -> None:
+    android = tcl_android(present=False)
+    livre, android, _, _ = make(tmp_path, android)
+
+    await livre.run({"action": "install"})
+
+    restore = android.log.index(f"cmd package install-existing {TCL_TV_PACKAGE}")
+    assert "install" not in android.log[:restore]
+    assert android.log.index("install") > restore
+
+
+async def test_tcl_package_failure_does_not_block_the_launcher_install(tmp_path: Path) -> None:
+    android = tcl_android(present=False)
+    android.fail.add("install-existing")
+    livre, android, _, _ = make(tmp_path, android)
+
+    await livre.run({"action": "install"})
+
+    assert android.installed is True
+
+
+def test_the_tcl_tv_package_is_never_disabled() -> None:
+    assert is_protected_for_disable(TCL_TV_PACKAGE, frozenset()) is True
