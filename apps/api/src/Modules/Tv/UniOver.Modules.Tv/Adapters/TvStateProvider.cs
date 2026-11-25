@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Ports;
@@ -10,7 +11,8 @@ namespace UniOver.Modules.Tv.Adapters;
 /// TV já escolhida pela regra de visibilidade da requisição.
 /// </summary>
 internal sealed class TvStateProvider(
-    ITvCurrentSelection selection, ITvStateStore state, ITvAgentPresence presence, ITvStreamPublisher stream)
+    ITvCurrentSelection selection, ITvStateStore state, ITvAgentPresence presence, ITvStreamPublisher stream,
+    IOptions<TvModuleOptions> options)
 {
     public async ValueTask<TvState> CurrentAsync(CancellationToken cancellationToken)
     {
@@ -23,7 +25,8 @@ internal sealed class TvStateProvider(
         ArgumentNullException.ThrowIfNull(target);
         var agentId = target.AgentSlug;
         var online = presence.IsOnline(agentId);
-        var view = TvState.From(state.Last(agentId), online, !string.IsNullOrWhiteSpace(agentId), presence.OfflineSince(agentId));
+        var view = TvState.From(state.Last(agentId), online, !string.IsNullOrWhiteSpace(agentId), presence.OfflineSince(agentId),
+            presence.HasRecentReport(agentId, options.Value.LinkStale));
 
         // Quem lê descobre a mudança antes de qualquer comando: avisa a tela agora, para o aviso não se perder
         // (um comando que falhar depois já a encontraria anotada e não avisaria de novo).

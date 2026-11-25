@@ -420,6 +420,70 @@ public class DomainTests
         list.Single(s => s.Package == "a.um").IsActive.Should().BeTrue();
     }
 
+    private static TvStateSnapshot LinkSnapshot(string power = "on", string connection = "hot", string? mode = null) =>
+        new(power, null, "tv.app", connection, Now, Mode: mode);
+
+    [Theory]
+    [InlineData("on", "hot", null, "ready")]
+    [InlineData("unknown", "hibernating", null, "ready")]
+    [InlineData("off", "hot", null, "tv_off")]
+    [InlineData("on", "waking", null, "tv_standby")]
+    [InlineData("on", "disconnected", null, "tv_unresponsive")]
+    [InlineData("on", "not_paired", null, "tv_unresponsive")]
+    [InlineData("on", "hot", "standby", "tv_standby")]
+    [InlineData("on", "hibernating", "sleep", "tv_sleep")]
+    [InlineData("on", "hot", "off", "tv_off")]
+    [InlineData("on", "disconnected", "sleep", "tv_unresponsive")]
+    public void Link_WithAFreshAgent_FollowsWhatTheAgentReportsAboutTheTv(string power, string connection, string? mode, string expected)
+    {
+        TvLink.Derive(LinkSnapshot(power, connection, mode), agentOnline: true, reportFresh: true)
+            .Should().Be(new TvLink(1, expected));
+    }
+
+    [Fact]
+    public void Link_WithoutAnyTvReport_IsUnresponsive()
+    {
+        TvLink.Derive(null, agentOnline: true, reportFresh: true).State.Should().Be("tv_unresponsive");
+    }
+
+    [Theory]
+    [InlineData("on", "hot", null)]
+    [InlineData("on", "hot", "sleep")]
+    [InlineData("off", "hot", "standby")]
+    public void Link_WithAnOfflineAgent_IsPcOffline_NoMatterWhatTheLastTvStateWas(string power, string connection, string? mode)
+    {
+        TvLink.Derive(LinkSnapshot(power, connection, mode), agentOnline: false, reportFresh: true).State.Should().Be("pc_offline");
+        TvLink.Derive(null, agentOnline: false, reportFresh: false).State.Should().Be("pc_offline");
+    }
+
+    [Fact]
+    public void Link_WithASilentAgent_IsPcOffline_InsteadOfKeepingTheLastTvState()
+    {
+        TvLink.Derive(LinkSnapshot("on", "hot", "sleep"), agentOnline: true, reportFresh: false).State.Should().Be("pc_offline");
+    }
+
+    [Fact]
+    public void State_CarriesTheLink_WithoutChangingTheLegacyFields()
+    {
+        var ready = TvState.From(Snapshot(volume: 33), agentOnline: true);
+        ready.Link.Should().Be(new TvLink(1, "ready"));
+        ready.Power.Should().Be("on");
+        ready.Volume.Should().Be(33);
+
+        TvState.From(Snapshot(), agentOnline: false).Link!.State.Should().Be("pc_offline");
+        TvState.From(null, agentOnline: false).Link!.State.Should().Be("pc_offline");
+        TvState.From(Snapshot(), agentOnline: true, reportFresh: false).Link!.State.Should().Be("pc_offline");
+    }
+
+    [Fact]
+    public void State_SerializesTheLinkAsAVersionedObject()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            TvState.From(Snapshot(), agentOnline: true), System.Text.Json.JsonSerializerOptions.Web);
+
+        json.Should().Contain("\"link\":{\"version\":1,\"state\":\"ready\"}");
+    }
+
     [Fact]
     public void Audit_TruncatesWhatTheClientControls()
     {

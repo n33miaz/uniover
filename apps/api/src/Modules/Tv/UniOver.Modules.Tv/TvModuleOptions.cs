@@ -42,6 +42,12 @@ public sealed class TvModuleOptions
     /// </summary>
     public int LivreTimeoutSeconds { get; set; } = 90;
 
+    /// <summary>
+    /// Silêncio máximo do agente conectado para o elo (<c>link.state</c>) ainda valer. Passado esse tempo sem nenhuma
+    /// mensagem dele, o elo é <c>pc_offline</c> e o último estado da TV não é mais mostrado como atual.
+    /// </summary>
+    public int LinkStaleSeconds { get; set; } = 90;
+
     /// <summary>Espera antes de gravar uma mudança de estado, para juntar oscilações rápidas numa escrita só.</summary>
     public int StateDebounceSeconds { get; set; } = 2;
 
@@ -78,6 +84,8 @@ public sealed class TvModuleOptions
 
     public TimeSpan HibernatingTimeout => TimeSpan.FromSeconds(HibernatingTimeoutSeconds);
 
+    public TimeSpan LinkStale => TimeSpan.FromSeconds(LinkStaleSeconds);
+
     public TimeSpan StateDebounce => TimeSpan.FromSeconds(StateDebounceSeconds);
 
     /// <summary>Valores que quebrariam o módulo (tempos não positivos).</summary>
@@ -90,6 +98,7 @@ public sealed class TvModuleOptions
             && options.PowerOffTimeoutSeconds >= options.HibernatingTimeoutSeconds
             && options.LivreTimeoutSeconds > 0
             && options.StateDebounceSeconds >= 0
+            && options.LinkStaleSeconds > 0
             && options.PowerOffReserveMinutes is >= 1 and <= 24 * 60
             && options.PowerOffStartupWindowMinutes is >= 0 and <= 60
             && options.PowerOffStartupPollSeconds is >= 1 and <= 600

@@ -148,6 +148,12 @@ public interface ITvAgentPresence
     /// (o agente volta em um ou dois segundos) e o comando deve esperar a sessão voltar, não falhar.
     /// </summary>
     bool IsOfflineBeyondReconnectGrace(string agentId);
+
+    /// <summary>
+    /// O agente está conectado e falou (qualquer mensagem, inclusive os sinais periódicos) dentro de <paramref name="within"/>.
+    /// Um agente calado deixa de valer como relato da TV. Por padrão basta estar conectado.
+    /// </summary>
+    bool HasRecentReport(string agentId, TimeSpan within) => IsOnline(agentId);
 }
 
 /// <summary>
