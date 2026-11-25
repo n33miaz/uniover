@@ -41,6 +41,9 @@ internal sealed record DevicesAppOptions
     /// <summary>Liga a flag da tela do PC (<c>Modules:Devices:PcScreen:Enabled</c>); desligada por padrão, como em produção.</summary>
     public bool PcScreen { get; init; }
 
+    /// <summary>Redes extras de onde a tela do PC aceita a oferta (<c>Modules:Devices:PcScreen:AllowedNetworks</c>); sem elas a chave nem existe.</summary>
+    public string[]? PcScreenNetworks { get; init; }
+
     public int? TokenCacheSeconds { get; init; }
 
     public int? TokenFailureLimit { get; init; }
@@ -155,6 +158,11 @@ internal sealed class DevicesApp : IAsyncDisposable
         if (options.PcScreen)
         {
             settings["Modules:Devices:PcScreen:Enabled"] = "true";
+        }
+
+        for (var i = 0; i < (options.PcScreenNetworks?.Length ?? 0); i++)
+        {
+            settings[$"Modules:Devices:PcScreen:AllowedNetworks:{i}"] = options.PcScreenNetworks![i];
         }
 
         if (options.RequireStepUp is { } require)
