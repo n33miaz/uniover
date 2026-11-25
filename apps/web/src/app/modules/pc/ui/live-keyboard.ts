@@ -501,7 +501,9 @@ export class PcLiveKeyboard {
   protected onBlur(): void {
     if (this.composing) {
       this.composing = false;
-      this.resetPending = false;
+      // Com um recomeço pendente (o envio falhou), o espelho ainda tem o texto da composição: um fim ou input tardio
+      // continua descartado até o recomeço rodar, que roda mesmo que o fim da composição nunca chegue.
+      if (this.resetPending) this.deferReset();
     }
     if (this.wanted && !this.holding) this.endMode();
   }
@@ -540,8 +542,11 @@ export class PcLiveKeyboard {
     // O valor final pode trazer uma autocorreção, mesmo sem outro evento de input.
     this.onInput(undefined, true);
     this.composing = false;
-    if (!this.resetPending) return;
-    // Um último input pode chegar depois deste evento. Mantenha o recomeço pendente para descartar esse evento também.
+    if (this.resetPending) this.deferReset();
+  }
+
+  /** Um último input pode chegar depois do fim da composição: o recomeço fica pendente para descartar esse evento também. */
+  private deferReset(): void {
     setTimeout(() => {
       if (this.resetPending && !this.composing) this.reset();
     }, 0);

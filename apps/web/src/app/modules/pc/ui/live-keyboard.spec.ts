@@ -423,6 +423,25 @@ describe('PcLiveKeyboard', () => {
     expect(store.sendKey).not.toHaveBeenCalled();
   });
 
+  it('keeps a late composition end discarded when a blur cuts a composition whose send failed', async () => {
+    fixture.componentInstance.open();
+    field.dispatchEvent(new CompositionEvent('compositionstart'));
+    compose('te');
+    await flush();
+    store.sendText.mockResolvedValueOnce({ kind: 'timeout', message: 'Tempo.' });
+    compose('tes');
+    await flush();
+    field.blur();
+    field.value = SENTINEL + 'tex';
+    field.dispatchEvent(new CompositionEvent('compositionend', { data: 'tex' }));
+    await flush();
+    expect(store.sendText.mock.calls).toEqual([['te'], ['s']]);
+    expect(store.sendKey).not.toHaveBeenCalled();
+    // O recomeço roda mesmo assim: o campo volta ao preenchimento.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(field.value).toBe(SENTINEL);
+  });
+
   it('pastes the final long dictation once through the PC clipboard', async () => {
     store.capabilities.set([PC_CLIPBOARD_CAPABILITY]);
     const dictated = 'Esta frase ditada pelo teclado tem mais de quarenta caracteres.';

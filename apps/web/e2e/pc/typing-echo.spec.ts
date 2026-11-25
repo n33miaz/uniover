@@ -216,7 +216,7 @@ test.describe('o eco do que se digita no PC fica à vista com o teclado do celul
     );
     // E é mesmo ela que está ali (nada por cima).
     const onTop = await page.evaluate(
-      ({ x, y }) => document.elementFromPoint(x, y)?.closest('.echo-line') !== null,
+      ({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest('.echo-line')),
       { x: last!.x + last!.width / 2, y: last!.y + last!.height / 2 },
     );
     expect(onTop, 'nada cobre a última letra').toBe(true);
