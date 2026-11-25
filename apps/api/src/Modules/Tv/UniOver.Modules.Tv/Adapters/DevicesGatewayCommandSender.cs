@@ -25,7 +25,7 @@ internal sealed class DevicesGatewayCommandSender(IAgentGateway gateway, TimePro
 
         var reply = result.Value;
         return reply.Ok
-            ? TvSendOutcome.Ok(elapsed)
+            ? TvSendOutcome.Ok(elapsed, reply.Notice)
             : TvSendOutcome.Failed(TvSendStatus.CommandFailed, reply.Error?.Code, reply.Error?.Message, elapsed);
     }
 

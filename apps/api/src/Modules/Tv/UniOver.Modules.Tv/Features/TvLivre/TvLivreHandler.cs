@@ -28,7 +28,7 @@ internal enum LivreStepKind
     SleepAgentUpdateRequired,
 }
 
-internal sealed record LivreStep(LivreStepKind Kind, TvSendOutcome? Outcome = null)
+internal sealed record LivreStep(LivreStepKind Kind, TvSendOutcome? Outcome = null, string? Notice = null)
 {
     public static LivreStep Done { get; } = new(LivreStepKind.Done);
 
@@ -39,6 +39,9 @@ internal sealed record LivreStep(LivreStepKind Kind, TvSendOutcome? Outcome = nu
     public static LivreStep OwnerRequired { get; } = new(LivreStepKind.OwnerRequired);
 
     public static LivreStep SleepAgentUpdateRequired { get; } = new(LivreStepKind.SleepAgentUpdateRequired);
+
+    /// <summary>Passo que deu certo; leva o aviso que o agente deixou para o dono (nulo: nenhum).</summary>
+    public static LivreStep Succeeded(string? notice) => string.IsNullOrEmpty(notice) ? Done : new(LivreStepKind.Done, null, notice);
 
     public static LivreStep Failed(TvSendOutcome outcome) => new(LivreStepKind.Failed, outcome);
 }
@@ -427,7 +430,8 @@ internal sealed class TvLivreHandler(
             await WaitForStateAsync(ticket.RequestId, cancellationToken);
         }
 
-        return LivreStep.Done;
+        // O aviso só vale do agente que declara a capacidade dele: os demais nunca o mandam.
+        return LivreStep.Succeeded(HasCapability(TvCapabilities.LivreNotice) ? outcome.Notice : null);
     }
 
     /// <summary>

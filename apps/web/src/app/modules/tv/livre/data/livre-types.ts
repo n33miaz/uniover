@@ -81,6 +81,11 @@ export interface TvLivreView {
   readonly launcherLevel: number | null;
   /** O último apply só gravou a configuração porque outro app estava na frente. */
   readonly applyDeferred: boolean;
+  /**
+   * Aviso do agente sobre o pedido que acabou de dar certo (por exemplo, o pacote da TV TCL restaurado). Só as respostas das
+   * ações o trazem; a leitura do estado vem sempre sem ele.
+   */
+  readonly notice: string | null;
 }
 
 /**
@@ -233,6 +238,8 @@ export function parseLivreView(value: unknown): TvLivreView | null {
         ? dto['launcherLevel']
         : null,
     applyDeferred: dto['applyDeferred'] === true,
+    notice:
+      typeof dto['notice'] === 'string' && dto['notice'].trim() !== '' ? dto['notice'].trim() : null,
   };
 }
 

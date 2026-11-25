@@ -329,14 +329,15 @@ export class TvLivreStore {
         this._showPrompt.set(applied.isHome);
         return $localize`:@@tv-livre.notice.applied-later:Aplicado. A TV mostra na próxima vez que voltar ao Início.`;
       }
-      return $localize`:@@tv-livre.notice.applied:Aplicado na TV.`;
+      return this.withAgentNotice($localize`:@@tv-livre.notice.applied:Aplicado na TV.`, applied);
     });
   }
 
   install(): Promise<boolean> {
     return this.run('install', async (epoch) => {
-      this.adopt(await this.live(epoch, this.api.install()), epoch);
-      return $localize`:@@tv-livre.notice.installed:TV Livre instalado.`;
+      const view = await this.live(epoch, this.api.install());
+      this.adopt(view, epoch);
+      return this.withAgentNotice($localize`:@@tv-livre.notice.installed:TV Livre instalado.`, view);
     });
   }
 
@@ -349,9 +350,12 @@ export class TvLivreStore {
         // Instalou o último que há e o nível não subiu: o launcher novo ainda não foi publicado. O aviso sai (sem isso
         // "Atualizar" reinstalaria o mesmo para sempre) e volta quando a tela é reaberta com a TV ou a conta trocadas.
         this._updateStale.set(true);
-        return $localize`:@@tv-livre.notice.update-pending:Instalado o mais novo que há. O launcher novo ainda não foi publicado.`;
+        return this.withAgentNotice(
+          $localize`:@@tv-livre.notice.update-pending:Instalado o mais novo que há. O launcher novo ainda não foi publicado.`,
+          view,
+        );
       }
-      return $localize`:@@tv-livre.notice.updated:TV Livre atualizado.`;
+      return this.withAgentNotice($localize`:@@tv-livre.notice.updated:TV Livre atualizado.`, view);
     });
   }
 
@@ -371,16 +375,24 @@ export class TvLivreStore {
   /** Define o TV Livre como a tela inicial; com `disableFactory` desativa também o launcher de fábrica. */
   setHome(disableFactory: boolean): Promise<boolean> {
     return this.run('set-home', async (epoch) => {
-      this.adopt(await this.live(epoch, this.api.setHome(disableFactory)), epoch);
-      return $localize`:@@tv-livre.notice.home-set:TV Livre é a tela inicial.`;
+      const view = await this.live(epoch, this.api.setHome(disableFactory));
+      this.adopt(view, epoch);
+      return this.withAgentNotice(
+        $localize`:@@tv-livre.notice.home-set:TV Livre é a tela inicial.`,
+        view,
+      );
     });
   }
 
   /** "Voltar ao Original": devolve a tela inicial de fábrica e desinstala o TV Livre. */
   restore(): Promise<boolean> {
     return this.run('restore', async (epoch) => {
-      this.adopt(await this.live(epoch, this.api.restore(true)), epoch);
-      return $localize`:@@tv-livre.notice.restored:A TV voltou ao original.`;
+      const view = await this.live(epoch, this.api.restore(true));
+      this.adopt(view, epoch);
+      return this.withAgentNotice(
+        $localize`:@@tv-livre.notice.restored:A TV voltou ao original.`,
+        view,
+      );
     });
   }
 
@@ -577,6 +589,16 @@ export class TvLivreStore {
     } catch {
       // Sem a miniatura a pré-visualização mostra o degradê; a foto em si não se perdeu.
     }
+  }
+
+  /**
+   * Junta ao aviso de sucesso o aviso do agente (o `ok` do contrato só o leva neste campo), para o dono o ler no mesmo
+   * lugar. Sem aviso do agente, o texto sai como está.
+   */
+  private withAgentNotice(text: string, view: TvLivreView): string {
+    const agent = view.notice;
+    if (agent === null) return text;
+    return $localize`:@@tv-livre.notice.with-agent-notice:${text}:text: ${agent}:agentNotice:`;
   }
 
   /** Um pedido por vez; devolve se deu certo. O texto que o pedido devolve é o aviso de sucesso. */

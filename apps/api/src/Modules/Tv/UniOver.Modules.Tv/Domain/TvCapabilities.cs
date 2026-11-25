@@ -34,6 +34,13 @@ internal static class TvCapabilities
     /// vez de instalá-lo. Só com ela o dormir de um convidado vai com o campo.
     /// </summary>
     public const string LivreSleepNoInstall = "tv.livre.sleep-no-install.v1";
+
+    /// <summary>
+    /// O agente pode mandar um aviso ao dono (<c>notice</c>) no <c>command.result.v1</c> de um pedido do TV Livre que deu
+    /// certo. Separada de <see cref="LivreV2"/>: a API que só conhece aquela tem o resultado fechado e recusaria o campo.
+    /// Sem ela a API não repassa aviso nenhum.
+    /// </summary>
+    public const string LivreNotice = "tv.livre.notice.v1";
 }
 
 /// <summary>Códigos de erro estáveis que o agente devolve no <c>command.result.v1</c> do desligamento com leitura.</summary>

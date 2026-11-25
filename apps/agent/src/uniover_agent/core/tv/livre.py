@@ -49,6 +49,9 @@ CAPABILITY: Final = "tv.livre.v1"
 # launcher e apply sem interromper no estado). Só vai ao `hello` depois de a API listá-la.
 EXTENDED_CAPABILITY: Final = "tv.livre.v2"
 SLEEP_NO_INSTALL_CAPABILITY: Final = "tv.livre.sleep-no-install.v1"
+# O aviso ao dono (`notice`) num resultado `ok`. Separada de `tv.livre.v2`: a API que só conhece
+# aquela tem o resultado fechado e recusaria o campo. Só vai ao `hello` depois de a API listá-la.
+NOTICE_CAPABILITY: Final = "tv.livre.notice.v1"
 PACKAGE: Final = "br.uniover.launcher"
 HOME_COMPONENT: Final = f"{PACKAGE}/.HomeActivity"
 SLEEP_COMPONENT: Final = f"{PACKAGE}/.SleepActivity"
@@ -312,10 +315,13 @@ class TvLivre:
         clock: Clock,
         remote_guard: RemoteDropGuard | None = None,
         extended: Callable[[], bool] = lambda: False,
+        notice: Callable[[], bool] = lambda: False,
     ) -> None:
         self._remote_guard = remote_guard
         # A API entende os acréscimos (`EXTENDED_CAPABILITY`): sem isso o agente age como antes.
         self._extended = extended
+        # A API aceita `notice` no resultado `ok` (`NOTICE_CAPABILITY`): sem isso o aviso não vai.
+        self._notice_supported = notice
         self._apply_deferred = False
         self._notice: str | None = None
         self._notice_is_failure = False
@@ -329,6 +335,10 @@ class TvLivre:
     @property
     def extended(self) -> bool:
         return self._extended()
+
+    @property
+    def notice_supported(self) -> bool:
+        return self._notice_supported()
 
     def take_apply_deferred(self) -> bool:
         """Se o último `apply` só gravou a configuração (outro app estava na frente); lê uma vez."""
@@ -1006,8 +1016,9 @@ def tv_livre_handler(livre: TvLivre, transport: Transport, envelopes: EnvelopeFa
                 # `ok` não leva texto no contrato: o dono só lê o aviso num resultado com erro (o
                 # estado da TV já foi enviado e o TV Livre foi instalado).
                 outcome = CommandResult("", ResultStatus.FAILED, notice, TCL_PACKAGE_MISSING)
-            else:
-                outcome = CommandResult("", ResultStatus.OK, notice)
+            elif livre.notice_supported:
+                # Só a API que lista `tv.livre.notice.v1` aceita `notice` no resultado `ok`.
+                outcome = CommandResult("", ResultStatus.OK, notice=notice)
         livre.audit(action, outcome.code or "ok", _detail(command.body))
         try:
             state = await livre.read_state()
@@ -1034,7 +1045,9 @@ def tv_livre_handler(livre: TvLivre, transport: Transport, envelopes: EnvelopeFa
             return CommandResult(
                 command.id, ResultStatus.FAILED, "não consegui enviar o estado à API", SEND_FAILED
             )
-        return CommandResult(command.id, outcome.status, outcome.detail, outcome.code)
+        return CommandResult(
+            command.id, outcome.status, outcome.detail, outcome.code, outcome.notice
+        )
 
     return handle
 

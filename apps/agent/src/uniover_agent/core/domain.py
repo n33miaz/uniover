@@ -36,6 +36,9 @@ class CommandResult:
     detail: str = ""
     # Código estável para a API (`tv_unreachable`, `unsupported`...); vazio = o próprio status.
     code: str = ""
+    # Aviso ao dono num resultado `ok` (o contrato só leva `detail` quando falha);
+    # vazio = sem aviso.
+    notice: str = ""
 
 
 Power = Literal["on", "off", "unknown"]

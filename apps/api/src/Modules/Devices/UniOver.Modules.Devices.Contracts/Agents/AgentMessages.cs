@@ -57,4 +57,4 @@ public sealed record InboundMessage(
 /// Resposta do agente a um comando (<c>command.result.v1</c>). <c>Ok = false</c> é uma resposta válida: o agente
 /// respondeu, só não conseguiu executar; quem pergunta olha <see cref="Error"/>.
 /// </summary>
-public sealed record AgentReply(Guid CorrelationId, bool Ok, Error? Error);
+public sealed record AgentReply(Guid CorrelationId, bool Ok, Error? Error, string? Notice = null);

@@ -8204,6 +8204,12 @@
               "string"
             ]
           },
+          "notice": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "revision": {
             "format": "int32",
             "type": "integer"

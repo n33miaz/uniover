@@ -44,10 +44,11 @@ public sealed class TvLivreTests(PostgresFixture postgres)
     }
 
     private const string SleepNoInstallCapability = "tv.livre.sleep-no-install.v1";
+    private const string NoticeCapability = "tv.livre.notice.v1";
 
     /// <summary>Um agente conectado que anuncia (ou não) o TV Livre, já com a presença conhecida pela API.</summary>
     private static async Task<FakeAgent> ConnectAsync(
-        TvApp app, bool withCapability = true, bool extended = false, bool sleepNoInstall = false)
+        TvApp app, bool withCapability = true, bool extended = false, bool sleepNoInstall = false, bool notice = false)
     {
         var agent = await app.ConnectAsync();
         List<string> capabilities = ["tv.remote"];
@@ -62,6 +63,10 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         if (sleepNoInstall)
         {
             capabilities.Add(SleepNoInstallCapability);
+        }
+        if (notice)
+        {
+            capabilities.Add(NoticeCapability);
         }
         await agent.SendHelloAsync("2.0.0", [.. capabilities]);
         // Quem reconecta depois de outro hello não pode confiar em "tv.remote": a presença antiga ainda o tem. Por isso
@@ -428,6 +433,59 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         row.AgentId.Should().Be(TvApp.AgentSlug);
         row.Ok.Should().BeTrue();
         row.Ip.Should().Be(TvApp.ClientIp);
+    }
+
+    [Fact]
+    public async Task Install_DeliversTheAgentNoticeOfAnOkResult_AndTheNextReadHasNone()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, notice: true);
+
+        var request = app.PostAsync($"{Base}/install");
+        var command = await NextAsync(agent, "tv.livre.v1");
+        var result = TvApp.Ok();
+        result["notice"] = "Restaurei o pacote com.tcl.tv; não o remova de novo.";
+        await StateThenReplyAsync(agent, command, StateBody(command, installed: true, version: "1.0.0"), result);
+        using var response = await Within(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await TvApp.JsonAsync(response);
+        body.GetProperty("installed").GetBoolean().Should().BeTrue();
+        body.GetProperty("notice").GetString().Should().Be("Restaurei o pacote com.tcl.tv; não o remova de novo.");
+
+        using var read = await app.GetAsync(Base);
+        (await TvApp.JsonAsync(read)).GetProperty("notice").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task Install_IgnoresANoticeFromAnAgentWithoutItsCapability()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app, extended: true);
+
+        var request = app.PostAsync($"{Base}/install");
+        var command = await NextAsync(agent, "tv.livre.v1");
+        var result = TvApp.Ok();
+        result["notice"] = "Restaurei o pacote com.tcl.tv; não o remova de novo.";
+        await StateThenReplyAsync(agent, command, StateBody(command, installed: true, version: "1.0.0"), result);
+        using var response = await Within(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await TvApp.JsonAsync(response)).GetProperty("notice").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task Install_WithoutANotice_ReturnsANullNotice()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await ConnectAsync(app);
+
+        var request = app.PostAsync($"{Base}/install");
+        var command = await NextAsync(agent, "tv.livre.v1");
+        await StateThenReplyAsync(agent, command, StateBody(command, installed: true, version: "1.0.0"));
+        using var response = await Within(request);
+
+        (await TvApp.JsonAsync(response)).GetProperty("notice").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]

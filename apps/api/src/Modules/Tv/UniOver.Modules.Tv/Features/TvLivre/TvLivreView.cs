@@ -17,6 +17,8 @@ internal sealed record LivreAppView(string Package, bool Factory, bool Disabled)
 /// <c>Revision</c> é a última aplicação enviada (0 = nunca aplicada). <c>Extended</c> diz que o agente online entende os
 /// acréscimos (<see cref="TvCapabilities.LivreV2"/>); <c>LauncherLevel</c> é o nível do launcher que ele leu (nulo: não
 /// leu) e <c>ApplyDeferred</c> diz que o último apply só gravou a configuração porque outro app estava na frente.
+/// <c>Notice</c> é o aviso que o agente deixou para o dono num pedido que deu certo (só nas respostas das ações; a leitura
+/// do estado o devolve nulo).
 /// </summary>
 internal sealed record TvLivreView(
     bool Available,
@@ -33,7 +35,8 @@ internal sealed record TvLivreView(
     [property: JsonNumberHandling(JsonNumberHandling.Strict)] int Revision,
     bool Extended = false,
     int? LauncherLevel = null,
-    bool ApplyDeferred = false)
+    bool ApplyDeferred = false,
+    string? Notice = null)
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 

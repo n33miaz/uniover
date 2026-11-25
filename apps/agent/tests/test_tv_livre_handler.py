@@ -18,6 +18,7 @@ from uniover_agent.core.tv import livre as livre_module
 from uniover_agent.core.tv.livre import (
     CAPABILITY,
     EXTENDED_CAPABILITY,
+    NOTICE_CAPABILITY,
     SLEEP_NO_INSTALL_CAPABILITY,
     LivreStateFile,
     PhotoStaging,
@@ -42,6 +43,7 @@ def build(
     error: LauncherApkError | None = None,
     *,
     extended: bool = False,
+    notice: bool = False,
 ) -> tuple[Handler, FakeTransport, FakeAndroid, TvLivre]:
     clock = FakeClock()
     android = android or FakeAndroid()
@@ -52,6 +54,7 @@ def build(
         PhotoStaging(clock),
         clock,
         extended=lambda: extended,
+        notice=lambda: notice,
     )
     transport = FakeTransport()
     handler = tv_livre_handler(
@@ -361,6 +364,15 @@ def test_the_livre_extension_only_reaches_the_hello_after_the_api_lists_it() -> 
     assert declarable_capabilities(capabilities, lambda _: True) == tuple(capabilities)
 
 
+def test_the_notice_capability_only_reaches_the_hello_after_the_api_lists_it() -> None:
+    capabilities = [CAPABILITY, EXTENDED_CAPABILITY, NOTICE_CAPABILITY]
+    # A API que já lista `tv.livre.v2` mas não o aviso: o `hello` não o declara.
+    assert declarable_capabilities(
+        capabilities, lambda feature: feature == EXTENDED_CAPABILITY
+    ) == (CAPABILITY, EXTENDED_CAPABILITY)
+    assert declarable_capabilities(capabilities, lambda _: True) == tuple(capabilities)
+
+
 def tcl_without_package() -> FakeAndroid:
     android = FakeAndroid()
     android.manufacturer, android.brand = "TCL", "TCL"
@@ -390,6 +402,65 @@ async def test_a_restored_tcl_package_keeps_the_result_ok(tmp_path: Path) -> Non
     result = await handler(command({"action": "install"}))
 
     assert result.status is ResultStatus.OK
+    # Sem a capacidade `tv.livre.notice.v1` o contrato fechado da API anterior recusaria o campo.
+    assert result.notice == ""
+
+
+async def test_the_notice_is_not_sent_to_an_api_with_tv_livre_v2_but_without_the_notice(
+    tmp_path: Path,
+) -> None:
+    # A API em produção lista `tv.livre.v2` e tem o resultado fechado sem `notice`: mandá-lo faria
+    # a API recusar o frame e o pedido terminar em tempo esgotado.
+    android = FakeAndroid()
+    android.manufacturer, android.brand = "TCL", "TCL"
+    android.tcl_tv_installed = False
+    handler, _, _, _ = build(tmp_path, android, extended=True, notice=False)
+
+    result = await handler(command({"action": "install"}))
+
+    assert result.status is ResultStatus.OK
+    assert result.notice == ""
+    assert result.detail == ""
+
+
+async def test_a_restored_tcl_package_notice_travels_in_the_ok_result_when_the_api_lists_it(
+    tmp_path: Path,
+) -> None:
+    android = FakeAndroid()
+    android.manufacturer, android.brand = "TCL", "TCL"
+    android.tcl_tv_installed = False
+    handler, _, _, _ = build(tmp_path, android, extended=True, notice=True)
+
+    result = await handler(command({"action": "install"}))
+
+    assert result.status is ResultStatus.OK
+    assert result.code == ""
+    assert "com.tcl.tv" in result.notice
+    assert result.detail == ""
+
+
+async def test_an_ok_result_without_a_tcl_notice_has_no_notice_when_the_api_lists_it(
+    tmp_path: Path,
+) -> None:
+    handler, _, _, _ = build(tmp_path, FakeAndroid(), extended=True, notice=True)
+
+    result = await handler(command({"action": "install"}))
+
+    assert result.status is ResultStatus.OK
+    assert result.notice == ""
+
+
+async def test_a_failed_tcl_restore_keeps_the_error_message_when_the_api_lists_it(
+    tmp_path: Path,
+) -> None:
+    handler, _, _, _ = build(tmp_path, tcl_without_package(), extended=True, notice=True)
+
+    result = await handler(command({"action": "install"}))
+
+    assert result.status is ResultStatus.FAILED
+    assert result.code == livre_module.TCL_PACKAGE_MISSING
+    assert "com.tcl.tv" in result.detail
+    assert result.notice == ""
 
 
 async def test_sleep_auto_install_failure_keeps_the_tcl_notice_with_the_error(
