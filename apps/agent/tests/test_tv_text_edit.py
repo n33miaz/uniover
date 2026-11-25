@@ -315,8 +315,8 @@ async def test_deletions_are_capped_per_message() -> None:
     clock = FakeClock()
     remote = FakeTvRemote()
     editor = TextReconciler(TvSessionManager(clock, remote), monotonic=clock.monotonic)
-    editor._last = "x" * (MAX_DELETIONS + 50)
-    editor._last_at = clock.monotonic()
+    editor._f.last = "x" * (MAX_DELETIONS + 50)
+    editor._f.last_at = clock.monotonic()
     await editor.set_text("")
     assert remote.keys.count("DEL") == MAX_DELETIONS
 
