@@ -174,20 +174,22 @@ public sealed class PcRtcTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task ScreenWithAVpnRangeConfiguredIsRefusedWhenTheClientAddressIsUnknown()
+    public async Task ScreenDoesNotJudgeTheClientNetworkEvenWithANetworkListInTheConfiguration()
     {
-        // O servidor de teste não informa o endereço de quem conectou; com a lista definida isso não passa (sem a lista passa, como nos demais testes).
-        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PcScreen = true, PcScreenNetworks = ["100.64.0.0/10"] });
+        // Atrás da borda a API só vê o IP público de quem chega (de casa ou da VPN): ela não decide por rede. Quem confere a
+        // rede é o agente, pelo par ICE que de fato conectou. Uma lista de faixas esquecida no ambiente não pode recusar a tela.
+        var extra = new Dictionary<string, string?> { ["Modules:Devices:PcScreen:AllowedNetworks:0"] = "100.64.0.0/10" };
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions { PcScreen = true, ExtraSettings = extra });
         await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
         var (parent, _) = await OpenAsync(app, agent);
         var parentId = parent.GetProperty("sessionId").GetGuid();
 
-        using var response = await PostAsync(app, "offer", new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId });
+        var posting = PostAsync(app, "offer", new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId });
+        await AnswerOfferAsync(agent);
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        await ExpectStillOpenAsync(app, agent, parentId);
-        await using var db = app.App.Db();
-        (await db.PairingAudit.CountAsync(a => a.Event.StartsWith("pc_screen"), Ct)).Should().Be(0);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await DevicesApp.JsonAsync(response)).GetProperty("scopes").EnumerateArray().Select(scope => scope.GetString()).Should().Equal("screen");
     }
 
     [Fact]

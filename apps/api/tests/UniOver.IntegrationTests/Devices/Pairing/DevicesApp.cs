@@ -41,8 +41,8 @@ internal sealed record DevicesAppOptions
     /// <summary>Liga a flag da tela do PC (<c>Modules:Devices:PcScreen:Enabled</c>); desligada por padrão, como em produção.</summary>
     public bool PcScreen { get; init; }
 
-    /// <summary>Redes extras de onde a tela do PC aceita a oferta (<c>Modules:Devices:PcScreen:AllowedNetworks</c>); sem elas a chave nem existe.</summary>
-    public string[]? PcScreenNetworks { get; init; }
+    /// <summary>Chaves de configuração a mais, aplicadas por último (para conferir que uma chave não tem efeito, por exemplo).</summary>
+    public IReadOnlyDictionary<string, string?>? ExtraSettings { get; init; }
 
     public int? TokenCacheSeconds { get; init; }
 
@@ -160,11 +160,6 @@ internal sealed class DevicesApp : IAsyncDisposable
             settings["Modules:Devices:PcScreen:Enabled"] = "true";
         }
 
-        for (var i = 0; i < (options.PcScreenNetworks?.Length ?? 0); i++)
-        {
-            settings[$"Modules:Devices:PcScreen:AllowedNetworks:{i}"] = options.PcScreenNetworks![i];
-        }
-
         if (options.RequireStepUp is { } require)
         {
             settings["Modules:Devices:Pairing:RequireStepUp"] = require ? "true" : "false";
@@ -188,6 +183,11 @@ internal sealed class DevicesApp : IAsyncDisposable
         if (options.TokenCacheSeconds is { } cache)
         {
             settings["Modules:Devices:TokenCacheSeconds"] = cache.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        foreach (var (key, value) in options.ExtraSettings ?? new Dictionary<string, string?>())
+        {
+            settings[key] = value;
         }
 
         var root = new EdgeFactory(options.Environment, settings);
