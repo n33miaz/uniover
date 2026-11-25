@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using UniOver.BuildingBlocks.Web;
 using UniOver.BuildingBlocks.Messaging;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Contracts;
 using UniOver.SharedKernel;
 using UniOver.Modules.Identity.Contracts;
@@ -52,7 +53,8 @@ internal sealed record TvAppsResponse(IReadOnlyList<TvAppOption> Items);
 /// </summary>
 internal sealed class ManageTvsHandler(
     TvDbContext db, IAgentDirectory agents, IAgentPresenceReader presence, TimeProvider time, ITvCommandAudit audit,
-    ITvCleanupSettingsPublisher cleanupPublisher, IEventBus? events = null, IAccountRoleDirectory? roles = null)
+    ITvCleanupSettingsPublisher cleanupPublisher, IEventBus? events = null, IAccountRoleDirectory? roles = null,
+    TvLinkWatcher? watcher = null)
 {
     public async Task<TvListResponse> ListAsync(IReadOnlyList<TvTarget> visible, bool isOwner, CancellationToken cancellationToken)
     {
@@ -202,6 +204,8 @@ internal sealed class ManageTvsHandler(
 
         if (agentChanged)
         {
+            watcher?.Release(tv.Id, previousSlug);
+
             // O computador antigo para o que tinha agendado nesta TV; o novo recebe as preferências dela.
             await PublishUnboundAsync(previousSlug, cancellationToken);
         }

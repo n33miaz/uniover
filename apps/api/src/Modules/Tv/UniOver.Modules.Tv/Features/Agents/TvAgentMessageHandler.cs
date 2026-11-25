@@ -270,8 +270,7 @@ internal sealed partial class TvAgentMessageHandler(
         state.NoteOnline(message.AgentId, true);
         state.Apply(message.AgentId, snapshot);
         var view = TvState.From(snapshot, agentOnline: true);
-        stream.PublishState(tvId, view);
-        watcher.Track(tvId, message.AgentId, view);
+        watcher.Publish(tvId, message.AgentId, view);
         persister.Observe(message.AgentId, snapshot);
     }
 

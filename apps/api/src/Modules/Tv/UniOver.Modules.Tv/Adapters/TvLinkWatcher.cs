@@ -32,43 +32,84 @@ internal sealed class TvLinkWatcher(
 
         lock (_gate)
         {
-            _watched[agentSlug] = new Watched(tvId, published.Link?.State);
+            Note(tvId, agentSlug, published);
         }
+    }
+
+    /// <summary>
+    /// Publica o estado de um relato ou de uma leitura e anota o elo na mesma região crítica da vigia: a ordem de publicação
+    /// e a linha de base concordam, e uma passada que capturou o elo antes deste relato não o sobrescreve depois.
+    /// </summary>
+    public void Publish(Guid tvId, string? agentSlug, TvState view)
+    {
+        lock (_gate)
+        {
+            stream.PublishState(tvId, view);
+            if (!string.IsNullOrWhiteSpace(agentSlug))
+            {
+                Note(tvId, agentSlug, view);
+            }
+        }
+    }
+
+    /// <summary>Para de vigiar o agente que deixou a TV (religada a outro): o elo dele não vai mais ao fluxo dela.</summary>
+    public void Release(Guid tvId, string? agentSlug)
+    {
+        if (string.IsNullOrWhiteSpace(agentSlug))
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (_watched.TryGetValue(agentSlug, out var watched) && watched.TvId == tvId)
+            {
+                _watched.Remove(agentSlug);
+            }
+        }
+    }
+
+    // Chamar com _gate. Uma TV tem um agente só: qualquer outro que a vigiava saiu dela.
+    private void Note(Guid tvId, string agentSlug, TvState view)
+    {
+        foreach (var other in _watched.Where(w => w.Value.TvId == tvId && w.Key != agentSlug).Select(w => w.Key).ToArray())
+        {
+            _watched.Remove(other);
+        }
+
+        _watched[agentSlug] = new Watched(tvId, view.Link?.State);
     }
 
     /// <summary>Uma passada: recalcula o elo de cada TV vigiada e publica as que mudaram.</summary>
     public void Check()
     {
-        KeyValuePair<string, Watched>[] snapshot;
+        string[] agents;
         lock (_gate)
         {
-            snapshot = [.. _watched];
+            agents = [.. _watched.Keys];
         }
 
-        foreach (var (agentId, watched) in snapshot)
+        foreach (var agentId in agents)
         {
-            var online = presence.IsOnline(agentId);
-            var view = TvState.From(
-                state.Last(agentId), online, offlineSince: presence.OfflineSince(agentId),
-                reportFresh: presence.HasRecentReport(agentId, options.Value.LinkStale));
-            if (string.Equals(view.Link?.State, watched.LinkState, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
+            // Visão, comparação, publicação e anotação juntas sob a trava: um relato que chegar no meio espera e vence depois.
             lock (_gate)
             {
-                // Outro caminho (relato, presença) pode ter publicado e anotado o elo entre a cópia e agora.
-                if (!_watched.TryGetValue(agentId, out var current)
-                    || !string.Equals(current.LinkState, watched.LinkState, StringComparison.Ordinal))
+                if (!_watched.TryGetValue(agentId, out var watched))
                 {
                     continue;
                 }
 
-                _watched[agentId] = current with { LinkState = view.Link?.State };
-            }
+                var view = TvState.From(
+                    state.Last(agentId), presence.IsOnline(agentId), offlineSince: presence.OfflineSince(agentId),
+                    reportFresh: presence.HasRecentReport(agentId, options.Value.LinkStale));
+                if (string.Equals(view.Link?.State, watched.LinkState, StringComparison.Ordinal))
+                {
+                    continue;
+                }
 
-            stream.PublishState(watched.TvId, view);
+                _watched[agentId] = watched with { LinkState = view.Link?.State };
+                stream.PublishState(watched.TvId, view);
+            }
         }
     }
 
