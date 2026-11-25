@@ -66,7 +66,8 @@ def test_a_new_session_keeps_the_base_the_doubt_and_the_erase_range() -> None:
     assert (state.doubt_counter, state.doubt_owns_field) == (7, True)
     assert state.erase is not None
     assert state.erase_sequence == 3
-    assert state.field_sequence == (7, 3)
+    # O contador de IME recomeça na reconexão: a sequência salva não vale na sessão nova.
+    assert state.field_sequence is None
 
 
 def test_an_app_change_drops_the_doubt_and_the_sequence() -> None:
@@ -137,7 +138,14 @@ def test_clearing_the_doubt_clears_the_whole_erase_record() -> None:
 def test_every_boundary_is_classified() -> None:
     """Nenhum limite deixa passar um membro sem decisão: o que muda é o que a tabela diz."""
     table = {
-        "end_session": {"field_counter", "pending_field", "echo", "owns_field", "erase_report"},
+        "end_session": {
+            "field_counter",
+            "pending_field",
+            "echo",
+            "owns_field",
+            "erase_report",
+            "field_sequence",
+        },
         "end_edit_focus": {
             "last",
             "last_at",

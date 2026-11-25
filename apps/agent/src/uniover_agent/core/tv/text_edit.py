@@ -329,6 +329,10 @@ class _FieldState:
         self.echo = None
         self.owns_field = False
         self.erase_report = None  # de antes da sessão nova: não é mais fresco
+        # O contador de IME recomeça em 0 na reconexão: a sequência salva só vale dentro da mesma
+        # sessão. Mantê-la reprovaria no frescor um relato legítimo do mesmo campo. Zerá-la é
+        # conservador: sem sequência, valem só as demais checagens (nunca apaga a mais).
+        self.field_sequence = None
 
     def end_focus(self, *, recovering: bool) -> None:
         if recovering:

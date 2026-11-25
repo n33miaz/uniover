@@ -873,9 +873,6 @@ async def test_losing_buffered_ime_does_not_claim_or_repeat_unconfirmed_text(
         assert caught.value.may_have_sent
         assert library.protocol is not before
         assert library.protocol.sent_text() == []
-        library.protocol.report("éá")  # contador repetido do relato de antes da queda
-        with pytest.raises(TvSessionError):
-            await editor.set_text("éá")
         library.protocol.report("dono", sequence=3)
         with pytest.raises(TvSessionError):
             await editor.set_text("éá")
@@ -883,6 +880,22 @@ async def test_losing_buffered_ime_does_not_claim_or_repeat_unconfirmed_text(
         library.protocol.report("é" if first_echo else "", sequence=4)
         await editor.set_text("éá")
         assert library.protocol.sent_text() == (["á"] if first_echo else ["éá"])
+
+
+async def test_a_reset_ime_counter_after_a_reconnect_still_confirms_the_same_field(
+    tmp_path: Path,
+) -> None:
+    async with _buffered_ime(tmp_path) as (editor, manager, library):
+        before = library.protocol
+        await editor.set_text("éá")
+        before.report("é", sequence=30)  # sequência alta, da sessão que vai cair
+        before.buffer.abort()
+        await manager.wake()
+        assert library.protocol is not before
+        # Mesmo contador de campo, contador de IME reiniciado e menor que o salvo.
+        library.protocol.report("éá", sequence=2)
+        await editor.set_text("éá")
+        assert library.protocol.sent_text() == []
 
 
 async def test_full_field_echo_confirms_buffered_ime_before_a_drop(tmp_path: Path) -> None:
