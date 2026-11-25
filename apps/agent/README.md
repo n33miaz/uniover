@@ -368,6 +368,12 @@ qualquer falha ao abrir, queda ou parada do canal devolve tudo a ela, sem que o 
   `.local` são descartados, e o endereço de onde o app de fato chega é conferido); o que o agente oferece são só os IPv4
   privados e IPv6 ULA de interfaces físicas, sem o IPv6 global (o endereço público do PC), VPN, WSL, Hyper-V, Docker nem
   máquinas virtuais.
+- **Tela do PC (`pc.screen.v1`): só na rede de casa, sem VPN.** O caminho de rede exigido é o celular e o PC na mesma rede
+  local, como no controle direto. A tela abre sobre um controle direto já aberto e autenticado pelo mesmo aparelho, e esse
+  controle só existe na rede de casa; o processo da tela confere, além disso, o par ICE que de fato conectou e derruba
+  qualquer um fora da rede local (inclusive a faixa CGNAT `100.64.0.0/10`, a do Tailscale). A API não decide por rede: atrás
+  da borda (Render/Cloudflare) ela só vê o IP público de quem chega, de casa ou da VPN, e cabeçalho encaminhado não é prova de
+  rede. Por isso não existe chave de faixa de VPN para a tela; quem confere a rede é o agente.
 - **Firewall (para o dono).** O instalador não muda nada no Firewall. O pacote UDP do celular chega de fora para dentro, então
   na PRIMEIRA vez o Windows pode perguntar se o `python.exe` pode receber conexões: marque "Redes privadas" (a de casa). Com a
   rede de casa marcada como Pública e sem essa regra, ou em Wi-Fi com isolamento de clientes, ou em 5G, o canal não abre e o app

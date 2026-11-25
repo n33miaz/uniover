@@ -130,6 +130,18 @@ async def test_rejects_non_lan_expired_and_wrong_token() -> None:
         assert channel.sent == []
 
 
+@pytest.mark.parametrize("address", ["100.64.0.5", "100.100.1.1", "100.127.255.254"])
+async def test_a_screen_peer_from_the_vpn_range_is_closed_before_any_frame(address: str) -> None:
+    # A tela é só da rede de casa: a faixa CGNAT (a do Tailscale, por exemplo) não conta, mesmo
+    # com o bilhete certo. A tela também depende do controle direto aberto no mesmo aparelho,
+    # que é só da rede de casa.
+    measure, channel = session(address)
+    channel.message(k="auth", token="bilhete-de-teste")
+    assert measure.closed.is_set()
+    assert not measure.authorized
+    assert channel.sent == []
+
+
 def test_jpeg_contains_all_marker_bits_at_requested_width() -> None:
     value = 0xB739
     with Image.new("RGB", (512, 288), "#887799") as image:
