@@ -11,7 +11,7 @@ namespace UniOver.Modules.Tv.Adapters;
 /// TV já escolhida pela regra de visibilidade da requisição.
 /// </summary>
 internal sealed class TvStateProvider(
-    ITvCurrentSelection selection, ITvStateStore state, ITvAgentPresence presence, ITvStreamPublisher stream,
+    ITvCurrentSelection selection, ITvStateStore state, ITvAgentPresence presence,
     IOptions<TvModuleOptions> options, TvLinkWatcher watcher)
 {
     public async ValueTask<TvState> CurrentAsync(CancellationToken cancellationToken)
@@ -32,7 +32,8 @@ internal sealed class TvStateProvider(
         // (um comando que falhar depois já a encontraria anotada e não avisaria de novo).
         if (state.NoteOnline(agentId, online))
         {
-            stream.PublishState(target.Id, view);
+            // Pela vigia: publicação e linha de base na mesma região crítica, para a próxima passada comparar com o que o fluxo mostra.
+            watcher.Publish(target.Id, agentId, view);
         }
 
         // O elo também muda só com o tempo: a vigia passa a conhecer esta TV e o elo que a tela acabou de ver.
