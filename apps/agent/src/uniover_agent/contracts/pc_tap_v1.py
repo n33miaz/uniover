@@ -33,6 +33,7 @@ class PcTapV1Body(BaseModel):
         extra='forbid',
     )
     m: Annotated[int, Field(ge=0, le=63)]
+    l: Annotated[int, Field(ge=0, le=4294967295)]
     u: Annotated[int, Field(ge=0, le=65535)]
     v: Annotated[int, Field(ge=0, le=65535)]
     w: Annotated[int, Field(ge=1, le=32767)]

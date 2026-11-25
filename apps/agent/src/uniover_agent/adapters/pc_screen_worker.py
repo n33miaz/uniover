@@ -26,6 +26,7 @@ from uniover_agent.adapters.pc_screen_monitors import Monitor, list_monitors
 from uniover_agent.adapters.pc_screen_presence import screen_indicator
 from uniover_agent.adapters.pc_screen_probes import STATE_LOCKED, STATE_OK, read_cursor, read_state
 from uniover_agent.adapters.pc_windows import USER_DESKTOP
+from uniover_agent.core.pc.absolute import layout_print
 from uniover_agent.ports.pc_direct import SCREEN_MAX_LIFETIME_SECONDS
 
 CHUNK_BYTES = 16 * 1024
@@ -417,6 +418,9 @@ class ScreenSession:
                     {"id": m.id, "width": m.width, "height": m.height, "primary": m.primary}
                     for m in self.monitors
                 ],
+                # A impressão do arranjo, que o toque na imagem devolve (`l`): o agente confere na
+                # hora do toque que os monitores ainda são estes.
+                "layout": layout_print(self.monitors),
             }
         )
 

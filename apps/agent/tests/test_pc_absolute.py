@@ -30,6 +30,7 @@ from uniover_agent.core.pc.absolute import (
     AbsoluteTarget,
     LayoutChanged,
     MonitorArea,
+    layout_print,
     locate,
     normalized,
     physical_point,
@@ -76,8 +77,10 @@ def windows_rounding(n: int, origin: int, size: int) -> int:
     return origin + _round_half_up(n * (size - 1), NORMALIZED_MAX)
 
 
-def target_for(monitor: MonitorArea, u: int, v: int) -> AbsoluteTarget:
-    return AbsoluteTarget(monitor.id, u, v, monitor.width, monitor.height)
+def target_for(
+    monitors: Sequence[MonitorArea], monitor: MonitorArea, u: int, v: int
+) -> AbsoluteTarget:
+    return AbsoluteTarget(monitor.id, u, v, monitor.width, monitor.height, layout_print(monitors))
 
 
 @pytest.mark.parametrize("name", sorted(LAYOUTS))
@@ -89,7 +92,7 @@ def test_every_point_lands_within_one_physical_pixel_under_both_windows_rounding
     for monitor in monitors:
         for u in RELATIVE_POINTS:
             for v in RELATIVE_POINTS:
-                target = target_for(monitor, u, v)
+                target = target_for(monitors, monitor, u, v)
                 (x, y), (nx, ny) = locate(monitors, target)
                 # O pixel pedido: a mesma fração do monitor, nas bordas exatamente o primeiro e o
                 # último pixel dele.
@@ -106,8 +109,11 @@ def test_every_point_lands_within_one_physical_pixel_under_both_windows_rounding
 def test_the_corners_of_each_monitor_are_its_first_and_last_pixels() -> None:
     monitors = LAYOUTS["origem_negativa"]
     second = monitors[1]
-    assert physical_point(monitors, target_for(second, 0, 0)) == (-2560, -360)
-    assert physical_point(monitors, target_for(second, RELATIVE_MAX, RELATIVE_MAX)) == (-1, 1079)
+    assert physical_point(monitors, target_for(monitors, second, 0, 0)) == (-2560, -360)
+    assert physical_point(monitors, target_for(monitors, second, RELATIVE_MAX, RELATIVE_MAX)) == (
+        -1,
+        1079,
+    )
     # O canto de cima à esquerda do desktop virtual é o 0 absoluto; o de baixo à direita, o máximo.
     assert normalized(-2560, -360, virtual_desk(monitors)) == (0, 0)
     assert normalized(1919, 1079, virtual_desk(monitors)) == (NORMALIZED_MAX, NORMALIZED_MAX)
@@ -116,13 +122,39 @@ def test_the_corners_of_each_monitor_are_its_first_and_last_pixels() -> None:
 def test_a_gone_or_resized_monitor_is_a_stale_layout_and_nothing_is_guessed() -> None:
     monitors = LAYOUTS["lado_a_lado"]
     with pytest.raises(LayoutChanged) as gone:
-        physical_point(monitors, AbsoluteTarget(2, 0, 0, 1920, 1080))
+        physical_point(monitors, AbsoluteTarget(2, 0, 0, 1920, 1080, layout_print(monitors)))
     assert gone.value.cause == STALE_LAYOUT
     # A resolução do segundo mudou depois do `s.mon` que o app usou.
     with pytest.raises(LayoutChanged):
-        physical_point(monitors, AbsoluteTarget(1, 0, 0, 1920, 1080))
+        physical_point(monitors, AbsoluteTarget(1, 0, 0, 1920, 1080, layout_print(monitors)))
     with pytest.raises(LayoutChanged):
-        locate([], AbsoluteTarget(0, 0, 0, 1920, 1080))
+        locate([], AbsoluteTarget(0, 0, 0, 1920, 1080, layout_print([])))
+
+
+def test_twin_monitors_renumbered_after_one_is_turned_off_are_a_stale_layout() -> None:
+    """Dois 1920x1080: o app viu o da esquerda como 0. Desligado esse, o outro vira o 0 (e o
+    principal, em 0,0) com o mesmo tamanho; número e tamanho batem, mas o toque cairia no monitor
+    errado. A impressão do arranjo denuncia a troca."""
+    before = [MonitorArea(0, 0, 0, 1920, 1080), MonitorArea(1, 1920, 0, 1920, 1080)]
+    after = [MonitorArea(0, 0, 0, 1920, 1080)]
+    seen = AbsoluteTarget(0, 32768, 32768, 1920, 1080, layout_print(before))
+    assert physical_point(before, seen) == (960, 540)
+    with pytest.raises(LayoutChanged) as stale:
+        physical_point(after, seen)
+    assert stale.value.cause == STALE_LAYOUT
+    # O mesmo vale para um monitor só movido (a impressão inclui a posição) e para outra ordem.
+    moved = [MonitorArea(0, 0, 0, 1920, 1080), MonitorArea(1, 0, 1080, 1920, 1080)]
+    assert len({layout_print(before), layout_print(after), layout_print(moved)}) == 3
+    assert layout_print(before) != layout_print(list(reversed(before)))
+
+
+def test_the_layout_print_is_a_32_bit_value_stable_across_reads() -> None:
+    first = layout_print(LAYOUTS["origem_negativa"])
+    again = [
+        MonitorArea(m.id, m.left, m.top, m.width, m.height) for m in LAYOUTS["origem_negativa"]
+    ]
+    assert first == layout_print(again)
+    assert 0 <= first <= 0xFFFF_FFFF
 
 
 @dataclass(frozen=True)
@@ -163,7 +195,7 @@ def test_the_layout_is_read_in_physical_pixels_and_the_thread_mode_is_restored()
     # Lido sem o modo por monitor, o tamanho não bate com o `s.mon` (físico): recusa, não erra.
     logical = [MonitorArea(m.id, m.left, m.top, m.width, m.height) for m in DpiThread.LOGICAL]
     with pytest.raises(LayoutChanged):
-        physical_point(logical, AbsoluteTarget(1, 32768, 32768, 2560, 1440))
+        physical_point(logical, AbsoluteTarget(1, 32768, 32768, 2560, 1440, layout_print(logical)))
 
 
 def test_logical_rectangles_would_miss_the_target_by_far_more_than_two_pixels() -> None:
@@ -172,8 +204,8 @@ def test_logical_rectangles_would_miss_the_target_by_far_more_than_two_pixels() 
     physical = [MonitorArea(m.id, m.left, m.top, m.width, m.height) for m in DpiThread.PHYSICAL]
     logical = [MonitorArea(m.id, m.left, m.top, m.width, m.height) for m in DpiThread.LOGICAL]
     u = v = 49151
-    (x, y), _ = locate(physical, AbsoluteTarget(1, u, v, 2560, 1440))
-    (lx, ly), (nx, ny) = locate(logical, AbsoluteTarget(1, u, v, 1707, 960))
+    (x, y), _ = locate(physical, AbsoluteTarget(1, u, v, 2560, 1440, layout_print(physical)))
+    (lx, ly), (nx, ny) = locate(logical, AbsoluteTarget(1, u, v, 1707, 960, layout_print(logical)))
     # A posição absoluta calculada no desktop lógico, aplicada pelo Windows ao desktop físico.
     left, top, width, height = virtual_desk(physical)
     landed = (windows_rounding(nx, left, width), windows_rounding(ny, top, height))
@@ -195,13 +227,16 @@ def test_a_thread_that_cannot_change_mode_is_left_as_it_was() -> None:
 @pytest.mark.parametrize(
     "body",
     [
-        {"m": True, "u": 0, "v": 0, "w": 10, "h": 10},
-        {"m": 0, "u": -1, "v": 0, "w": 10, "h": 10},
-        {"m": 0, "u": 0, "v": 65536, "w": 10, "h": 10},
-        {"m": 0, "u": 0.5, "v": 0, "w": 10, "h": 10},
-        {"m": 0, "u": 0, "v": 0, "w": 0, "h": 10},
-        {"m": 64, "u": 0, "v": 0, "w": 10, "h": 10},
-        {"m": 0, "u": 0, "v": 0, "w": 10},
+        {"m": True, "l": 0, "u": 0, "v": 0, "w": 10, "h": 10},
+        {"m": 0, "l": 0, "u": -1, "v": 0, "w": 10, "h": 10},
+        {"m": 0, "l": 0, "u": 0, "v": 65536, "w": 10, "h": 10},
+        {"m": 0, "l": 0, "u": 0.5, "v": 0, "w": 10, "h": 10},
+        {"m": 0, "l": 0, "u": 0, "v": 0, "w": 0, "h": 10},
+        {"m": 64, "l": 0, "u": 0, "v": 0, "w": 10, "h": 10},
+        {"m": 0, "l": 0, "u": 0, "v": 0, "w": 10},
+        {"m": 0, "u": 0, "v": 0, "w": 10, "h": 10},
+        {"m": 0, "l": -1, "u": 0, "v": 0, "w": 10, "h": 10},
+        {"m": 0, "l": 2**32, "u": 0, "v": 0, "w": 10, "h": 10},
     ],
 )
 def test_the_adapter_rejects_positions_outside_the_contract(body: dict[str, object]) -> None:
@@ -218,7 +253,7 @@ def test_the_absolute_move_carries_both_flags_and_never_leaves_the_scale() -> No
 SIDE = LAYOUTS["lado_a_lado"]
 LEFT_DOWN = RawInput("mouse", MOUSE_LEFTDOWN)
 LEFT_UP = RawInput("mouse", MOUSE_LEFTUP)
-MIDDLE_OF_SECOND = AbsoluteTarget(1, 32768, 32768, 2560, 1440)
+MIDDLE_OF_SECOND = AbsoluteTarget(1, 32768, 32768, 2560, 1440, layout_print(SIDE))
 
 
 def _abs_event(target: AbsoluteTarget, monitors: Sequence[MonitorArea] = SIDE) -> RawInput:
@@ -257,7 +292,7 @@ def test_a_tap_moves_and_clicks_in_a_single_batch() -> None:
 def test_a_drag_across_monitors_puts_down_moves_and_lets_go() -> None:
     timers = Timers()
     pc, sent = make(timers=timers)
-    start = AbsoluteTarget(0, 1000, 1000, 1920, 1080)
+    start = AbsoluteTarget(0, 1000, 1000, 1920, 1080, layout_print(SIDE))
     pc.tap(start, "LEFT", "DOWN")
     assert timers.live(), "botão apertado: a soltura automática fica armada"
     pc.move_to(MIDDLE_OF_SECOND)
@@ -312,7 +347,7 @@ def test_the_up_lets_go_even_when_the_monitors_cannot_be_read() -> None:
 def test_a_tap_on_a_stale_layout_sends_nothing() -> None:
     pc, sent = make()
     with pytest.raises(LayoutChanged):
-        pc.tap(AbsoluteTarget(1, 0, 0, 1920, 1080), "LEFT", "CLICK")
+        pc.tap(AbsoluteTarget(1, 0, 0, 1920, 1080, layout_print(SIDE)), "LEFT", "CLICK")
     assert sent.batches == []
 
 

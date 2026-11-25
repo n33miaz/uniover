@@ -27,6 +27,7 @@ from uniover_agent.adapters.pc_screen_worker import (
     capture_frame,
     encode_frame,
 )
+from uniover_agent.core.pc.absolute import layout_print
 from uniover_agent.ports.pc_direct import SCREEN_MAX_LIFETIME_SECONDS
 
 WORKER = "uniover_agent.adapters.pc_screen_worker"
@@ -92,7 +93,7 @@ async def test_auth_then_frame_with_marker_and_metrics() -> None:
         channel.message(k="s.get", width=1280, fps=8, marker=42, reset=True)
         await asyncio.wait_for(channel.complete.wait(), timeout=1)
         monitor, stats, first, second = channel.sent
-        assert json.loads(monitor) == {"k": "s.mon", "monitors": []}
+        assert json.loads(monitor) == {"k": "s.mon", "monitors": [], "layout": layout_print([])}
         assert json.loads(stats)["bytes"] == FRAME_HEADER.size + CHUNK_BYTES + 1
         assert json.loads(stats)["privateMB"] == 40
         assert isinstance(first, bytes) and isinstance(second, bytes)
@@ -341,6 +342,7 @@ async def test_unchanged_screen_answers_s_same_and_cursor_is_throttled() -> None
     assert texts[0] == {
         "k": "s.mon",
         "monitors": [{"id": 0, "width": 1920, "height": 1080, "primary": True}],
+        "layout": layout_print([PRIMARY]),
     }
     assert {"k": "s.same", "crc": 9} in texts
     cursors = [item for item in texts if item["k"] == "s.cur"]
@@ -464,6 +466,7 @@ async def test_s_mon_lists_every_monitor_and_requests_pick_one_by_id() -> None:
             {"id": 1, "width": 1280, "height": 1024, "primary": False},
             {"id": 0, "width": 1920, "height": 1080, "primary": True},
         ],
+        "layout": layout_print([LEFT, PRIMARY]),
     }
     # Sem monitor pedido a captura fica no caminho do principal (sem área).
     assert areas == [None, (-1280, -200, 0, 824), (0, 0, 1920, 1080)]
@@ -499,6 +502,11 @@ async def test_monitor_layout_is_reread_and_announced_when_it_changes(
     texts = [json.loads(m) for m in channel.sent if isinstance(m, str)]
     announced = [m for m in texts if m.get("k") == "s.mon"]
     assert [a["monitors"][0]["width"] for a in announced] == [1920, 2560]
+    # O arranjo novo tem outra impressão: o toque com a antiga é recusado como `stale_layout`.
+    assert [a["layout"] for a in announced] == [
+        layout_print([PRIMARY]),
+        layout_print([Monitor(0, 0, 0, 2560, 1440, True)]),
+    ]
     assert areas[0] == (0, 0, 1920, 1080)
     assert areas[-1] == (0, 0, 2560, 1440)
 

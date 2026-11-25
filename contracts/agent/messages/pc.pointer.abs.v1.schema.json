@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://uniover.dev/contracts/agent/messages/pc.pointer.abs.v1.schema.json",
   "title": "pc.pointer.abs.v1",
-  "description": "API para agente: posição absoluta do ponteiro sobre a imagem da tela do PC (o dedo arrastando depois de um `pc.tap.v1` com `DOWN`). `m` é o monitor como a tela ao vivo o anunciou em `s.mon` (o `id`), e `w` e `h` são a largura e a altura dele em pixels físicos nesse mesmo anúncio. `u` e `v` (0 a 65535) são a posição relativa dentro do monitor: 0 é a borda esquerda (ou de cima) e 65535 o último pixel da direita (ou de baixo). O agente lê os monitores de novo no momento do envio, em pixels físicos e ciente do DPI de cada monitor, e leva o ponteiro ao pixel pela posição absoluta do desktop virtual (o resultado não depende da escala do Windows nem da aceleração do mouse). Se o monitor `m` não existe mais ou mudou de tamanho, a recusa é `stale_layout` e o app espera o próximo `s.mon`. `seq` (1 a 2147483647) cresce a cada posição; no canal do ponteiro, que não é ordenado nem retransmite, a que chega depois de uma mais nova é descartada (uma posição absoluta perdida não acumula erro: a seguinte a corrige). Sem resposta. Só existe no canal direto (WebRTC) de controle do PC já autenticado, de um aparelho aprovado, e só enquanto a tela ao vivo daquele mesmo canal está aberta (o que exige a flag `pc_screen` da API, o dono e a permissão `pc:screen`); pela nuvem o agente a recusa com `not_allowed`. O agente só a aceita se declarou a capacidade `pc.abs.v1` (depois de a API listá-la em `features`) e a lista no `ready` do canal.",
+  "description": "API para agente: posição absoluta do ponteiro sobre a imagem da tela do PC (o dedo arrastando depois de um `pc.tap.v1` com `DOWN`). `m` é o monitor como a tela ao vivo o anunciou em `s.mon` (o `id`), e `w` e `h` são a largura e a altura dele em pixels físicos nesse mesmo anúncio. `l` é a impressão do arranjo inteiro desse mesmo anúncio (o `layout` do `s.mon`: CRC-32 dos monitores na ordem anunciada, cada um com número, posição e tamanho), o que amarra o toque ao arranjo que o app viu: com dois monitores do mesmo tamanho, desligar o primeiro faz o outro virar o número 0 e só a impressão diferente o denuncia. `u` e `v` (0 a 65535) são a posição relativa dentro do monitor: 0 é a borda esquerda (ou de cima) e 65535 o último pixel da direita (ou de baixo). O agente lê os monitores de novo no momento do envio, em pixels físicos e ciente do DPI de cada monitor, e leva o ponteiro ao pixel pela posição absoluta do desktop virtual (o resultado não depende da escala do Windows nem da aceleração do mouse). Se o arranjo mudou desde aquele anúncio (outra impressão: monitor ligado, desligado, movido ou com outro tamanho) ou o monitor `m` não existe mais ou mudou de tamanho, a recusa é `stale_layout` e o app espera o próximo `s.mon`. `seq` (1 a 2147483647) cresce a cada posição; no canal do ponteiro, que não é ordenado nem retransmite, a que chega depois de uma mais nova é descartada (uma posição absoluta perdida não acumula erro: a seguinte a corrige). Sem resposta. Só existe no canal direto (WebRTC) de controle do PC já autenticado, de um aparelho aprovado, e só enquanto a tela ao vivo daquele mesmo canal está aberta (o que exige a flag `pc_screen` da API, o dono e a permissão `pc:screen`); pela nuvem o agente a recusa com `not_allowed`. O agente só a aceita se declarou a capacidade `pc.abs.v1` (depois de a API listá-la em `features`) e a lista no `ready` do canal.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -58,6 +58,7 @@
       "additionalProperties": false,
       "required": [
         "m",
+        "l",
         "u",
         "v",
         "w",
@@ -69,6 +70,11 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 63
+        },
+        "l": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
         },
         "u": {
           "type": "integer",

@@ -1302,7 +1302,7 @@ describe('PcDirect: what the agent of the channel accepts', () => {
 });
 
 describe('PcDirect touch on the screen image', () => {
-  const TARGET = { m: 1, u: 100, v: 200, w: 1920, h: 1080 };
+  const TARGET = { m: 1, l: 0x1234_abcd, u: 100, v: 200, w: 1920, h: 1080 };
   const LISTED = { caps: ['pc.tap.v1', 'pc.pointer.abs.v1'] };
 
   it('only sends the absolute position to an agent that listed it in the ready', async () => {

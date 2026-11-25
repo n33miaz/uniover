@@ -37,7 +37,9 @@ do ponteiro) só passa com a tela ao vivo aberta e ligada a ESTE canal: a tela s
 API, para o dono com `pc:screen` e de um aparelho aprovado aqui, então o toque herda as mesmas
 regras. Sem ela o toque é recusado (`not_allowed`), exceto o `UP`, que solta o botão sempre. A
 posição absoluta que chega depois de uma mais nova (`s`) é descartada, e o toque aceito leva o maior
-`s` que o app já mandou (`a`): uma posição atrasada nunca move o ponteiro depois do toque.
+`s` que o app já mandou (`a`): uma posição atrasada nunca move o ponteiro depois do toque. E a
+posição só move o ponteiro dentro de um arrasto cujo `DOWN` já executou: ela vai no canal sem ordem
+e pode passar na frente do `DOWN`, que vai no de entrada.
 
 O ponteiro viaja como TOTAL ACUMULADO com número de sequência, num canal sem retransmissão: a
 mensagem perdida não perde caminho (a seguinte traz a soma), a que chega fora de ordem é ignorada.
@@ -422,6 +424,12 @@ class _Session:
     pointer_seq: int = 0
     # O maior `s` de posição absoluta já aplicado (ou coberto por um toque aceito).
     abs_seq: int = 0
+    # O arrasto sobre a imagem: só depois de o `DOWN` do toque EXECUTAR (o canal do ponteiro não é
+    # ordenado e a posição pode passar na frente dele) as posições absolutas movem o ponteiro.
+    # `taps` conta os toques aceitos: a resposta de um `DOWN` que chega depois de outro toque (o
+    # `UP`) não reabre o arrasto.
+    drag_held: bool = False
+    taps: int = 0
     totals: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
     lost_pointers: int = 0
     dropped: int = 0
@@ -787,6 +795,8 @@ class PcDirectService:
         if screen is not None and (session_id is None or screen[0] == session_id):
             self._screen = None
             self._screen_parent = None
+            if self._current is not None:
+                self._current.drag_held = False
             self._remember_closed(screen[0])
             screen[1].stop()
             self._screen_exit = asyncio.create_task(screen[1].wait())
@@ -1121,7 +1131,7 @@ class PcDirectService:
             return False
         return hmac.compare_digest(token.encode("utf-8"), session.token.encode("utf-8"))
 
-    def _on_command(  # noqa: PLR0911, PLR0912 - uma recusa por regra, cada uma com código
+    def _on_command(  # noqa: PLR0911 - uma recusa por regra, cada uma com código
         self, session: _Session, data: dict[str, Any], now: float
     ) -> None:
         command_id = data.get("i")
@@ -1190,14 +1200,12 @@ class PcDirectService:
         for rate, cost in charges:
             rate.charge(now, cost)
         self._accepted(session)
-        if is_tap:
-            # As posições que o app mandou antes deste toque já não valem: o toque leva o ponto.
-            covered = _as_int(data.get("a"))
-            if covered is not None and 0 < covered <= MAX_ABS_SEQ:
-                session.abs_seq = max(session.abs_seq, covered)
+        drag_turn = self._note_tap(session, data, body) if is_tap else 0
 
         def answered(result: CommandResult) -> None:
             ok = result.status.value == "ok"
+            if drag_turn and ok and session.taps == drag_turn and not session.closed:
+                session.drag_held = True
             payload: dict[str, Any] = {"k": "ack", "i": command_id, "ok": ok}
             if not ok:
                 payload["c"] = result.code or result.status.value
@@ -1205,6 +1213,19 @@ class PcDirectService:
 
         # O código do comando do app é a operação dele no registro (nunca o corpo).
         self._submit(replace(accepted.command, operation_id=command_id), answered)
+
+    @staticmethod
+    def _note_tap(session: _Session, data: dict[str, Any], body: dict[str, Any]) -> int:
+        """Registra o toque aceito. Devolve a vez dele se for um `DOWN` (o arrasto abre só quando
+        ele executar e nenhum outro toque tiver vindo depois), senão 0."""
+        # As posições que o app mandou antes deste toque já não valem: o toque leva o ponto.
+        covered = _as_int(data.get("a"))
+        if covered is not None and 0 < covered <= MAX_ABS_SEQ:
+            session.abs_seq = max(session.abs_seq, covered)
+        # Qualquer toque novo encerra o arrasto anterior; o `DOWN` só o abre quando executar.
+        session.drag_held = False
+        session.taps += 1
+        return session.taps if body.get("action") == "DOWN" else 0
 
     def _on_tv_command(  # noqa: PLR0913, PLR0917, PLR0911 - uma recusa por regra, cada uma com código
         self,
@@ -1351,11 +1372,17 @@ class PcDirectService:
         if not session.pointer_rate.allow(now):
             session.dropped += 1  # a próxima posição corrige: absoluta não acumula erro
             return
-        body: dict[str, Any] = {key: data.get(key) for key in ("m", "u", "v", "w", "h")}
+        body: dict[str, Any] = {key: data.get(key) for key in ("m", "l", "u", "v", "w", "h")}
         body["seq"] = seq
         accepted = self._validate(ABS_POINTER_TYPE, body, 0.0)
         if accepted is None:
             self._violation(session)
+            return
+        if not session.drag_held:
+            # Fora de um arrasto, ou antes de o `DOWN` que o abre ter executado: mover o ponteiro
+            # agora o tiraria do ponto onde o botão vai ser apertado. A próxima posição (ou o `UP`,
+            # que leva o ponto) corrige.
+            session.dropped += 1
             return
         session.abs_seq = seq
         self._accepted(session)

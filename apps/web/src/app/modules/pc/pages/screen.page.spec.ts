@@ -40,10 +40,13 @@ class FakeConnection extends EventTarget {
   }
 }
 
+/** A impressão do arranjo que o PC anuncia no `s.mon` e o toque devolve (`l`). */
+const LAYOUT = 0x1234_abcd;
 /** O que o PC manda assim que a sessão autoriza: o tamanho do monitor. */
 const MONITOR = {
   k: 's.mon',
   monitors: [{ id: 7, width: 1920, height: 1080, primary: true }],
+  layout: LAYOUT,
 };
 const TWO_MONITORS = {
   k: 's.mon',
@@ -51,6 +54,7 @@ const TWO_MONITORS = {
     { id: 3, width: 1280, height: 1024, primary: false },
     { id: 7, width: 1920, height: 1080, primary: true },
   ],
+  layout: 0x0bad_cafe,
 };
 
 /** Um quadro no formato do PC (cabeçalho `UOSF` de 16 bytes e 2 bytes de JPEG). */
@@ -572,15 +576,18 @@ describe('Tela do PC (página)', () => {
     /** Dá ao quadro o tamanho de 400 x 225 na tela (o jsdom não mede nada) e devolve o disparo de dedos. */
     function stageOf(root: HTMLElement) {
       const stage = root.querySelector<HTMLElement>('.stage')!;
-      Object.defineProperty(stage, 'clientWidth', { value: 400 });
-      Object.defineProperty(stage, 'clientHeight', { value: 225 });
+      const size = (width: number, height: number) => {
+        Object.defineProperty(stage, 'clientWidth', { value: width, configurable: true });
+        Object.defineProperty(stage, 'clientHeight', { value: height, configurable: true });
+      };
+      size(400, 225);
       stage.getBoundingClientRect = () => ({ left: 10, top: 20 }) as DOMRect;
       const fire = (type: string, x: number, y: number, pointer = 1) => {
         const event = new MouseEvent(type, { clientX: 10 + x, clientY: 20 + y, bubbles: true });
         Object.defineProperty(event, 'pointerId', { value: pointer });
         stage.dispatchEvent(event);
       };
-      return { stage, fire };
+      return { stage, fire, size };
     }
 
     async function touching() {
@@ -605,6 +612,7 @@ describe('Tela do PC (página)', () => {
       expect(direct.command).toHaveBeenCalledOnce();
       expect(direct.command).toHaveBeenCalledWith('pc.tap.v1', {
         m: 7,
+        l: LAYOUT,
         u: 32768,
         v: 32768,
         w: 1920,
@@ -679,6 +687,7 @@ describe('Tela do PC (página)', () => {
       );
       expect(direct.sendAbsolute).toHaveBeenLastCalledWith({
         m: 7,
+        l: LAYOUT,
         u: 32768,
         v: 43690,
         w: 1920,
@@ -703,6 +712,137 @@ describe('Tela do PC (página)', () => {
       );
       vi.advanceTimersByTime(1000);
       expect(direct.command).not.toHaveBeenCalled();
+    });
+
+    it('after switching monitor the old image takes no tap, not even when a late frame of the old monitor arrives', async () => {
+      const kit = setup();
+      kit.touchOn.set(true);
+      kit.action().click();
+      await flush();
+      kit.peer.channel.receive(JSON.stringify(TWO_MONITORS));
+      kit.fixture.detectChanges();
+      kit.peer.channel.receive(jpegFrame(1));
+      await flush();
+      kit.fixture.detectChanges();
+      const { fire } = stageOf(kit.root);
+      // O pedido seguinte (do monitor 7) sai e fica em andamento.
+      vi.advanceTimersByTime(200);
+      expect(kit.requests().at(-1)?.['monitor']).toBe(7);
+      kit.root.querySelectorAll<HTMLButtonElement>('.monitors button')[0].click();
+      kit.fixture.detectChanges();
+      const tap = () => {
+        fire('pointerdown', 200, 112.5);
+        fire('pointerup', 200, 112.5);
+        vi.advanceTimersByTime(400);
+      };
+      // A imagem na tela ainda é a do monitor 7: o toque nela não sai.
+      tap();
+      expect(kit.direct.command).not.toHaveBeenCalled();
+      // Chega o quadro do pedido antigo (monitor 7): continua sem toque.
+      kit.peer.channel.receive(jpegFrame(2));
+      await flush();
+      tap();
+      expect(kit.direct.command).not.toHaveBeenCalled();
+      // O pedido do monitor 3 sai e o quadro dele é pintado: agora o toque vai, com o monitor e o tamanho dele.
+      vi.advanceTimersByTime(0);
+      expect(kit.requests().at(-1)?.['monitor']).toBe(3);
+      kit.peer.channel.receive(jpegFrame(3));
+      await flush();
+      tap();
+      expect(kit.direct.command).toHaveBeenCalledExactlyOnceWith('pc.tap.v1', {
+        m: 3,
+        l: 0x0bad_cafe,
+        u: 32768,
+        v: 32768,
+        w: 1280,
+        h: 1024,
+        button: 'LEFT',
+        action: 'CLICK',
+      });
+    });
+
+    it('a new arrangement with the same monitor number and size takes no tap until its own frame is drawn', async () => {
+      const { fire, direct, peer } = await touching();
+      // Dois monitores iguais, o primeiro desligado: o mesmo número e tamanho, outra impressão.
+      peer.channel.receive(JSON.stringify({ ...MONITOR, layout: LAYOUT + 1 }));
+      fire('pointerdown', 200, 112.5);
+      fire('pointerup', 200, 112.5);
+      vi.advanceTimersByTime(400);
+      expect(direct.command).not.toHaveBeenCalled();
+      peer.channel.receive(jpegFrame(2));
+      await flush();
+      vi.advanceTimersByTime(0);
+      peer.channel.receive(jpegFrame(3));
+      await flush();
+      fire('pointerdown', 200, 112.5);
+      fire('pointerup', 200, 112.5);
+      vi.advanceTimersByTime(400);
+      expect(direct.command).toHaveBeenCalledWith(
+        'pc.tap.v1',
+        expect.objectContaining({ m: 7, l: LAYOUT + 1 }),
+      );
+    });
+
+    it('an older PC without the layout print never gets a tap on the image', async () => {
+      const kit = setup();
+      kit.touchOn.set(true);
+      kit.action().click();
+      await flush();
+      kit.peer.channel.receive(JSON.stringify({ k: 's.mon', monitors: MONITOR.monitors }));
+      kit.fixture.detectChanges();
+      kit.peer.channel.receive(jpegFrame(1));
+      await flush();
+      kit.fixture.detectChanges();
+      const { fire } = stageOf(kit.root);
+      fire('pointerdown', 200, 112.5);
+      fire('pointerup', 200, 112.5);
+      vi.advanceTimersByTime(400);
+      expect(kit.direct.command).not.toHaveBeenCalled();
+    });
+
+    it('a stage resize applies the clamped zoom at once, and the touch after it maps with the transform on screen', async () => {
+      let resized: (() => void) | undefined;
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(callback: () => void) {
+            resized = callback;
+          }
+          readonly observe = vi.fn();
+          readonly disconnect = vi.fn();
+        },
+      );
+      const { fire, direct, fixture, root, size } = await touching();
+      const view = () => root.querySelector<HTMLElement>('.view')!.style.transform;
+      // Pinça abrindo perto do canto de baixo à direita: 2x, e a imagem desliza até o limite (-400, -225).
+      fire('pointerdown', 300, 200, 1);
+      fire('pointerdown', 400, 200, 2);
+      fire('pointermove', 200, 200, 1);
+      fire('pointerup', 200, 200, 1);
+      fire('pointerup', 400, 200, 2);
+      fixture.detectChanges();
+      const before = view();
+      expect(before).toContain('scale(');
+      // O palco encolhe (o aparelho girou): o observador ajusta o deslocamento e a imagem na tela muda já.
+      size(200, 112.5);
+      resized?.();
+      fixture.detectChanges();
+      expect(view()).not.toBe(before);
+      // O toque seguinte usa a transformação que está na tela.
+      vi.advanceTimersByTime(1000);
+      direct.command.mockClear();
+      fire('pointerdown', 100, 56.25);
+      fire('pointerup', 100, 56.25);
+      vi.advanceTimersByTime(400);
+      expect(direct.command).toHaveBeenCalledOnce();
+      const sent = direct.command.mock.calls[0][1] as { u: number; v: number };
+      // O que a pessoa vê sob o dedo: o ponto da imagem pela transformação aplicada ao elemento.
+      const match = /translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(view())!;
+      const [panX, panY, scale] = match.slice(1).map(Number);
+      expect(sent.u).toBe(Math.round(Math.min(1, Math.max(0, (100 - panX) / scale / 200)) * 65535));
+      expect(sent.v).toBe(
+        Math.round(Math.min(1, Math.max(0, (56.25 - panY) / scale / 112.5)) * 65535),
+      );
     });
 
     it('in touchpad mode the finger moves the pointer by steps and never sends a tap on the image', async () => {
