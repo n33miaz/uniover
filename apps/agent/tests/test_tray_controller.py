@@ -190,6 +190,44 @@ class TestViewingBalloon:
 
         assert world.balloons == [BALLOON, BALLOON]
 
+    def test_the_same_session_after_a_long_pause_does_not_warn_again(self, world: World) -> None:
+        controller = world.controller()
+        world.viewing(FIRST)
+        controller.refresh()
+        # O laço ficou parado (ex.: suspensão) com a mesma sessão ainda visível.
+        world.viewing(FIRST, after=VIEWING_RESUMES_WITHIN.total_seconds() * 10)
+        controller.refresh()
+        # A janela passa a contar da última observação: uma troca logo depois ainda emenda.
+        world.viewing(SECOND, after=5)
+        controller.refresh()
+
+        assert world.balloons == [BALLOON]
+
+    def test_a_different_session_after_a_long_pause_warns(self, world: World) -> None:
+        controller = world.controller()
+        world.viewing(FIRST)
+        controller.refresh()
+        world.viewing(SECOND, after=VIEWING_RESUMES_WITHIN.total_seconds() + 1)
+        controller.refresh()
+
+        assert world.balloons == [BALLOON, BALLOON]
+
+    def test_a_failed_delivery_is_retried_even_for_the_same_session(self, world: World) -> None:
+        controller = world.controller()
+        world.deliver = False
+        world.viewing(FIRST)
+        controller.refresh()
+        world.viewing(FIRST, after=VIEWING_RESUMES_WITHIN.total_seconds() * 10)
+        controller.refresh()
+        assert world.balloons == []
+        world.deliver = True
+        world.viewing(FIRST)
+        controller.refresh()
+        world.viewing(FIRST)
+        controller.refresh()
+
+        assert world.balloons == [BALLOON]
+
     def test_it_waits_until_the_balloon_can_be_delivered(self, world: World) -> None:
         controller = world.controller()
         world.deliver = False
