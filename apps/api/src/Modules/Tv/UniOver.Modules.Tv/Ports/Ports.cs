@@ -25,11 +25,11 @@ public enum TvSendStatus
 }
 
 /// <summary>Resultado de entregar uma mensagem ao agente.</summary>
-public sealed record TvSendOutcome(TvSendStatus Status, string? ErrorCode, string? ErrorMessage, TimeSpan Latency)
+public sealed record TvSendOutcome(TvSendStatus Status, string? ErrorCode, string? ErrorMessage, TimeSpan Latency, string? Notice = null)
 {
     public bool IsDelivered => Status == TvSendStatus.Delivered;
 
-    public static TvSendOutcome Ok(TimeSpan latency) => new(TvSendStatus.Delivered, null, null, latency);
+    public static TvSendOutcome Ok(TimeSpan latency, string? notice = null) => new(TvSendStatus.Delivered, null, null, latency, notice);
 
     public static TvSendOutcome Failed(TvSendStatus status, string? code = null, string? message = null, TimeSpan latency = default) =>
         new(status, code, message, latency);

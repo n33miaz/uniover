@@ -41,6 +41,15 @@ describe('parseLivreView, the extension fields', () => {
     ).toMatchObject({ extended: false, launcherLevel: null, applyDeferred: false });
     expect(parseLivreView({ ...base, launcherLevel: 1.5 })?.launcherLevel).toBeNull();
   });
+
+  it('reads the agent notice and ignores anything that is not a filled text', () => {
+    expect(parseLivreView(base)?.notice).toBeNull();
+    expect(parseLivreView({ ...base, notice: '  Restaurei o pacote.  ' })?.notice).toBe(
+      'Restaurei o pacote.',
+    );
+    expect(parseLivreView({ ...base, notice: '   ' })?.notice).toBeNull();
+    expect(parseLivreView({ ...base, notice: 3 })?.notice).toBeNull();
+  });
 });
 
 describe('parseLivreConfig', () => {

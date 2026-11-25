@@ -122,6 +122,7 @@ from uniover_agent.core.tv.handlers import LoopElapsed
 from uniover_agent.core.tv.key_timing import KeyTimings
 from uniover_agent.core.tv.livre import CAPABILITY as LIVRE_CAPABILITY
 from uniover_agent.core.tv.livre import EXTENDED_CAPABILITY as LIVRE_EXTENDED_CAPABILITY
+from uniover_agent.core.tv.livre import NOTICE_CAPABILITY as LIVRE_NOTICE_CAPABILITY
 from uniover_agent.core.tv.livre import (
     SLEEP_NO_INSTALL_CAPABILITY,
     LivreStateFile,
@@ -943,6 +944,7 @@ def compose_livre(setup: TvSetup, settings: Settings, adb: AdbTv, host: str, clo
         clock,
         remote_guard=setup.manager,
         extended=lambda: setup.api_supports(LIVRE_EXTENDED_CAPABILITY),
+        notice=lambda: setup.api_supports(LIVRE_NOTICE_CAPABILITY),
     )
     # Ler o estado ao abrir a tela não é pedido de permissão; as ações do TV Livre (instalar,
     # aplicar) são ações da pessoa e podem abrir o aviso do ADB.
@@ -960,6 +962,7 @@ def compose_livre(setup: TvSetup, settings: Settings, adb: AdbTv, host: str, clo
             # Só chega ao `hello` depois de a API listá-la (ver `API_LISTED_CAPABILITIES`).
             setup.capabilities.append(LIVRE_EXTENDED_CAPABILITY)
             setup.capabilities.append(SLEEP_NO_INSTALL_CAPABILITY)
+            setup.capabilities.append(LIVRE_NOTICE_CAPABILITY)
 
     async def declare_when_usable() -> None:
         # Depois da declaração do ADB (passo anterior).

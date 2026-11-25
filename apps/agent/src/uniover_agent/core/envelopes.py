@@ -126,11 +126,20 @@ class EnvelopeFactory:
         return self._build("agent.keepalive.v1", body, None)
 
     def result(
-        self, correlation_id: str, *, ok: bool, code: str = "", message: str = ""
+        self,
+        correlation_id: str,
+        *,
+        ok: bool,
+        code: str = "",
+        message: str = "",
+        notice: str = "",
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"ok": ok}
         if not ok:
             body["error"] = {"code": code or "failed", "message": message or code or "falha"}
+        elif notice:
+            # O aviso só existe em `ok`; quem o monta só o preenche para a API que o aceita.
+            body["notice"] = notice
         return self._build("command.result.v1", body, correlation_id)
 
     def tv_state(

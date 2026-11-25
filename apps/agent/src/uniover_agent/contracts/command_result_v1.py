@@ -26,6 +26,14 @@ class CommandResultV1Body(BaseModel):
     error: Annotated[
         CommandResultV1BodyError | None, Field(title='CommandResultV1BodyError')
     ] = None
+    notice: Annotated[
+        str | None,
+        Field(
+            description='Só com ok verdadeiro: aviso para o dono sobre um pedido que deu certo (por exemplo, o pacote da TV TCL depois do TV Livre). Só vai à API que lista tv.livre.notice.v1 em features (e ao agente que a declara no hello).',
+            max_length=500,
+            min_length=1,
+        ),
+    ] = None
 
 
 class CommandResultV1Message(BaseModel):

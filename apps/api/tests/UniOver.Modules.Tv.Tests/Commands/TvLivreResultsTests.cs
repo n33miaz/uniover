@@ -23,6 +23,25 @@ public class TvLivreResultsTests
     public void ADoneStep_HasNoProblem() => TvLivreEndpoint.ToProblem(LivreStep.Done).Should().BeNull();
 
     [Fact]
+    public void ASucceededStep_KeepsTheAgentNotice_AndHasNoProblem()
+    {
+        var step = LivreStep.Succeeded("Restaurei o pacote.");
+
+        TvLivreEndpoint.ToProblem(step).Should().BeNull();
+        step.Notice.Should().Be("Restaurei o pacote.");
+        LivreStep.Succeeded(null).Should().BeSameAs(LivreStep.Done);
+        LivreStep.Succeeded("").Notice.Should().BeNull();
+    }
+
+    [Fact]
+    public void ADeliveredOutcome_CarriesTheNoticeOnlyWhenTheAgentSentOne()
+    {
+        TvSendOutcome.Ok(TimeSpan.Zero, "aviso").Notice.Should().Be("aviso");
+        TvSendOutcome.Ok(TimeSpan.Zero).Notice.Should().BeNull();
+        TvSendOutcome.Failed(TvSendStatus.CommandFailed, "x", "y").Notice.Should().BeNull();
+    }
+
+    [Fact]
     public void ATvWithoutTheCapability_Is409WithItsOwnType()
     {
         var problem = Problem(TvLivreEndpoint.ToProblem(LivreStep.Unsupported));
@@ -126,10 +145,11 @@ public class TvLivreResultsTests
 
         document.RootElement.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
             "available", "supported", "installed", "version", "isHome", "factoryLauncher", "disabledPackages", "apps",
-            "stateAt", "config", "hasPhoto", "revision", "extended", "launcherLevel", "applyDeferred");
+            "stateAt", "config", "hasPhoto", "revision", "extended", "launcherLevel", "applyDeferred", "notice");
         document.RootElement.GetProperty("extended").GetBoolean().Should().BeFalse();
         document.RootElement.GetProperty("launcherLevel").ValueKind.Should().Be(JsonValueKind.Null);
         document.RootElement.GetProperty("applyDeferred").GetBoolean().Should().BeFalse();
+        document.RootElement.GetProperty("notice").ValueKind.Should().Be(JsonValueKind.Null);
         document.RootElement.GetProperty("config").GetProperty("builtin").EnumerateObject().Select(p => p.Name)
             .Should().BeEquivalentTo("settings", "sleep", "network", "inputs", "brand");
         document.RootElement.GetProperty("config").EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(

@@ -51,6 +51,16 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("error")]
         public CommandResultV1BodyError? Error { get; set; }
 
+        /// <summary>
+        /// Só com ok verdadeiro: aviso para o dono sobre um pedido que deu certo (por exemplo, o
+        /// pacote da TV TCL depois do TV Livre). Só vai à API que lista tv.livre.notice.v1 em
+        /// features (e ao agente que a declara no hello).
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("notice")]
+        [JsonConverter(typeof(CommandResultV1MessageFluffyMinMaxLengthCheckConverter))]
+        public string? Notice { get; set; }
+
         [JsonPropertyName("ok")]
         public bool Ok { get; set; }
     }
@@ -58,11 +68,11 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     public partial class CommandResultV1BodyError
     {
         [JsonPropertyName("code")]
-        [JsonConverter(typeof(CommandResultV1MessageMinMaxLengthCheckConverter))]
+        [JsonConverter(typeof(CommandResultV1MessagePurpleMinMaxLengthCheckConverter))]
         public string Code { get; set; }
 
         [JsonPropertyName("message")]
-        [JsonConverter(typeof(CommandResultV1MessageMinMaxLengthCheckConverter))]
+        [JsonConverter(typeof(CommandResultV1MessagePurpleMinMaxLengthCheckConverter))]
         public string Message { get; set; }
     }
 
@@ -87,7 +97,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         };
     }
 
-    internal class CommandResultV1MessageMinMaxLengthCheckConverter : JsonConverter<string>
+    internal class CommandResultV1MessagePurpleMinMaxLengthCheckConverter : JsonConverter<string>
     {
         public override bool CanConvert(Type t) => t == typeof(string);
 
@@ -111,7 +121,34 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             throw new Exception("Cannot marshal type string");
         }
 
-        public static readonly CommandResultV1MessageMinMaxLengthCheckConverter Singleton = new CommandResultV1MessageMinMaxLengthCheckConverter();
+        public static readonly CommandResultV1MessagePurpleMinMaxLengthCheckConverter Singleton = new CommandResultV1MessagePurpleMinMaxLengthCheckConverter();
+    }
+
+    internal class CommandResultV1MessageFluffyMinMaxLengthCheckConverter : JsonConverter<string>
+    {
+        public override bool CanConvert(Type t) => t == typeof(string);
+
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            if (value.Length >= 1 && value.Length <= 500)
+            {
+                return value;
+            }
+            throw new Exception("Cannot unmarshal type string");
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        {
+            if (value.Length >= 1 && value.Length <= 500)
+            {
+                JsonSerializer.Serialize(writer, value, options);
+                return;
+            }
+            throw new Exception("Cannot marshal type string");
+        }
+
+        public static readonly CommandResultV1MessageFluffyMinMaxLengthCheckConverter Singleton = new CommandResultV1MessageFluffyMinMaxLengthCheckConverter();
     }
 
     internal class CommandResultV1MessageIsoDateTimeOffsetConverter : JsonConverter<DateTimeOffset>

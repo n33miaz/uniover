@@ -23,10 +23,14 @@
           "type": "object", "additionalProperties": false,
           "required": ["code", "message"],
           "properties": { "code": { "type": "string", "minLength": 1 }, "message": { "type": "string", "minLength": 1 } }
+        },
+        "notice": {
+          "type": "string", "minLength": 1, "maxLength": 500,
+          "description": "Só com ok verdadeiro: aviso para o dono sobre um pedido que deu certo (por exemplo, o pacote da TV TCL depois do TV Livre). Só vai à API que lista tv.livre.notice.v1 em features (e ao agente que a declara no hello)."
         }
       },
       "if": { "properties": { "ok": { "const": false } } },
-      "then": { "required": ["error"], "properties": { "error": true } },
+      "then": { "required": ["error"], "properties": { "error": true, "notice": false } },
       "else": { "properties": { "error": false } }
     }
   }

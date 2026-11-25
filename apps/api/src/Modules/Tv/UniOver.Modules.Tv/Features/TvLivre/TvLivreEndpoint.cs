@@ -231,7 +231,7 @@ internal static class TvLivreEndpoint
     }
 
     private static async Task<IResult> ViewOrProblemAsync(TvLivreHandler handler, LivreStep step, CancellationToken cancellationToken) =>
-        ToProblem(step) ?? TypedResults.Ok(await handler.ViewAsync(cancellationToken));
+        ToProblem(step) ?? TypedResults.Ok((await handler.ViewAsync(cancellationToken)) with { Notice = step.Notice });
 
     /// <summary>Separado do HTTP para ser testado sem subir o servidor: o problema de um passo que não deu certo, ou nulo.</summary>
     internal static IResult? ToProblem(LivreStep step)

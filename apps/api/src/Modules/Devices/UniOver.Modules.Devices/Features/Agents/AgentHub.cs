@@ -545,7 +545,12 @@ internal sealed partial class AgentHub(
             error = new Error(failure.GetProperty("code").GetString()!, failure.GetProperty("message").GetString()!);
         }
 
-        if (!correlator.TryComplete(agentId, commandId, new AgentReply(commandId, ok, error)))
+        // O aviso ao dono só existe no resultado ok (o contrato o proíbe numa falha).
+        var notice = ok && envelope.Body.TryGetProperty("notice", out var noticeElement) && noticeElement.ValueKind == JsonValueKind.String
+            ? noticeElement.GetString()
+            : null;
+
+        if (!correlator.TryComplete(agentId, commandId, new AgentReply(commandId, ok, error, notice)))
         {
             // Atrasada (o prazo já passou), repetida ou de um comando que não é deste agente: não há quem espere.
             LogReplyDiscarded(agentId, commandId);

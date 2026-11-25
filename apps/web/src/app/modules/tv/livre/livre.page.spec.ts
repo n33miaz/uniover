@@ -34,6 +34,7 @@ function view(overrides: Partial<TvLivreView> = {}): TvLivreView {
     extended: false,
     launcherLevel: null,
     applyDeferred: false,
+    notice: null,
     ...overrides,
   };
 }
@@ -206,6 +207,20 @@ describe('LivrePage', () => {
       expect(button('Instalar')).toBeDefined();
       expect(api.saveConfig).not.toHaveBeenCalled();
       expect(api.apply).not.toHaveBeenCalled();
+    });
+
+    it('shows the agent notice next to the install confirmation, and nothing extra without one', async () => {
+      api.get.mockResolvedValue(view({ installed: false }));
+      await render();
+      api.install.mockResolvedValue(
+        view({ installed: true, notice: 'Restaurei o pacote com.tcl.tv; não o remova de novo.' }),
+      );
+      button('Instalar')!.click();
+      await change();
+      await change();
+      expect(q('.ui-action-bar .ui-notice').textContent).toContain(
+        'TV Livre instalado. Restaurei o pacote com.tcl.tv; não o remova de novo.',
+      );
     });
 
     const chooseBeta = async () => {

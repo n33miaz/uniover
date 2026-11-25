@@ -16597,6 +16597,7 @@ export interface components {
       isHome: boolean;
       /** Format: int32 */
       launcherLevel?: null | number | string;
+      notice?: null | string;
       /** Format: int32 */
       revision: number;
       /** Format: date-time */

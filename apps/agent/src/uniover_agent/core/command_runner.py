@@ -88,6 +88,7 @@ class CommandRunner:
                 ok=result.status.value == "ok",
                 code=result.code or result.status.value,
                 message=result.detail,
+                notice=result.notice,
             )
         )
 

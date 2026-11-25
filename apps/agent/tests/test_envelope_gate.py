@@ -151,3 +151,17 @@ def test_outbound_failed_result_requires_error() -> None:
 def test_outbound_unknown_type_is_a_programming_error() -> None:
     with pytest.raises(ValueError, match="desconhecido"):
         gate.check_outbound(envelope("x.y.v1", {}))
+
+
+def test_outbound_ok_result_may_carry_a_notice_but_a_failed_one_may_not() -> None:
+    with_notice = factory().result(str(uuid.uuid4()), ok=True, notice="Restaurei o pacote.")
+    assert with_notice["body"] == {"ok": True, "notice": "Restaurei o pacote."}
+    gate.check_outbound(with_notice)
+    # Sem aviso o corpo é o de sempre.
+    assert factory().result(str(uuid.uuid4()), ok=True)["body"] == {"ok": True}
+    # Numa falha o aviso é ignorado: a mensagem de erro é o que o dono lê.
+    failed = factory().result(str(uuid.uuid4()), ok=False, code="x", message="y", notice="z")
+    assert "notice" not in failed["body"]
+    failed["body"]["notice"] = "z"
+    with pytest.raises(ValueError, match="fora do contrato"):
+        gate.check_outbound(failed)

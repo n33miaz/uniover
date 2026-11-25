@@ -118,6 +118,10 @@ os demais ela tira `builtin.network`, `builtin.inputs` e `builtin.brand` da conf
 antigo ignora o que não conhece, e o agente descobre o nível dele com `am broadcast ... .action.QUERY` (resposta
 `level=N`; sem resposta, nível 1).
 
+`tv.livre.notice.v1` é a capacidade do aviso ao dono num resultado que deu certo (`body.notice` do
+`command.result.v1`). É separada de `tv.livre.v2` porque a API que já anuncia `tv.livre.v2` tem o resultado fechado sem
+`notice` e recusaria o frame: o agente só a declara, e só manda o aviso, depois de a API a listar em `features`.
+
 `tv.livre.sleep-no-install.v1` (mesmo rollout: só depois de a API a listar) diz que o agente honra `skipInstall` no
 `sleep`: confere o launcher na hora e, ausente, recusa com `launcher_required` em vez de instalá-lo. A API manda o campo
 no dormir de quem não é o dono, e só a agente que a declara; para os demais mantém só a leitura (`status`) antes.
@@ -131,7 +135,7 @@ no dormir de quem não é o dono, e só a agente que a declara; para os demais m
 O agente guarda em disco, antes de cada passo que muda a TV, o launcher de fábrica e o que ele desativou, para o
 Voltar ao Original sobreviver a uma queda. Falhas voltam em `command.result.v1` com `error.code` estável
 (`unsupported`, `not_installed`, `invalid_config`, `verify_failed`, `protected_package`, `launcher_not_running`, `apk_hash_mismatch`, `apk_signer_mismatch`, `signer_not_pinned` e os
-`adb_*`). O corpo de `configJson` segue `tv-launcher/config.v1.schema.json` (sem `schema`, `revision` nem o nome da foto,
+`adb_*`). Um pedido que deu certo pode levar um aviso ao dono em `body.notice` do `command.result.v1` (só com `ok: true`; texto de 1 a 500 caracteres; por exemplo, o pacote da TV TCL restaurado depois do TV Livre): só vai à API que lista `tv.livre.notice.v1` em `features`, do agente que a declara no `hello`, e o `ok: false` continua com `error.message` e sem `notice`. O corpo de `configJson` segue `tv-launcher/config.v1.schema.json` (sem `schema`, `revision` nem o nome da foto,
 que o agente acrescenta depois de conferir tudo: campo desconhecido recusa o pedido inteiro).
 
 ## Manutenção remota

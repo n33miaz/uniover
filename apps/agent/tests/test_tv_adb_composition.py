@@ -135,6 +135,7 @@ async def test_capability_is_declared_when_the_adb_answers(
         "tv.livre.v1",
         "tv.livre.v2",
         "tv.livre.sleep-no-install.v1",
+        "tv.livre.notice.v1",
     ]
     assert adb.connects == 1
 
@@ -165,6 +166,7 @@ async def test_capability_is_still_declared_when_the_tv_is_off_right_now(
         "tv.livre.v1",
         "tv.livre.v2",
         "tv.livre.sleep-no-install.v1",
+        "tv.livre.notice.v1",
     ]
 
 

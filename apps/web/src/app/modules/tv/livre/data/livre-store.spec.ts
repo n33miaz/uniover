@@ -33,6 +33,7 @@ function view(overrides: Partial<TvLivreView> = {}): TvLivreView {
     extended: false,
     launcherLevel: null,
     applyDeferred: false,
+    notice: null,
     ...overrides,
   };
 }
@@ -453,6 +454,31 @@ describe('TvLivreStore', () => {
       expect(await store.install()).toBe(true);
       expect(store.view()?.version).toBe('1.1.0');
       expect(store.notice()?.text).toBe('TV Livre instalado.');
+    });
+
+    it('keeps the agent notice when the update installs the newest launcher there is but the level did not rise', async () => {
+      await open();
+      api.install.mockResolvedValue(
+        view({
+          extended: true,
+          launcherLevel: 1,
+          notice: 'Restaurei o pacote com.tcl.tv; não o remova de novo.',
+        }),
+      );
+      expect(await store.update()).toBe(true);
+      expect(store.notice()).toEqual({
+        kind: 'ok',
+        text: 'Instalado o mais novo que há. O launcher novo ainda não foi publicado. Restaurei o pacote com.tcl.tv; não o remova de novo.',
+      });
+    });
+
+    it('shows only the update-pending text when the agent left no notice', async () => {
+      await open();
+      api.install.mockResolvedValue(view({ extended: true, launcherLevel: 1 }));
+      expect(await store.update()).toBe(true);
+      expect(store.notice()?.text).toBe(
+        'Instalado o mais novo que há. O launcher novo ainda não foi publicado.',
+      );
     });
 
     it('sets as home with the choice about the factory launcher', async () => {
