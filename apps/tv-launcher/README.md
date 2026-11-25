@@ -199,6 +199,17 @@ cai para o degradê.
    `pm disable-user --user 0 <pacote do launcher de fábrica>`.
    Reversível com `pm enable --user 0 <pacote>`. Uma atualização de firmware pode reabilitá-lo: o agente confere.
 
+### TV TCL: nunca remova o `com.tcl.tv`
+
+Na TV TCL, o gerenciador de teclas envia o POWER ao app de TV ao vivo (`com.tcl.tv`). Se esse pacote estiver
+desinstalado para o usuário 0 (por exemplo, por um debloat antigo), a TV **não desliga** pela tecla física nem pelo
+controle. Por isso ele **nunca pode ser removido**, nem desativado, por script, lista de debloat ou pelo TV Livre.
+
+Ao instalar, o agente confere esse pacote nas TVs TCL (`pm list packages --user 0 com.tcl.tv`). Se estiver
+ausente, restaura com `cmd package install-existing com.tcl.tv` e avisa o dono; se o comando falhar, o TV Livre
+continua instalado e o aviso diz que a TV pode não desligar. Correção manual equivalente:
+`adb -s TV shell cmd package install-existing com.tcl.tv`.
+
 ## Voltar ao original
 
 Esta é a ordem que nunca deixa a TV sem tela inicial:

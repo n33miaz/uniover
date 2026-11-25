@@ -64,6 +64,18 @@ OLD_LAUNCHER_LEVEL: Final = 1
 AUDIT_LIMIT: Final = 50
 SEND_FAILED: Final = "send_failed"
 STARTUP_WAIT_SECONDS: Final = 1.5
+# Na TV TCL, o gerenciador de teclas envia o POWER a este app de TV ao vivo: sem ele (desinstalado
+# para o usuário 0 por um debloat antigo) a TV não desliga pela tecla física nem pelo controle.
+TCL_TV_PACKAGE: Final = "com.tcl.tv"
+_TCL_BRAND: Final = "tcl"
+_TCL_MISSING_NOTICE: Final = (
+    "O app de TV ao vivo da TCL estava removido e a TV não desligava pelo controle. "
+    "Restaurei o pacote com.tcl.tv; não o remova de novo."
+)
+_TCL_FAILED_NOTICE: Final = (
+    "O app de TV ao vivo da TCL (com.tcl.tv) está removido e não consegui restaurá-lo: "
+    "a TV pode não desligar pelo controle."
+)
 
 _COMPONENT: Final = re.compile(
     r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+/\.?[A-Za-z0-9_.$]+"
@@ -299,6 +311,7 @@ class TvLivre:
         # A API entende os acréscimos (`EXTENDED_CAPABILITY`): sem isso o agente age como antes.
         self._extended = extended
         self._apply_deferred = False
+        self._notice: str | None = None
         self._adb = adb
         self._apk = apk
         self._state = state
@@ -314,6 +327,11 @@ class TvLivre:
         """Se o último `apply` só gravou a configuração (outro app estava na frente); lê uma vez."""
         deferred, self._apply_deferred = self._apply_deferred, False
         return deferred
+
+    def take_notice(self) -> str | None:
+        """Aviso para o dono deixado pela última ação (o pedido deu certo); lê uma vez."""
+        notice, self._notice = self._notice, None
+        return notice
 
     # --- leitura ------------------------------------------------------------------------------
 
@@ -575,6 +593,37 @@ class TvLivre:
             # soltou o papel na troca do app, refaz a escolha, e nunca deixa a TV de fábrica.
             if not await self._set_home_activity(HOME_COMPONENT):
                 _log.warning("TV Livre: a atualização perdeu a tela inicial e não a recuperei")
+        await self._ensure_tcl_tv_package()
+
+    async def _is_tcl(self) -> bool:
+        """Fabricante ou marca TCL (qual dos dois diz TCL varia por modelo)."""
+        for prop in ("ro.product.manufacturer", "ro.product.brand"):
+            result = await self._adb.shell(f"getprop {prop}")
+            if result.ok and _TCL_BRAND in result.text.lower():
+                return True
+        return False
+
+    async def _ensure_tcl_tv_package(self) -> None:
+        """Na TV TCL, devolve o `com.tcl.tv` se ele foi removido; é melhor esforço e nunca falha.
+
+        A instalação do TV Livre já terminou: um problema aqui só vira aviso para o dono.
+        """
+        try:
+            if not await self._is_tcl():
+                return
+            listed = await self._adb.shell(f"pm list packages --user 0 {TCL_TV_PACKAGE}")
+            lines = {line.strip() for line in listed.text.splitlines()}
+            if listed.ok and f"package:{TCL_TV_PACKAGE}" in lines:
+                return
+            _log.warning("TV Livre: %s ausente na TV TCL; restaurando", TCL_TV_PACKAGE)
+            restored = await self._adb.shell(f"cmd package install-existing {TCL_TV_PACKAGE}")
+            if restored.ok and "installed for user" in restored.text:
+                self._notice = _TCL_MISSING_NOTICE
+                return
+            _log.warning("TV Livre: não consegui restaurar %s", TCL_TV_PACKAGE)
+        except AdbError, OSError:
+            _log.warning("TV Livre: falha ao conferir %s", TCL_TV_PACKAGE, exc_info=True)
+        self._notice = _TCL_FAILED_NOTICE
 
     async def _install_for_sleep(self) -> None:
         """`_install` com a mesma vigia do controle que a ação "Instalar" arma em `run`."""
@@ -932,6 +981,9 @@ def tv_livre_handler(livre: TvLivre, transport: Transport, envelopes: EnvelopeFa
             return CommandResult(command.id, ResultStatus.REJECTED, "campo 'requestId' ausente")
         outcome = await _run(livre, command.body)
         deferred = livre.take_apply_deferred()
+        notice = livre.take_notice()
+        if notice is not None and outcome.status is ResultStatus.OK:
+            outcome = CommandResult("", ResultStatus.OK, notice)
         livre.audit(action, outcome.code or "ok", _detail(command.body))
         try:
             state = await livre.read_state()
