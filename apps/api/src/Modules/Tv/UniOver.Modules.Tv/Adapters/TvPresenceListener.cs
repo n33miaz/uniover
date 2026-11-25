@@ -118,7 +118,7 @@ internal sealed partial class TvPresenceListener(
         var justConnected = info.Connected && info.AgentVersion is null;
         if (state.NoteOnline(info.AgentId, info.Connected) || justConnected)
         {
-            stream.PublishState(tvId, TvState.From(state.Last(info.AgentId), info.Connected, offlineSince: info.DisconnectedAt ?? info.LastMessageAt));
+            stream.PublishState(tvId, TvState.From(state.Last(info.AgentId), info.Connected, offlineSince: info.DisconnectedAt ?? info.LastMessageAt, reportFresh: info.Connected));
         }
     }
 

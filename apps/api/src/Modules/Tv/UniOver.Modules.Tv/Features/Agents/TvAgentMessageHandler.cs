@@ -262,7 +262,8 @@ internal sealed partial class TvAgentMessageHandler(
             message.Timestamp,
             ReadAdbPermission(body),
             ReadAdbPermissionReason(body),
-            ReadWakeHints(body));
+            ReadWakeHints(body),
+            ReadMode(body));
 
         // Um estado vindo do agente prova que ele está conectado.
         state.NoteOnline(message.AgentId, true);
@@ -282,6 +283,13 @@ internal sealed partial class TvAgentMessageHandler(
     private static string? ReadAdbPermissionReason(JsonElement body) =>
         body.TryGetProperty("adbPermissionReason", out var value) && value.ValueKind == JsonValueKind.String
         && AdbPermissionText.IsReason(value.GetString())
+            ? value.GetString()
+            : null;
+
+    /// <summary>O modo da TV (campo opcional): ausente ou fora da lista vira "o agente não disse".</summary>
+    private static string? ReadMode(JsonElement body) =>
+        body.TryGetProperty("mode", out var value) && value.ValueKind == JsonValueKind.String
+        && TvModeText.IsKnown(value.GetString())
             ? value.GetString()
             : null;
 

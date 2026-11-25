@@ -56,6 +56,84 @@ public sealed class StateAndMessagesTests(PostgresFixture postgres)
         (await db.States.CountAsync(Ct)).Should().Be(1);
     }
 
+    private static async Task<string> LinkStateAsync(TvApp app)
+    {
+        using var response = await app.GetAsync("/api/v1/tv/state");
+        return (await TvApp.JsonAsync(response)).GetProperty("link").GetProperty("state").GetString()!;
+    }
+
+    [Fact]
+    public async Task Link_IsPcOffline_WhenNoAgentIsConnected()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+
+        (await LinkStateAsync(app)).Should().Be("pc_offline");
+        using var response = await app.GetAsync("/api/v1/tv/state");
+        (await TvApp.JsonAsync(response)).GetProperty("link").GetProperty("version").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Link_FollowsTheTvStateTheAgentReports_AndKeepsTheLegacyFields()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody()));
+        await TvApp.WaitUntilAsync(async () => await LinkStateAsync(app) == "ready", "elo pronto");
+
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(connection: "waking")));
+        await TvApp.WaitUntilAsync(async () => await LinkStateAsync(app) == "tv_standby", "TV acordando do standby");
+
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(power: "off")));
+        await TvApp.WaitUntilAsync(async () => await LinkStateAsync(app) == "tv_off", "TV desligada");
+
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(connection: "disconnected")));
+        await TvApp.WaitUntilAsync(async () => await LinkStateAsync(app) == "tv_unresponsive", "TV sem resposta");
+
+        using var response = await app.GetAsync("/api/v1/tv/state");
+        var body = await TvApp.JsonAsync(response);
+        body.GetProperty("connection").GetString().Should().Be("disconnected");
+        body.GetProperty("agentOnline").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Link_BecomesPcOffline_WhenTheConnectedAgentGoesSilent_InsteadOfKeepingTheLastTvState()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        await using var agent = await app.ConnectAndWaitAsync();
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody()));
+        await TvApp.WaitUntilAsync(async () => await LinkStateAsync(app) == "ready", "elo pronto");
+
+        app.Time.Advance(TimeSpan.FromSeconds(91));
+
+        (await LinkStateAsync(app)).Should().Be("pc_offline");
+
+        // Voltou a falar: o elo volta com a leitura da TV.
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody()));
+        await TvApp.WaitUntilAsync(async () => await LinkStateAsync(app) == "ready", "elo de volta");
+    }
+
+    [Fact]
+    public async Task Link_GoesOutInTheRealtimeStream_WhenTheAgentDrops()
+    {
+        await using var app = await TvApp.StartAsync(postgres);
+        var agent = await app.ConnectAndWaitAsync();
+        await agent.SendTextAsync(agent.Envelope("tv.state.v1", TvApp.StateBody(power: "off")));
+        await TvApp.WaitUntilAsync(async () => await LinkStateAsync(app) == "tv_off", "TV desligada");
+
+        var ticket = await app.StreamTicketAsync();
+        using var response = await app.OpenEventsAsync(ticket);
+        using var reader = new SseReader(await response.Content.ReadAsStreamAsync(Ct));
+        var initial = (await reader.NextAsync())!;
+        initial.Data!.Value.GetProperty("link").GetProperty("state").GetString().Should().Be("tv_off");
+        (await reader.NextAsync())!.EventType.Should().Be("tv.shortcuts");
+
+        await agent.DisposeAsync();
+        var dropped = (await reader.NextAsync())!;
+        dropped.EventType.Should().Be("tv.state");
+        dropped.Data!.Value.GetProperty("link").GetProperty("state").GetString().Should().Be("pc_offline");
+    }
+
     [Fact]
     public async Task State_ConfirmedAsUnpaired_IsStoredAndPublished_AndAnOfflineAgentStillReadsAsDisconnected()
     {

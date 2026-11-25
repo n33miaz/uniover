@@ -65,6 +65,12 @@ internal sealed class DevicesAgentPresence(IAgentPresenceReader presence, TimePr
             ? null
             : info.DisconnectedAt ?? info.LastMessageAt;
 
+    public bool HasRecentReport(string agentId, TimeSpan within) =>
+        !string.IsNullOrEmpty(agentId)
+        && presence.Get(agentId) is { Connected: true } info
+        && (info.LastMessageAt ?? info.ConnectedSince) is { } last
+        && time.GetUtcNow() - last <= within;
+
     public bool IsOfflineBeyondReconnectGrace(string agentId) =>
         !string.IsNullOrEmpty(agentId)
         && presence.OfflineSince(agentId) is { } since
