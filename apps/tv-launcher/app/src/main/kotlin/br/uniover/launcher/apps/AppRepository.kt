@@ -31,9 +31,18 @@ class AppRepository(private val context: Context) {
         return seen.values.toList()
     }
 
-    /** Ícone do app (o adaptativo, se tiver). Nulo se o pacote sumiu entre a lista e o desenho. */
+    /**
+     * Ícone do app (o adaptativo, se tiver). Nulo se o pacote sumiu entre a lista e o desenho, ou se o app não declara
+     * ícone nenhum (só o banner da TV, por exemplo): aí o sistema daria o robô genérico, e a home mostra a inicial do app,
+     * como o controle no app.
+     */
     fun icon(packageName: String): Drawable? = try {
-        launchIntent(packageName)?.let { pm.resolveActivity(it, 0)?.loadIcon(pm) } ?: pm.getApplicationIcon(packageName)
+        val resolved = launchIntent(packageName)?.let { pm.resolveActivity(it, 0) }
+        when {
+            resolved == null -> pm.getApplicationInfo(packageName, 0).takeIf { it.icon != 0 }?.let { pm.getApplicationIcon(it) }
+            resolved.iconResource == 0 -> null
+            else -> resolved.loadIcon(pm)
+        }
     } catch (_: PackageManager.NameNotFoundException) {
         null
     } catch (_: RuntimeException) {

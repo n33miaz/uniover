@@ -5,7 +5,9 @@ import {
   fallbackHue,
   iconSource,
   samsungIconSource,
+  systemAppGlyph,
 } from './app-icon-source';
+import { TvIcon } from './tv-icon';
 import {
   IconPixelReader,
   cachedIconFit,
@@ -28,14 +30,19 @@ export const ICON_PIXEL_READER = new InjectionToken<IconPixelReader>('ICON_PIXEL
  * imagem); a cor das bordas vira o fundo do azulejo. Se a medida não é possível (sem canvas, imagem estranha), o
  * ícone aparece em `cover` simples, sem erro. O que não é quadrado (um banner 16:9 antigo) é centralizado e cortado
  * pelos lados, nunca ganha faixas. Sem ícone (ou se a imagem falhar), mostra a inicial do app sobre uma cor estável do
- * pacote. É decorativo: quem o usa dá o nome ao botão (`aria-label` ou o texto ao lado). O tamanho vem da variável
+ * pacote. Um app do sistema da TV (Configurações) mostra o desenho do UniOver sobre a placa dos círculos do sistema, o
+ * mesmo da TV. É decorativo: quem o usa dá o nome ao botão (`aria-label` ou o texto ao lado). O tamanho vem da variável
  * `--tile`, definida por quem o usa.
  */
 @Component({
   selector: 'app-tv-app-icon',
   templateUrl: './app-icon.html',
   styleUrl: './app-icon.css',
-  host: { '[style.background-color]': 'fit()?.background ?? null' },
+  imports: [TvIcon],
+  host: {
+    '[style.background-color]': 'fit()?.background ?? null',
+    '[class.system]': 'systemGlyph() !== null',
+  },
 })
 export class AppIcon {
   readonly shortcut = input.required<AppIconSubject>();
@@ -48,6 +55,9 @@ export class AppIcon {
   private readonly failed = signal<string | null>(null);
   /** Sobe a cada medida feita: o cache em memória não é um signal, e este faz o ajuste reler o que ele guarda. */
   private readonly measured = signal(0);
+
+  /** App do sistema da TV (Configurações): o desenho do UniOver, igual ao círculo do TV Livre, no lugar da arte da TV. */
+  protected readonly systemGlyph = computed(() => systemAppGlyph(this.shortcut().package));
 
   private readonly declared = computed(
     () => iconSource(this.shortcut().iconDataUri) ?? samsungIconSource(this.shortcut().package),

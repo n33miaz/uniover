@@ -64,10 +64,30 @@ class IconFitTest {
     }
 
     @Test
-    fun `no side loses more than the limit however wide the margin`() {
+    fun `a wide transparent margin goes away entirely and the small plate fills the circle`() {
+        // Uma placa de 40% no meio: antes parava em 18% por lado e virava um quadrado pequeno no centro.
+        val result = IconFit.analyze(square(64, 19, 45, black), 64, 64)
+        assertEquals(19f / 64f, result.trim.left, tolerance)
+        assertEquals(19f / 64f, result.trim.top, tolerance)
+        assertEquals(19f / 64f, result.trim.right, tolerance)
+        assertEquals(black, result.background)
+        assertEquals(26f / 64f, IconFit.cropSquare(result.trim).size, tolerance)
+    }
+
+    @Test
+    fun `a speck of paint is not blown up past the transparent limit`() {
         val result = IconFit.analyze(square(64, 28, 36, black), 64, 64)
+        assertEquals(IconFit.MAX_CLEAR_TRIM, result.trim.left, tolerance)
+        assertEquals(IconFit.MAX_CLEAR_TRIM, result.trim.top, tolerance)
+    }
+
+    @Test
+    fun `an opaque frame still loses at most the frame limit`() {
+        // Moldura branca opaca de 22 px em volta de um miolo azul: tinta, não transparente.
+        val blue = 0xFF1565C0.toInt()
+        val result = IconFit.analyze(square(64, 22, 42, blue, outside = white), 64, 64)
         assertEquals(IconFit.MAX_TRIM, result.trim.left, tolerance)
-        assertEquals(IconFit.MAX_TRIM, result.trim.top, tolerance)
+        assertEquals(IconFit.MAX_TRIM, result.trim.bottom, tolerance)
     }
 
     @Test

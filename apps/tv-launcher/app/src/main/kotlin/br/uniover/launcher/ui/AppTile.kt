@@ -33,6 +33,8 @@ class AppTile(
     private val onFocused: (AppTile) -> Unit,
     /** Círculo do próprio sistema (Dormir, Rede, Entradas, Configurações): desenho nosso, centrado numa placa cheia. */
     val system: Boolean = false,
+    /** A reserva para um ícone todo transparente: a inicial sobre a cor do pacote ([FallbackIcon]). */
+    private val fallback: (() -> Drawable)? = null,
 ) : LinearLayout(context) {
 
     private val ring: View
@@ -92,8 +94,12 @@ class AppTile(
                     val inset = (diameter * SYSTEM_GLYPH_INSET).toInt()
                     setPadding(inset, inset, inset, inset)
                 } else {
-                    val fitted = if (icon is AdaptiveIconDrawable) null else IconFit.fitted(icon, diameter)
-                    if (fitted != null) setImageDrawable(fitted)
+                    // Ícone sem tinta nenhuma (todo transparente) seria um círculo vazio: vale a reserva com a inicial.
+                    // A reserva já enche o círculo; o adaptativo já vem sangrado: nenhum dos dois passa pelo ajuste.
+                    val fit = if (icon is AdaptiveIconDrawable || icon is FallbackIcon.LetterDrawable) null
+                    else IconFit.fit(icon, diameter)
+                    val shown = if (fit?.blank == true) fallback?.invoke() else fit?.drawable
+                    if (shown != null) setImageDrawable(shown)
                     scaleType = ImageView.ScaleType.CENTER_CROP
                 }
                 importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO

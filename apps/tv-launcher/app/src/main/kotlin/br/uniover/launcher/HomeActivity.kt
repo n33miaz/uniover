@@ -20,6 +20,7 @@ import android.widget.TextClock
 import android.widget.Toast
 import br.uniover.launcher.apps.AppRepository
 import br.uniover.launcher.apps.AppSelector
+import br.uniover.launcher.apps.SystemApps
 import br.uniover.launcher.config.ClockConfig
 import br.uniover.launcher.config.ClockFormat
 import br.uniover.launcher.config.ClockSize
@@ -30,6 +31,7 @@ import br.uniover.launcher.config.WallpaperConfig
 import br.uniover.launcher.config.WallpaperType
 import br.uniover.launcher.ui.AppTile
 import br.uniover.launcher.ui.BrandMark
+import br.uniover.launcher.ui.FallbackIcon
 import br.uniover.launcher.ui.Metrics
 import br.uniover.launcher.ui.SystemScreens
 import br.uniover.launcher.ui.Wallpaper
@@ -272,7 +274,8 @@ class HomeActivity : Activity() {
                 label = spec.label,
                 icon = iconFor(spec),
                 onFocused = ::centerOnTile,
-                system = spec.kind != Kind.APP,
+                system = isSystemLook(spec),
+                fallback = { FallbackIcon.drawable(spec.id, spec.label) },
             )
             tile.setOnClickListener { open(spec) }
             val params = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -288,8 +291,17 @@ class HomeActivity : Activity() {
         row.post { target?.requestFocus() }
     }
 
+    /** Atalho do sistema, ou app do sistema da TV (Configurações) que ganha o nosso desenho no lugar da arte da TV. */
+    private fun isSystemLook(spec: TileSpec) = spec.kind != Kind.APP || systemGlyph(spec) != null
+
+    private fun systemGlyph(spec: TileSpec): Int? =
+        if (spec.kind == Kind.APP) SystemApps.glyph(spec.id)?.let(SystemApps::drawable) else null
+
+    /** Nunca um círculo vazio: app sem ícone ganha a inicial sobre a cor do pacote, como no controle do app. */
     private fun iconFor(spec: TileSpec) = when (spec.kind) {
-        Kind.APP -> repo.icon(spec.id)
+        Kind.APP -> systemGlyph(spec)?.let(::getDrawable)
+            ?: repo.icon(spec.id)
+            ?: FallbackIcon.drawable(spec.id, spec.label)
         Kind.SETTINGS -> getDrawable(R.drawable.ic_settings)
         Kind.SLEEP -> getDrawable(R.drawable.ic_sleep)
         Kind.NETWORK -> getDrawable(R.drawable.ic_network)

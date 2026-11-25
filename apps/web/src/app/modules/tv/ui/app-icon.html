@@ -4,7 +4,9 @@
   são as de um quadrado: o CSS é quem encaixa qualquer proporção dentro dele. O `transform` é o recorte da margem do
   ícone (medido ao carregar, ver `app-icon-fit.ts`); sem medida, fica vazio e a imagem aparece em `cover` simples.
 -->
-@if (source(); as uri) {
+@if (systemGlyph(); as glyph) {
+  <span class="system-glyph" aria-hidden="true"><app-tv-icon [name]="glyph" /></span>
+} @else if (source(); as uri) {
   <img
     class="image"
     [src]="uri"

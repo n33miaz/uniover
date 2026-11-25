@@ -38,6 +38,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /**
  * A home, o Modo Dormir e o receptor rodando no Robolectric (JVM, sem emulador). Cobrem a montagem da tela, a
@@ -199,6 +200,29 @@ class LauncherUiTest {
         assertEquals("com.spotify.tv.android", focused.tileId)
     }
 
+    private fun imageOf(tile: AppTile): ImageView = collect(tile).filterIsInstance<ImageView>().single()
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun `an app without an icon shows its initial on the brand color`() {
+        val activity = home().get()
+        val netflix = tilesOf(activity).first { it.tileId == "com.netflix.ninja" }
+        val shown = imageOf(netflix).drawable
+        assertTrue("o app sem ícone ficou com $shown", shown is br.uniover.launcher.ui.FallbackIcon.LetterDrawable)
+        val look = (shown as br.uniover.launcher.ui.FallbackIcon.LetterDrawable).look
+        assertEquals("N", look.glyph)
+        assertEquals(0xFFB20710.toInt(), look.background)
+    }
+
+    @Test
+    fun `the TV settings app shows our own gear on the system plate`() {
+        writeConfig("""{ "schema": 1, "revision": 1, "apps": { "mode": "listed", "items": ["com.android.tv.settings"] } }""")
+        val activity = home().get()
+        val settings = tilesOf(activity).first { it.tileId == "com.android.tv.settings" }
+        assertTrue(settings.system)
+        assertEquals(ImageView.ScaleType.FIT_CENTER, imageOf(settings).scaleType)
+    }
+
     // ---------------------------------------------------------------- home: cliques
 
     @Test
@@ -281,6 +305,7 @@ class LauncherUiTest {
 
     @Test
     fun `sleep is black, keeps the screen on and any key wakes it`() {
+        // A tela mantida ligada não impede desligar: as teclas de energia seguem para o sistema (testes abaixo).
         val controller = Robolectric.buildActivity(SleepActivity::class.java).setup()
         val activity = controller.get()
         assertTrue(activity.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0)
@@ -328,9 +353,42 @@ class LauncherUiTest {
         }
         assertTrue(SleepKeys.passesThrough(KeyEvent.KEYCODE_MEDIA_PAUSE))
         assertFalse(SleepKeys.passesThrough(KeyEvent.KEYCODE_DPAD_CENTER))
-        assertFalse(SleepKeys.passesThrough(KeyEvent.KEYCODE_POWER))
+        assertTrue("energia segue para o sistema", SleepKeys.isPower(KeyEvent.KEYCODE_POWER))
         activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT))
         assertTrue("as outras teclas seguem acordando", activity.isFinishing)
+    }
+
+    private val powerKeys = listOf(
+        KeyEvent.KEYCODE_POWER, KeyEvent.KEYCODE_TV_POWER, KeyEvent.KEYCODE_SLEEP,
+        KeyEvent.KEYCODE_SOFT_SLEEP, KeyEvent.KEYCODE_WAKEUP,
+    )
+
+    @Test
+    fun `every power key closes the sleep screen and goes on to the system`() {
+        for (code in powerKeys) {
+            assertTrue("a tecla $code é de energia", SleepKeys.isPower(code))
+            val activity = Robolectric.buildActivity(SleepActivity::class.java).setup().get()
+            val down = activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+            assertFalse("a tecla $code foi engolida ao apertar: a TV não desligaria", down)
+            assertTrue("a tecla $code não fechou a tela preta", activity.isFinishing)
+            val up = activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+            assertFalse("a tecla $code foi engolida ao soltar", up)
+        }
+    }
+
+    @Test
+    fun `power key up alone also reaches the system`() {
+        for (code in powerKeys) {
+            val activity = Robolectric.buildActivity(SleepActivity::class.java).setup().get()
+            assertFalse("soltar $code foi engolido", activity.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code)))
+        }
+    }
+
+    @Test
+    fun `sleep screen closes when the TV goes to standby`() {
+        val controller = Robolectric.buildActivity(SleepActivity::class.java).setup()
+        controller.pause().stop()
+        assertTrue("a TV voltaria a ligar mostrando só preto", controller.get().isFinishing)
     }
 
     @Test

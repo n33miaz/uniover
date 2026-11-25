@@ -18,6 +18,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /**
  * O ícone de app enche o círculo de borda a borda (nunca um quadrado pequeno no meio), e os círculos do sistema são
@@ -29,7 +30,11 @@ class AppTileTest {
     private val context: Context get() = RuntimeEnvironment.getApplication()
     private val metrics = Metrics(1920, 1080)
 
-    private fun tile(icon: android.graphics.drawable.Drawable, system: Boolean = false) = AppTile(
+    private fun tile(
+        icon: android.graphics.drawable.Drawable,
+        system: Boolean = false,
+        fallback: (() -> android.graphics.drawable.Drawable)? = null,
+    ) = AppTile(
         context = context,
         metrics = metrics,
         iconSize = IconSize.MEDIUM,
@@ -39,6 +44,7 @@ class AppTileTest {
         icon = icon,
         onFocused = {},
         system = system,
+        fallback = fallback,
     )
 
     private fun imageOf(view: View): ImageView =
@@ -74,6 +80,28 @@ class AppTileTest {
             assertEquals(diameter, height)
             assertEquals(ImageView.ScaleType.CENTER_CROP, imageOf(tile).scaleType)
         }
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun `an icon with no paint at all shows the initial on the package color, never an empty circle`() {
+        val clear = BitmapDrawable(context.resources, Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888))
+        val letter = FallbackIcon.drawable("com.exemplo.som", "Som")
+        val tile = tile(clear, fallback = { letter })
+        assertTrue("o ícone transparente ficou no lugar", imageOf(tile).drawable === letter)
+        assertEquals(metrics.iconDiameter(IconSize.MEDIUM), usefulBox(tile).first)
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun `a small square in the middle of a wide transparent margin grows to fill the circle`() {
+        // 40% do lado no meio: antes ficava um quadrado pequeno no centro do círculo.
+        val bitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
+        for (y in 30 until 70) for (x in 30 until 70) bitmap.setPixel(x, y, Color.BLUE)
+        val fit = IconFit.fit(BitmapDrawable(context.resources, bitmap), 200)
+        val shown = (fit.drawable as BitmapDrawable).bitmap
+        assertEquals("a borda do círculo é a cor da placa, não transparente", Color.BLUE, shown.getPixel(2, 100))
+        assertEquals(Color.BLUE, shown.getPixel(100, 2))
     }
 
     @Test

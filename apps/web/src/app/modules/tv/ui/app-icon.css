@@ -45,6 +45,25 @@
   pointer-events: none;
 }
 
+/*
+ * App do sistema da TV: a placa dos círculos do sistema do TV Livre (o mesmo azul-noite do launcher) com o traço branco
+ * ocupando 52% do lado, como na TV.
+ */
+:host(.system) {
+  background: #4a5a8c;
+}
+.system-glyph {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: #fff;
+}
+.system-glyph app-tv-icon {
+  width: 52%;
+  height: 52%;
+}
+
 /* Reserva: cor do pacote misturada ao fundo do tema (fundo) e à tinta do tema (letra), AA nos dois temas. */
 .fallback {
   display: grid;
