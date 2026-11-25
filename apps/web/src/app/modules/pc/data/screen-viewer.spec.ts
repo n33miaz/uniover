@@ -74,6 +74,8 @@ describe('parseViewerMessage', () => {
     '{"k":"s.mon","monitors":[{"id":1,"width":10,"height":10}]}',
     '{"k":"s.mon","monitors":[{"id":1,"width":10,"height":10,"primary":true},{"id":1,"width":10,"height":10,"primary":false}]}',
     '{"k":"s.mon","monitors":[null]}',
+    '{"k":"s.mon","monitors":[{"id":-1,"width":10,"height":10,"primary":true}]}',
+    '{"k":"s.mon","monitors":[{"id":2147483648,"width":10,"height":10,"primary":true}]}',
     '{"k":"s.cur","x":"a","y":2}',
     '{"k":"s.cur","x":1}',
     '{"k":"s.state","state":"x"}',
@@ -223,6 +225,30 @@ describe('ScreenFrameLoop', () => {
     expect(sent.map((m) => m['width'])).toEqual([1280, 640]);
     expect(sent.map((m) => m['monitor'])).toEqual([1, 2]);
     expect(sent.map((m) => m['reset'])).toEqual([true, true]);
+    loop.stop();
+  });
+
+  it('restart(lost) drops the pending request, stops its watchdog and asks at once with the new view', () => {
+    const loop = make();
+    loop.start();
+    view = { monitor: 2, width: 640 };
+    loop.restart(true);
+    expect(sent.map((m) => m['monitor'])).toEqual([1, 2]);
+    expect(sent[1]['reset']).toBe(true);
+    // O pedido perdido não pode mais gerar timeout; o novo, sim, e só no seu prazo.
+    vi.advanceTimersByTime(9_999);
+    expect(timeouts).toBe(0);
+    vi.advanceTimersByTime(2);
+    expect(timeouts).toBe(1);
+    loop.stop();
+  });
+
+  it('restart(lost) with nothing pending behaves like restart', () => {
+    const loop = make();
+    loop.start();
+    loop.answered();
+    loop.restart(true);
+    expect(sent).toHaveLength(2);
     loop.stop();
   });
 

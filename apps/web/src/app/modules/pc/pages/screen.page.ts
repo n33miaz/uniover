@@ -28,12 +28,14 @@ import {
 } from '../data/screen-viewer';
 
 const START_TIMEOUT_MS = 20_000;
+/** A API encerra a sessão de tela em 90 s; a página reabre sozinha um pouco antes, sem o usuário perceber mais que um piscar. */
+const RENEW_MS = 75_000;
 /** A imagem não precisa passar da largura que o aparelho consegue mostrar (e 1280 basta para ler texto). */
 const MAX_WIDTH = 1280;
 /** O menor que o PC aceita. */
 const MIN_WIDTH = 128;
 
-type Phase = 'idle' | 'connecting' | 'live' | 'paused' | 'failed';
+type Phase = 'idle' | 'connecting' | 'live' | 'paused' | 'locked' | 'failed';
 
 interface Link {
   readonly connection: RTCPeerConnection;
@@ -44,6 +46,7 @@ interface Link {
   sessionId: string | null;
   painting: boolean;
   watchdog?: ReturnType<typeof setTimeout>;
+  renew?: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -223,16 +226,20 @@ export class ScreenPage {
         return $localize`:@@pc.screen.failed:Não foi possível mostrar a tela do PC.`;
       case 'paused':
         return $localize`:@@pc.screen.paused:A tela parou porque a página ficou oculta.`;
+      case 'locked':
+        return this.lockedText();
     }
     if (this.phase() !== 'live') return null;
-    if (this.state() === 'locked') {
-      return $localize`:@@pc.screen.locked:PC bloqueado ou aviso do Windows na tela: confirme no PC.`;
-    }
+    if (this.state() === 'locked') return this.lockedText();
     if (this.state() === 'elevated') {
       return $localize`:@@pc.screen.elevated:Há uma janela de administrador na tela: o Windows não deixa controlá-la daqui.`;
     }
     return null;
   });
+
+  private lockedText(): string {
+    return $localize`:@@pc.screen.locked:PC bloqueado ou aviso do Windows na tela: confirme no PC.`;
+  }
 
   constructor() {
     effect(() => {
@@ -288,7 +295,7 @@ export class ScreenPage {
           send: (text) => channel.send(text),
           view: () => this.viewRequest(),
           onTimeout: () => {
-            if (this.link === active) this.finish('failed');
+            if (this.link === active) this.finish(this.state() === 'locked' ? 'locked' : 'failed');
           },
         }),
         parentSessionId,
@@ -352,7 +359,8 @@ export class ScreenPage {
 
   private listen(link: Link): void {
     const lost = () => {
-      if (this.link === link) this.finish('failed');
+      // Bloqueada, o PC avisa e fecha a sessão: é um aviso estável, não uma falha.
+      if (this.link === link) this.finish(this.state() === 'locked' ? 'locked' : 'failed');
     };
     link.channel.addEventListener('close', lost);
     link.channel.addEventListener('error', lost);
@@ -396,6 +404,7 @@ export class ScreenPage {
         if (!link.loop.active) {
           clearTimeout(link.watchdog);
           this.phase.set('live');
+          link.renew = setTimeout(() => this.renew(link), RENEW_MS);
           link.loop.start();
         } else if (
           before === null ||
@@ -403,8 +412,10 @@ export class ScreenPage {
           before.width !== chosen.width ||
           before.height !== chosen.height
         ) {
-          // O pedido em andamento termina antes; o próximo já leva o monitor e o tamanho novos.
-          link.loop.restart();
+          // O pedido em andamento termina antes; o próximo já leva o monitor e o tamanho novos. Se o monitor pedido
+          // sumiu, o PC descartou o pedido sem responder: ele é dado como perdido.
+          const gone = before !== null && !message.monitors.some((item) => item.id === before.id);
+          link.loop.restart(gone);
         }
         break;
       }
@@ -416,11 +427,19 @@ export class ScreenPage {
         this.cursor.set(message.cursor);
         break;
       case 's.state':
+        // O estado chega sem ser pedido (a cada mudança) e não responde a nenhum `s.get`: não mexe no laço. Bloqueada,
+        // o PC fecha a sessão logo depois e `lost` mostra o aviso como fase própria, não como falha.
         this.state.set(message.state);
-        // Bloqueada, o PC responde ao pedido só com o estado: o laço segue pedindo, mais devagar, até ela voltar.
-        if (message.state === 'locked') link.loop.answered(true);
         break;
     }
+  }
+
+  /** Fim normal da sessão de tela (90 s): fecha esta e abre outra, em vez de esperar o PC encerrar. */
+  private renew(link: Link): void {
+    if (this.link !== link) return;
+    this.finish('connecting');
+    if (this.canOpen()) void this.open();
+    else this.phase.set('failed');
   }
 
   private async paint(link: Link, frame: ScreenViewerFrame): Promise<void> {
@@ -428,6 +447,10 @@ export class ScreenPage {
     try {
       const canvas = this.surface()?.nativeElement;
       if (this.link !== link || !canvas) return;
+      // O JPEG tem de ter o tamanho que o cabeçalho declarou (e já validou): outro tamanho é recusado.
+      if (bitmap.width !== frame.width || bitmap.height !== frame.height) {
+        throw new Error('imagem diverge do cabeçalho');
+      }
       if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
       if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
       const context = canvas.getContext('2d');
@@ -451,6 +474,7 @@ export class ScreenPage {
     }
     this.link = null;
     clearTimeout(link.watchdog);
+    clearTimeout(link.renew);
     link.loop.stop();
     link.channel.close();
     link.connection.close();
