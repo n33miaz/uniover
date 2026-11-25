@@ -59,7 +59,12 @@ public static class UniOverMenuGlyph {
                 pen.StartCap = LineCap.Round;
                 pen.EndCap = LineCap.Round;
                 pen.LineJoin = LineJoin.Round;
-                if (action == "open") {
+                if (action == "stop_screen") {
+                    g.DrawRectangle(pen, 3 * unit, 4 * unit, 14 * unit, 10 * unit);
+                    g.DrawLine(pen, 7 * unit, 17 * unit, 13 * unit, 17 * unit);
+                    g.DrawLine(pen, 7 * unit, 6 * unit, 13 * unit, 12 * unit);
+                    g.DrawLine(pen, 13 * unit, 6 * unit, 7 * unit, 12 * unit);
+                } else if (action == "open") {
                     g.DrawRectangle(pen, 3 * unit, 5 * unit, 14 * unit, 11 * unit);
                     g.DrawLine(pen, 3 * unit, 8 * unit, 17 * unit, 8 * unit);
                 } else if (action == "status") {
@@ -162,9 +167,16 @@ foreach ($entry in $initial.menu) {
     $item.AccessibleName = [string]$entry.label
     $item.add_Click({
         param($sender, $eventArgs)
-        [Console]::Out.WriteLine('ACTION ' + $sender.Tag)
+        $command = 'ACTION ' + $sender.Tag
+        # O pedido de parar leva a visualizacao que o menu mostrava: nunca derruba uma posterior.
+        if ($sender.Tag -eq 'stop_screen') { $command += ' ' + $script:menuViewing }
+        [Console]::Out.WriteLine($command)
         [Console]::Out.Flush()
     })
+    if ($action -eq 'stop_screen') {
+        $item.Available = $false
+        $script:stopItem = $item
+    }
     [void]$menu.Items.Add($item)
     $actionItems += $item
 }
@@ -244,6 +256,8 @@ function Apply-Theme {
         $dot = if ($high) { [System.Drawing.SystemColors]::Highlight } else { [System.Drawing.ColorTranslator]::FromHtml('#b3261e') }
     } elseif ($script:stateCode -eq 'updating') {
         $dot = if ($high) { [System.Drawing.SystemColors]::Highlight } else { [System.Drawing.ColorTranslator]::FromHtml('#4776a6') }
+    } elseif ($script:stateCode -eq 'viewing') {
+        $dot = if ($high) { [System.Drawing.SystemColors]::Highlight } else { [System.Drawing.ColorTranslator]::FromHtml('#7b2fbe') }
     }
     $glyphSize = [int][Math]::Ceiling(18 * [Math]::Max(96, $script:lastDpi) / 96.0)
     $previousDot = $stateLabel.Image
@@ -297,6 +311,7 @@ function Place-Menu {
     $menu.Location = New-Object System.Drawing.Point($x, $y)
 }
 
+$menu.add_Opening({ $script:menuViewing = $script:viewing })
 $menu.add_Opened({ Place-Menu })
 $icon.add_MouseClick({ param($sender, $eventArgs)
     if ($eventArgs.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
@@ -307,6 +322,8 @@ $icon.add_MouseClick({ param($sender, $eventArgs)
 
 $lastState = ''
 $script:stateCode = ''
+$script:viewing = ''
+$script:menuViewing = ''
 $lastTheme = ''
 $lastDpi = 0
 $timer = New-Object System.Windows.Forms.Timer
@@ -335,6 +352,10 @@ $timer.add_Tick({
         $hintLabel.Text = $hintLines -join "`r`n"
         $hintLabel.AccessibleName = $hintLines -join ' '
         $hintLabel.Available = ($hintLines.Count -gt 0)
+        $script:viewing = [string]$view.viewing
+        # Menu ja aberto quando a visualizacao comecou: o item que surge agora vale para ela.
+        if (-not $script:menuViewing) { $script:menuViewing = $script:viewing }
+        if ($null -ne $script:stopItem) { $script:stopItem.Available = [bool]$script:viewing }
         Apply-Theme
         $title = [string]$view.title
         $icon.Text = $title.Substring(0, [Math]::Min(63, $title.Length))

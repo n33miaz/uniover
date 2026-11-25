@@ -6,8 +6,10 @@ quando avisar.
 - "Sair" só fecha o ícone. Deixa `runtime\tray-closed` (para o supervisor não o reabrir sozinho) e
   para o ícone; o agente não é tocado. O ícone volta pelo atalho "UniOver Agente" do menu Iniciar ou
   no próximo logon.
-- O balão do Windows só aparece numa falha de atualização, uma vez por resultado (a lembrança fica
-  em `runtime\tray-notified.json`, então reabrir o ícone não repete o aviso).
+- Sozinho, o balão do Windows só aparece em dois casos: numa falha de atualização, uma vez por
+  resultado (a lembrança fica em `runtime\tray-notified.json`, então reabrir o ícone não repete o
+  aviso), e quando um aparelho começa a ver a tela do PC.
+- "Parar de mostrar a tela" pede o fim da visualização que o menu mostrava, nunca de outra.
 - Qualquer erro do próprio ícone vira ocorrência de diagnóstico (componente `tray`), que o agente
   envia à API.
 """
@@ -23,6 +25,7 @@ from typing import Final
 
 from uniover_agent.core.diagnostics import describe_exception
 from uniover_agent.core.tray_model import (
+    VIEWING_RESUMES_WITHIN,
     TrayInputs,
     TrayView,
     should_notify_update_failure,
@@ -38,6 +41,11 @@ _log = logging.getLogger(__name__)
 CLOSED_FLAG: Final = "tray-closed"
 NOTIFIED_FILE: Final = "tray-notified.json"
 TITLE: Final = "UniOver"
+VIEWING_TITLE: Final = "Tela do PC"
+VIEWING_MESSAGE: Final = (
+    "Um aparelho está vendo a tela deste PC. Para encerrar, use "
+    '"Parar de mostrar a tela" no ícone do UniOver.'
+)
 PROMOTE_EVERY_SECONDS: Final = 3.0
 PROMOTE_FOR_SECONDS: Final = 120.0
 
@@ -56,6 +64,8 @@ class TrayEnv:
     # Devolve se o aviso foi entregue (sem ícone na bandeja ainda, não há como mostrar balão).
     notify: Callable[[str, str], bool]
     stop: Callable[[], None]
+    # Pede o fim daquela visualização da tela; `False` se ela já tinha acabado.
+    stop_screen: Callable[[str], bool]
     record: Callable[[str, Severity, str], None]
     site_url: str
     version: Callable[[], str | None] = lambda: None
@@ -68,6 +78,10 @@ class TrayController:
         self.inputs: TrayInputs | None = None
         # O último aviso dado nesta execução: vale mesmo se o disco não deixar gravar a lembrança.
         self._announced: str | None = None
+        # Quando a visualização já avisada foi vista pela última vez (nulo: a próxima é nova).
+        self._viewing_seen: datetime | None = None
+        # A que o dono mandou parar: segue visível até o processo da tela sair.
+        self._stopped_screen: str | None = None
 
     # -- sinais para o supervisor
     # ------------------------------------------------------------------------
@@ -80,17 +94,25 @@ class TrayController:
     # -- itens do menu
     # ------------------------------------------------------------------------------------
 
-    def handle(self, action: str) -> None:
-        """Executa um item do menu. Falha de um item vira diagnóstico e nunca derruba o ícone."""
+    def handle(self, action: str, screen_session: str | None = None) -> None:
+        """Executa um item do menu. Falha de um item vira diagnóstico e nunca derruba o ícone.
+
+        `screen_session` é a visualização que o menu mostrava quando "Parar de mostrar a tela" foi
+        escolhido."""
         try:
-            self._dispatch(action)
+            self._dispatch(action, screen_session)
         except Exception as exc:
             _log.warning("item do menu da bandeja falhou (%s)", action, exc_info=True)
             self._env.record("tray.action_failed", "error", f"{action}: {describe_exception(exc)}")
 
-    def _dispatch(self, action: str) -> None:
+    def _dispatch(self, action: str, screen_session: str | None) -> None:
         env = self._env
-        if action == "open":
+        if action == "stop_screen":
+            if screen_session and env.stop_screen(screen_session):
+                self._stopped_screen = screen_session
+                # O aparelho que pedir a tela de novo começa outra visualização, com aviso.
+                self._viewing_seen = None
+        elif action == "open":
             env.open_url(env.site_url)
         elif action == "status":
             self.refresh()
@@ -103,7 +125,7 @@ class TrayController:
             else:
                 env.notify("Ainda não há registro para mostrar.", TITLE)
         elif action == "update":
-            # Sem balão: quem pediu já sabe, e o aviso do Windows é só para falha.
+            # Sem balão: quem pediu já sabe.
             self._signal("update-now")
         elif action == "restart":
             self._signal("restart-now")
@@ -123,15 +145,28 @@ class TrayController:
 
         `announce=False` é a primeira leitura, antes de o ícone existir: o balão fica para a
         próxima, senão a falha de uma atualização feita no logon (a mais comum) seria dada como
-        avisada sem ninguém ter visto."""
+        avisada sem ninguém ter visto. Já uma visualização da tela em curso nessa hora não está
+        começando: não ganha balão."""
         env = self._env
         now = env.now()
         inputs = env.read_inputs(now)
         view = view_of(inputs)
         self.inputs, self.view = inputs, view
         if announce:
+            self._notify_viewing(inputs.screen_session, now)
             self._maybe_notify(inputs, now)
+        elif inputs.screen_session:
+            self._viewing_seen = now
         return view
+
+    def _notify_viewing(self, session: str | None, now: datetime) -> None:
+        """Balão só quando a visualização começa; sem entrega, a próxima leitura tenta de novo."""
+        if session is None or session == self._stopped_screen:
+            return
+        seen = self._viewing_seen
+        resumed = seen is not None and now - seen <= VIEWING_RESUMES_WITHIN
+        if resumed or self._env.notify(VIEWING_MESSAGE, VIEWING_TITLE):
+            self._viewing_seen = now
 
     def _maybe_notify(self, inputs: TrayInputs, now: datetime) -> None:
         checked = inputs.update_checked_at

@@ -1,5 +1,6 @@
 """Contrato do host visual sem abrir outra bandeja durante a suite automatica."""
 
+import io
 import json
 import os
 import threading
@@ -27,7 +28,10 @@ def test_host_state_keeps_the_menu_model_and_attention(tmp_path: Path) -> None:
     assert data["status"] == "Sem conexão · Atenção"
     assert data["code"] == "error"
     assert data["icon"].endswith("error-attention.ico")
+    # Ninguém vendo a tela: o host esconde o item de parar.
+    assert data["viewing"] is None
     assert [item["action"] for item in data["menu"] if item] == [
+        "stop_screen",
         "open",
         "status",
         "log",
@@ -85,10 +89,91 @@ def test_the_host_script_is_ascii_only_and_picks_the_dot_color_by_state_code() -
     script = tray_host.host_script().read_bytes()
     assert all(byte < 0x80 for byte in script), "tray-host.ps1 deve ser ASCII puro"
     text = script.decode("ascii")
-    for code in ("reconnecting", "error", "updating"):
+    for code in ("reconnecting", "error", "updating", "viewing"):
         assert f"$script:stateCode -eq '{code}'" in text
     assert "StartsWith(" not in text
     assert "$script:stateCode = [string]$view.code" in text
+
+
+def test_host_state_tells_the_script_which_viewing_the_stop_item_ends(tmp_path: Path) -> None:
+    state = tmp_path / "state.json"
+    view = TrayView("viewing", False, "UniOver", screen_session="a" * 32)
+    tray_host._write_state(state, view, tmp_path)
+
+    data = json.loads(state.read_text(encoding="utf-8"))
+    assert (data["code"], data["status"]) == ("viewing", "Tela sendo vista")
+    assert data["viewing"] == "a" * 32
+    assert data["icon"].endswith("viewing.ico")
+    assert data["menu"][0] == {"action": "stop_screen", "label": "Parar de mostrar a tela"}
+
+
+def test_the_host_script_binds_the_stop_to_the_viewing_the_menu_showed() -> None:
+    script = tray_host.host_script().read_text(encoding="ascii")
+
+    # Escondido até haver alguém vendo; o identificador é o de quando o menu abriu.
+    assert "$item.Available = $false" in script
+    assert "$script:stopItem.Available = [bool]$script:viewing" in script
+    assert "$menu.add_Opening({ $script:menuViewing = $script:viewing })" in script
+    assert "$command += ' ' + $script:menuViewing" in script
+
+
+class _FakeHost:
+    """Um host que diz o que mandaram e depois fecha a saída, sem processo nem ícone."""
+
+    def __init__(self, *lines: str) -> None:
+        self.stdout = io.StringIO("".join(f"{line}\n" for line in lines))
+
+    def poll(self) -> None:
+        return None
+
+    def terminate(self) -> None:
+        pass
+
+    def kill(self) -> None:
+        pass
+
+    def wait(self, timeout: float | None = None) -> int:
+        return 0
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("ACTION stop_screen " + "a" * 32, [("stop_screen", "a" * 32)]),
+        ("ACTION stop_screen ", [("stop_screen", None)]),
+        ("ACTION status", [("status", None)]),
+        ("ACTION apagar " + "a" * 32, []),
+    ],
+)
+def test_host_commands_reach_the_controller_with_the_viewing_they_name(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    line: str,
+    expected: list[tuple[str, str | None]],
+) -> None:
+    monkeypatch.setenv(DRILL_ENV, "1")
+    monkeypatch.setattr(tray_host, "popen_hidden", lambda *_, **__: _FakeHost("READY", line))
+    handled: list[tuple[str, str | None]] = []
+    view = TrayView("connected", False, "UniOver")
+
+    class Controller:
+        def refresh(self) -> TrayView:
+            return view
+
+        def handle(self, action: str, screen_session: str | None = None) -> None:
+            handled.append((action, screen_session))
+
+    # A saída falsa acaba depois da linha: o host a trata como queda e devolve o controle.
+    assert not tray_host.run_host(
+        tmp_path,
+        tmp_path,
+        view,
+        cast(TrayController, Controller()),
+        lambda _: None,
+        lambda _: None,
+        lambda *_: None,
+    )
+    assert handled == expected
 
 
 def test_host_state_recovers_when_windows_briefly_locks_the_file(
@@ -195,7 +280,7 @@ def test_real_host_opens_and_exits_without_a_console(
         def refresh(self) -> TrayView:
             return TrayView("connected", False, "UniOver: conectado")
 
-        def handle(self, action: str) -> None:
+        def handle(self, action: str, screen_session: str | None = None) -> None:
             alarms.append(action)
 
     def set_stop(callback: Callable[[], None]) -> None:

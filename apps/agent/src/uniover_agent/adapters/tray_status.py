@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from uniover_agent.adapters.api_reach import ApiReach, shared_api_reach
 from uniover_agent.adapters.installation import installation_base
-from uniover_agent.adapters.pc_screen_presence import screen_is_viewing
+from uniover_agent.adapters.pc_screen_presence import viewing_session
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.update_status import FileUpdateStatus, default_status_path
 from uniover_agent.config import agent_source_dir
@@ -269,7 +269,7 @@ def read_tray_inputs(now: datetime) -> TrayInputs:
         update_outcome=update.outcome,
         update_checked_at=parse_time(update.checked_at),
         heartbeat_age=heartbeat_age(now),
-        viewing_screen=screen_is_viewing(),
+        screen_session=viewing_session(),
         # Agente antigo não grava o campo; valor desconhecido também vale como "não se sabe".
         net_problem=cast(NetProblem, net) if net in NET_PROBLEMS else None,
     )

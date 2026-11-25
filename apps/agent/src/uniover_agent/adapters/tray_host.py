@@ -97,6 +97,8 @@ def _write_state(  # noqa: PLR0913 - estado, destino e opções da gravação
         "code": view.state,
         # O que fazer com a queda, em linhas curtas (vazio esconde o item no menu).
         "hint": textwrap.wrap(view.hint, _HINT_WIDTH),
+        # A visualização da tela em curso (nulo esconde o item de parar).
+        "viewing": view.screen_session,
         "menu": [
             None if entry is None else {"action": entry.action, "label": entry.label}
             for entry in MENU
@@ -260,11 +262,12 @@ def run_host(  # noqa: PLR0912, PLR0913, PLR0917, PLR0915 - integra processo e c
                     record("tray.host_failed", "warn", "host visual fechou; menu nativo restaurado")
                     return False
                 if line.startswith("ACTION "):
-                    action = line[7:]
+                    # "Parar de mostrar a tela" traz junto a visualização que o menu mostrava.
+                    action, _, session = line[7:].partition(" ")
                     if any(
                         isinstance(entry, MenuEntry) and entry.action == action for entry in MENU
                     ):
-                        controller.handle(action)
+                        controller.handle(action, session or None)
                 if stopping.is_set():
                     break
                 try:

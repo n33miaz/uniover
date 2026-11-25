@@ -29,6 +29,7 @@ import pystray  # type: ignore[import-untyped]
 
 from uniover_agent.adapters.diagnostics_file import open_diagnostics
 from uniover_agent.adapters.installation import installation_base
+from uniover_agent.adapters.pc_screen_presence import request_screen_stop
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.tray_assets import assets_dir, frame
 from uniover_agent.adapters.tray_controller import (
@@ -50,7 +51,7 @@ from uniover_agent.adapters.tray_win32 import (
 from uniover_agent.adapters.update_basics import DRILL_ENV
 from uniover_agent.config import Settings
 from uniover_agent.core.diagnostics import describe_exception
-from uniover_agent.core.tray_model import MENU, MenuEntry, TrayView
+from uniover_agent.core.tray_model import MenuEntry, TrayView, menu_for
 from uniover_agent.ports.diagnostics import Severity
 from uniover_agent.ports.tray import ICON_ID
 
@@ -159,6 +160,7 @@ def _run(base: Path, recorder: _Recorder) -> int:  # noqa: PLR0915 - integra doi
         open_file=_open_file,
         notify=notify,
         stop=stop,
+        stop_screen=request_screen_stop,
         record=recorder,
         site_url=settings.api_url or DEFAULT_SITE,
     )
@@ -183,11 +185,13 @@ def _run(base: Path, recorder: _Recorder) -> int:  # noqa: PLR0915 - integra doi
             recorder("tray.host_failed", "warn", describe_exception(exc))
         holder.clear()
 
-    def item(entry: MenuEntry | None) -> Any:
+    def item(entry: MenuEntry | None, session: str | None) -> Any:
         if entry is None:
             return pystray.Menu.SEPARATOR
         return pystray.MenuItem(
-            entry.label, lambda *_: controller.handle(entry.action), default=entry.default
+            entry.label,
+            lambda *_: controller.handle(entry.action, session),
+            default=entry.default,
         )
 
     # O aviso de rede (sem internet, servidor fora, PC sem rede) fica no topo, sem ação, e só
@@ -199,12 +203,19 @@ def _run(base: Path, recorder: _Recorder) -> int:  # noqa: PLR0915 - integra doi
         enabled=False,
         visible=lambda _item: bool(hint["text"]),
     )
+    screen = {"session": first.screen_session}
+
+    def items() -> tuple[Any, ...]:
+        # Montado a cada `update_menu`: o item de parar leva a visualização que o menu mostra.
+        session = screen["session"]
+        return (hint_item, *[item(entry, session) for entry in menu_for(session)])
+
     size = small_icon_size()
     icon = SharpIcon(
         "UniOver",
         frame(assets / first.icon_file, size),
         first.title,
-        pystray.Menu(hint_item, *[item(entry) for entry in MENU]),
+        pystray.Menu(items),
     )
     icon.ico_file = assets / first.icon_file
     icon.icon_size = size
@@ -218,8 +229,9 @@ def _run(base: Path, recorder: _Recorder) -> int:  # noqa: PLR0915 - integra doi
             icon.ico_file, icon.icon_size = path, current
             icon.icon = frame(path, current)
         icon.title = view.title
-        if view.hint != hint["text"]:
+        if view.hint != hint["text"] or view.screen_session != screen["session"]:
             hint["text"] = view.hint
+            screen["session"] = view.screen_session
             icon.update_menu()
 
     def refresh_loop() -> None:
