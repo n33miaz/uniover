@@ -7,6 +7,7 @@ from uniover_agent.core.tv.text_edit import (
     _BufferedIme,
     _ErasePlan,
     _FieldState,
+    _ImeSequence,
     _TextDoubt,
 )
 from uniover_agent.ports import TextFieldStatus
@@ -32,8 +33,8 @@ def populated() -> _FieldState:
         doubt_owns_field=True,
         erase=_ErasePlan(2, 4, None),
         erase_report=report("abc", 7),
-        field_sequence=(7, 3),
-        erase_sequence=3,
+        field_sequence=(7, _ImeSequence(3, 1)),
+        erase_sequence=_ImeSequence(3, 1),
         pending_field=report("xyz", 8),
         dropped_fields=[report("old", 6)],
     )
@@ -65,9 +66,9 @@ def test_a_new_session_keeps_the_base_the_doubt_and_the_erase_range() -> None:
     assert state.uncertain is not None
     assert (state.doubt_counter, state.doubt_owns_field) == (7, True)
     assert state.erase is not None
-    assert state.erase_sequence == 3
-    # O contador de IME recomeça na reconexão: a sequência salva não vale na sessão nova.
-    assert state.field_sequence is None
+    assert state.erase_sequence == _ImeSequence(3, 1)
+    # Presa à conexão em que chegou, a sequência segue recusando a repetição do último relato.
+    assert state.field_sequence == (7, _ImeSequence(3, 1))
 
 
 def test_an_app_change_drops_the_doubt_and_the_sequence() -> None:
@@ -99,7 +100,7 @@ def test_a_focus_change_inside_an_edit_keeps_the_pending_report_for_the_next_bas
     state.end_edit_focus()
     assert state.pending_field is pending
     assert state.dropped_fields == dropped
-    assert state.field_sequence == (7, 3)
+    assert state.field_sequence == (7, _ImeSequence(3, 1))
     assert (state.last, state.last_at, state.field_counter) == ("", None, None)
     assert state.echo is None
     assert not state.owns_field
@@ -144,7 +145,6 @@ def test_every_boundary_is_classified() -> None:
             "echo",
             "owns_field",
             "erase_report",
-            "field_sequence",
         },
         "end_edit_focus": {
             "last",
@@ -202,3 +202,16 @@ def test_the_state_has_a_single_owner() -> None:
     leaked = [n for n in names if f"_{n}" in vars(rig.editor)]
     assert leaked == []
     assert isinstance(rig.editor, TextReconciler)
+
+
+def test_the_ime_sequence_only_grows_inside_one_connection() -> None:
+    mark = _ImeSequence(10, 1)
+    assert [mark.admits(value, 1) for value in (9, 10, 11)] == [False, False, True]
+    assert not mark.admits(None, 1)
+
+
+def test_another_connection_accepts_a_reset_counter_but_not_a_repeated_one() -> None:
+    """O contador de IME pode recomeçar na reconexão: só o valor igual ao último fica em dúvida."""
+    mark = _ImeSequence(10, 1)
+    assert [mark.admits(value, 2) for value in (3, 10, 11)] == [True, False, True]
+    assert not mark.admits(None, 2)

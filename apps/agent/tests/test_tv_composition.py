@@ -374,6 +374,47 @@ async def test_only_a_fresh_field_report_during_opening_limits_the_resumed_erase
         await setup.manager.aclose()
 
 
+async def test_a_reset_ime_counter_after_the_session_ends_still_limits_the_resumed_erase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fim de sessão com a limpeza interrompida e contador de IME reiniciado na conexão nova.
+
+    O limiar da limpeza é capturado antes da reconexão, preso à conexão antiga: o relato da nova,
+    com contador menor, ainda é fresco e limita a retomada (sem reenviar a faixa inteira de `DEL`).
+    """
+    remote = FakeTvRemote()
+    pair_fake_tv(monkeypatch, remote)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None and setup.text is not None
+    await setup.manager.wake()
+    remote.push_text_field(TextFieldStatus("x" * 202, 202, 202, "Buscar", 1, 10))
+    original = remote.send_key
+
+    async def drop_on_y(
+        key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        if key == "TYPE_Y":
+            raise TvUnreachable("controle indisponível")
+        await original(key, direction, before_send=before_send)
+
+    try:
+        monkeypatch.setattr(remote, "send_key", drop_on_y)
+        with pytest.raises(TvSessionError):
+            await setup.text.set_text("x" * 201 + "y")
+        monkeypatch.setattr(remote, "send_key", original)
+        with pytest.raises(TvSessionError, match="grande demais"):
+            await setup.text.set_text("xyz")
+        await remote.disconnect()
+        remote.on_connect = lambda: remote.push_text_field(
+            TextFieldStatus("xx", 2, 2, "Buscar", 1, 3)  # contador reiniciado, menor que 10
+        )
+        remote.keys.clear()
+        await setup.text.set_text("xyz")
+        assert remote.keys == ["DEL", "DEL", "TYPE_X", "TYPE_Y", "TYPE_Z"]
+    finally:
+        await setup.manager.aclose()
+
+
 async def test_the_composed_typing_forgets_the_field_when_another_app_takes_focus(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

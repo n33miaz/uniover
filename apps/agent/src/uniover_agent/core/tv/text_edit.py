@@ -205,6 +205,28 @@ class _ErasePlan:
 
 
 @dataclass(frozen=True, slots=True)
+class _ImeSequence:
+    """Contador de IME de um relato do campo, preso à conexão (`link`) em que ele chegou.
+
+    O adaptador só repassa relatos do protocolo da conexão atual, e a abertura invalida o campo
+    antes de o canal novo emitir os seus: um relato visto depois de uma reconexão é da conexão
+    nova. Na mesma conexão o contador só cresce, então só o maior é fresco. Em outra conexão o
+    contador pode ter recomeçado (menor) ou seguido (maior); o valor igual ao último visto não se
+    distingue da repetição do relato de antes da queda e, na dúvida, não vale.
+    """
+
+    value: int
+    link: int
+
+    def admits(self, sequence: int | None, link: int) -> bool:
+        if sequence is None:
+            return False
+        if link == self.link:
+            return sequence > self.value
+        return sequence != self.value
+
+
+@dataclass(frozen=True, slots=True)
 class _TextDoubt:
     expected: str
     floor: int
@@ -299,9 +321,10 @@ class _FieldState:
     # Relato do campo da dúvida chegado depois da interrupção: o retrato fresco que a retomada
     # confere (ver `_resume_erase`).
     erase_report: TextFieldStatus | None = None
-    # Maior sequência observada do campo e seu valor no instante da interrupção.
-    field_sequence: tuple[int, int] | None = None
-    erase_sequence: int | None = None
+    # Maior sequência observada do campo e seu valor no instante da interrupção, cada uma com a
+    # conexão em que chegou: o contador de IME pode recomeçar na reconexão (ver `_ImeSequence`).
+    field_sequence: tuple[int, _ImeSequence] | None = None
+    erase_sequence: _ImeSequence | None = None
     # Relato de outro campo chegado no meio de uma edição: entra quando ela termina.
     pending_field: TextFieldStatus | None = None
     # Relatos descartados por sessões novas no meio da edição: não semeiam base nenhuma (são da
@@ -329,10 +352,8 @@ class _FieldState:
         self.echo = None
         self.owns_field = False
         self.erase_report = None  # de antes da sessão nova: não é mais fresco
-        # O contador de IME recomeça em 0 na reconexão: a sequência salva só vale dentro da mesma
-        # sessão. Mantê-la reprovaria no frescor um relato legítimo do mesmo campo. Zerá-la é
-        # conservador: sem sequência, valem só as demais checagens (nunca apaga a mais).
-        self.field_sequence = None
+        # Mantém as sequências: presas à conexão em que chegaram, elas ainda recusam a repetição
+        # do último relato de antes da queda, e o limiar da limpeza interrompida sai delas.
 
     def end_focus(self, *, recovering: bool) -> None:
         if recovering:
@@ -447,19 +468,18 @@ class TextReconciler:
         """
         self._observe_buffered_ime(field)
         sequence = field.ime_counter
-        previous = self._sequence_for(field.counter)
-        if sequence is not None and (previous is None or sequence > previous):
+        fresh = self._fresh(self._sequence_for(field.counter), sequence)
+        if sequence is not None and fresh:
             if self._f.doubt_counter is None or field.counter == self._f.doubt_counter:
-                self._f.field_sequence = (field.counter, sequence)
+                self._f.field_sequence = (field.counter, _ImeSequence(sequence, self._link))
         if (
             self._f.erase is not None
             and self._f.erase.link is None
             and self._f.doubt_counter is not None
             and field.counter == self._f.doubt_counter
             and self._f.erase_sequence is not None
-            and sequence is not None
-            and sequence > self._f.erase_sequence
-            and (previous is None or sequence > previous)
+            and self._f.erase_sequence.admits(sequence, self._link)
+            and fresh
         ):
             # A sequência precisa avançar: um eco velho também pode chegar depois da queda.
             self._f.erase_report = field
@@ -474,17 +494,20 @@ class TextReconciler:
             return
         self._accept(field)
 
-    def _sequence_for(self, counter: int | None) -> int | None:
+    def _sequence_for(self, counter: int | None) -> _ImeSequence | None:
         sequence = self._f.field_sequence
         return sequence[1] if sequence is not None and sequence[0] == counter else None
+
+    def _fresh(self, previous: _ImeSequence | None, sequence: int | None) -> bool:
+        """Sem sequência anterior do campo, nada a comparar; com ela, vale `_ImeSequence`."""
+        return previous is None or previous.admits(sequence, self._link)
 
     def _observe_buffered_ime(self, field: TextFieldStatus) -> None:
         buffered = self._f.buffered_ime
         if buffered is None:
             return
         changed = buffered.counter is not None and field.counter != buffered.counter
-        sequence = self._sequence_for(field.counter)
-        fresh = sequence is None or (field.ime_counter is not None and field.ime_counter > sequence)
+        fresh = self._fresh(self._sequence_for(field.counter), field.ime_counter)
         if buffered.lost:
             if fresh:
                 buffered.report = field
