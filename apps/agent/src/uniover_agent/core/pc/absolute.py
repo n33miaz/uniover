@@ -2,12 +2,14 @@
 absoluta.
 
 O app manda `(m, u, v)`: o monitor como a tela ao vivo o anunciou (`s.mon`) e a posição relativa
-dentro dele (0 a 65535 nos dois eixos), mais o tamanho que ele viu (`w`, `h`). Aqui, sem tocar no
-sistema:
+dentro dele (0 a 65535 nos dois eixos), mais o tamanho que ele viu (`w`, `h`) e a impressão do
+arranjo inteiro daquele anúncio (`l`, ver `layout_print`). Aqui, sem tocar no sistema:
 
-- `physical_point` acha o monitor na leitura de agora (pixels físicos, como a tela ao vivo os
-  mede) e dá o pixel; um monitor que sumiu ou mudou de tamanho é `stale_layout`, e o app espera o
-  próximo `s.mon` (clicar no lugar errado é pior que não clicar);
+- `physical_point` confere a impressão contra a leitura de agora (pixels físicos, como a tela ao
+  vivo os mede), acha o monitor e dá o pixel; um arranjo diferente (monitor ligado, desligado,
+  movido ou de outro tamanho) é `stale_layout`, e o app espera o próximo `s.mon` (clicar no lugar
+  errado é pior que não clicar). Só o número e o tamanho não bastam: com dois monitores iguais,
+  desligar o primeiro faz o outro virar o número 0 com o mesmo tamanho;
 - `normalized` leva o pixel à escala do `SendInput` absoluto sobre o desktop virtual
   (`MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK`): `round((X - vx) * 65535 / (vw - 1))`. A volta
   que o Windows faz cai no mesmo pixel ou no vizinho, qualquer que seja o arredondamento dele, e não
@@ -17,6 +19,8 @@ O desktop virtual é a união dos retângulos dos monitores, lidos na mesma cham
 discordam entre si (o que aconteceria lendo um com o DPI do processo e o outro com o da thread).
 """
 
+import struct
+import zlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Protocol, runtime_checkable
@@ -38,6 +42,10 @@ NORMALIZED_MAX: Final = 65535
 MAX_MONITOR_ID: Final = 63
 MAX_MONITOR_SIDE: Final = 32767
 MAX_ABS_SEQ: Final = 2_147_483_647
+MAX_LAYOUT_PRINT: Final = 0xFFFF_FFFF
+# Cada monitor na impressão: número, esquerda, topo, largura e altura, inteiros de 32 bits com
+# sinal em big-endian (a ordem é a da enumeração, a mesma dos números).
+_PRINT_ITEM: Final = struct.Struct(">5i")
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,37 +59,63 @@ class MonitorArea:
     height: int
 
 
+class _MonitorRect(Protocol):
+    @property
+    def id(self) -> int: ...
+    @property
+    def left(self) -> int: ...
+    @property
+    def top(self) -> int: ...
+    @property
+    def width(self) -> int: ...
+    @property
+    def height(self) -> int: ...
+
+
+def layout_print(monitors: Sequence[_MonitorRect]) -> int:
+    """A impressão do arranjo inteiro (`layout` do `s.mon`, `l` do toque): CRC-32 de cada monitor
+    na ordem da enumeração. A tela ao vivo a anuncia e o toque a confere numa leitura nova, em
+    processos diferentes, por isso é uma conta sobre os números e não um contador."""
+    data = b"".join(
+        _PRINT_ITEM.pack(item.id, item.left, item.top, item.width, item.height) for item in monitors
+    )
+    return zlib.crc32(data) & MAX_LAYOUT_PRINT
+
+
 @dataclass(frozen=True, slots=True)
 class AbsoluteTarget:
-    """O ponto pedido: monitor `monitor`, posição relativa `u`/`v` e o tamanho que o app viu."""
+    """O ponto pedido: monitor `monitor`, posição relativa `u`/`v`, o tamanho que o app viu e a
+    impressão `layout` do arranjo daquele `s.mon`."""
 
     monitor: int
     u: int
     v: int
     width: int
     height: int
+    layout: int
 
     @classmethod
     def from_body(cls, body: Mapping[str, Any]) -> AbsoluteTarget:
         """Do corpo do contrato. O portão já conferiu; isto protege o adaptador de um erro nosso
         (inclusive `True`, que o Python aceita como inteiro)."""
-        values = [body.get(key) for key in ("m", "u", "v", "w", "h")]
+        values = [body.get(key) for key in ("m", "u", "v", "w", "h", "l")]
         limits = (
             (0, MAX_MONITOR_ID),
             (0, RELATIVE_MAX),
             (0, RELATIVE_MAX),
             (1, MAX_MONITOR_SIDE),
             (1, MAX_MONITOR_SIDE),
+            (0, MAX_LAYOUT_PRINT),
         )
         for value, (low, high) in zip(values, limits, strict=True):
             if not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high:
                 raise ValueError("posição fora do contrato")
-        monitor, u, v, width, height = values
-        return cls(monitor, u, v, width, height)  # type: ignore[arg-type]
+        monitor, u, v, width, height, layout = values
+        return cls(monitor, u, v, width, height, layout)  # type: ignore[arg-type]
 
 
 class LayoutChanged(PcInputRefused):
-    """O monitor pedido sumiu ou mudou de tamanho desde o `s.mon` que o app usou."""
+    """O arranjo dos monitores mudou desde o `s.mon` que o app usou."""
 
     def __init__(self) -> None:
         super().__init__("o arranjo dos monitores mudou", STALE_LAYOUT)
@@ -104,7 +138,9 @@ def virtual_desk(monitors: Sequence[MonitorArea]) -> tuple[int, int, int, int]:
 
 
 def physical_point(monitors: Sequence[MonitorArea], target: AbsoluteTarget) -> tuple[int, int]:
-    """O pixel físico do ponto pedido; `LayoutChanged` se o monitor não bate com o que o app viu."""
+    """O pixel físico do ponto pedido; `LayoutChanged` se o arranjo não é o que o app viu."""
+    if layout_print(monitors) != target.layout:
+        raise LayoutChanged
     chosen = next((item for item in monitors if item.id == target.monitor), None)
     if chosen is None or chosen.width != target.width or chosen.height != target.height:
         raise LayoutChanged

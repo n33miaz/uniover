@@ -134,6 +134,8 @@ export const DIRECT_TV_MAX_RTT_MS = 250;
 /** O ponto tocado na imagem da tela: o monitor, a posição relativa nele e o tamanho dele que o app viu. */
 export interface DirectAbsoluteTarget {
   readonly m: number;
+  /** A impressão do arranjo dos monitores do `s.mon` que o app usou: o PC recusa a posição num arranjo que mudou. */
+  readonly l: number;
   readonly u: number;
   readonly v: number;
   readonly w: number;

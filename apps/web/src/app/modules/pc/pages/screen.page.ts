@@ -51,6 +51,12 @@ type TouchMode = 'direct' | 'pad';
 
 type Phase = 'idle' | 'connecting' | 'live' | 'paused' | 'locked' | 'failed';
 
+/** O monitor e o arranjo (`s.mon`) de um pedido de quadro: o que o quadro que responde a ele mostra. */
+interface FrameView {
+  readonly monitor: ScreenMonitor;
+  readonly layout: number | null;
+}
+
 interface Link {
   readonly connection: RTCPeerConnection;
   readonly channel: RTCDataChannel;
@@ -61,6 +67,8 @@ interface Link {
   painting: boolean;
   /** Monitor do último `s.get` enviado (o do pedido em andamento, se houver). */
   requested?: number;
+  /** O monitor e o arranjo do último `s.get` enviado: o quadro que chega responde a ele (um pedido por vez). */
+  requestedView?: FrameView;
   watchdog?: ReturnType<typeof setTimeout>;
   renew?: ReturnType<typeof setTimeout>;
 }
@@ -288,6 +296,10 @@ export class ScreenPage {
   protected readonly phase = signal<Phase>('idle');
   protected readonly monitors = signal<readonly ScreenMonitor[]>([]);
   protected readonly monitorId = signal<number | null>(null);
+  /** A impressão do arranjo do último `s.mon` (`null` num PC anterior ao toque na tela). */
+  private readonly layout = signal<number | null>(null);
+  /** O que o quadro NA TELA mostra (não o monitor selecionado, cujo quadro pode ainda estar a caminho). */
+  private readonly painted = signal<FrameView | null>(null);
   protected readonly cursor = signal<ScreenCursor | null>(null);
   protected readonly state = signal<ScreenViewState>('ok');
   protected readonly hasFrame = signal(false);
@@ -326,6 +338,25 @@ export class ScreenPage {
   protected readonly current = computed(
     () => this.monitors().find((item) => item.id === this.monitorId()) ?? null,
   );
+  /**
+   * O toque direto só vale quando o quadro na tela é o do monitor selecionado, no arranjo do último `s.mon`: logo depois de trocar
+   * de monitor (ou de o arranjo mudar) a imagem ainda é a anterior, e um toque nela cairia no lugar errado. Um quadro antigo que
+   * chegue depois da troca é do pedido antigo e não reabilita.
+   */
+  private readonly touchReady = computed(() => {
+    const painted = this.painted();
+    const monitor = this.current();
+    const layout = this.layout();
+    return (
+      painted !== null &&
+      monitor !== null &&
+      layout !== null &&
+      painted.layout === layout &&
+      painted.monitor.id === monitor.id &&
+      painted.monitor.width === monitor.width &&
+      painted.monitor.height === monitor.height
+    );
+  });
   /** A posição do cursor em porcentagem da imagem. */
   protected readonly pointer = computed(() => {
     const monitor = this.current();
@@ -361,6 +392,15 @@ export class ScreenPage {
   }
 
   constructor() {
+    // O palco muda de tamanho (girar o aparelho, a barra do navegador): o zoom e o deslocamento são ajustados e aplicados já,
+    // para o toque seguinte usar a mesma transformação da imagem na tela.
+    effect((onCleanup) => {
+      const stage = this.stage()?.nativeElement;
+      if (!stage || typeof ResizeObserver !== 'function') return;
+      const observer = new ResizeObserver(() => this.syncStage());
+      observer.observe(stage);
+      onCleanup(() => observer.disconnect());
+    });
     effect(() => {
       // Perdeu a permissão, o dono ou o canal direto do PC: a tela fecha.
       // Os sinais são lidos antes de `link` (que não é sinal) para o efeito sempre registrar a dependência.
@@ -414,7 +454,11 @@ export class ScreenPage {
           send: (text) => channel.send(text),
           view: () => {
             const view = this.viewRequest();
-            if (view) active.requested = view.monitor;
+            const monitor = this.current();
+            if (view && monitor) {
+              active.requested = view.monitor;
+              active.requestedView = { monitor, layout: this.layout() };
+            }
             return view;
           },
           onTimeout: () => {
@@ -495,6 +539,9 @@ export class ScreenPage {
       if (!this.pad.active) this.store.beginGesture();
       this.pad.down(id, at.x, at.y, event.timeStamp);
     } else {
+      // O quadro na tela ainda não é o do monitor selecionado, ou o palco mudou e a transformação nova ainda não foi aplicada:
+      // este toque não sai (o próximo, já sobre a imagem certa, sai).
+      if (this.syncStage() || !this.touchReady()) return;
       this.touch.down(id, at.x, at.y, event.timeStamp);
     }
   }
@@ -529,11 +576,19 @@ export class ScreenPage {
     if (padDragging) void this.store.release();
   }
 
-  private box(): { width: number; height: number } | null {
+  /**
+   * Leva o tamanho do palco ao modelo do zoom e aplica a transformação. Devolve se a transformação mudou: aí o que o dedo tocava
+   * foi mapeado com a anterior, e o gesto em curso é encerrado (o botão é solto, o toque que esperava o segundo é esquecido).
+   */
+  private syncStage(): boolean {
     const stage = this.stage()?.nativeElement;
-    if (!stage || stage.clientWidth <= 0 || stage.clientHeight <= 0) return null;
-    this.view.resize(stage.clientWidth, stage.clientHeight);
-    return { width: stage.clientWidth, height: stage.clientHeight };
+    if (!stage || stage.clientWidth <= 0 || stage.clientHeight <= 0) return false;
+    const size = this.view.size;
+    if (size.width === stage.clientWidth && size.height === stage.clientHeight) return false;
+    const moved = this.view.resize(stage.clientWidth, stage.clientHeight);
+    this.syncZoom();
+    if (moved) this.settleTouch();
+    return moved;
   }
 
   /** O ponto do dedo em pixels do quadro da imagem (sem a borda do quadro). */
@@ -547,10 +602,14 @@ export class ScreenPage {
     };
   }
 
-  private targetAt(at: TouchPoint) {
-    const monitor = this.current();
-    const box = this.box();
-    return monitor && box ? tapTarget(monitor, this.view.toImage(at), box) : null;
+  /**
+   * O alvo no quadro PINTADO, com a transformação aplicada a ele. Só com o quadro certo na tela (`touchReady`), exceto a soltura
+   * (`release`): o `UP` sempre sai, para o botão nunca ficar preso (o PC solta sem mover se o arranjo mudou).
+   */
+  private targetAt(at: TouchPoint, release = false) {
+    const painted = this.painted();
+    if (!painted || (!release && !this.touchReady())) return null;
+    return tapTarget(painted.monitor, painted.layout ?? 0, this.view.toImage(at), this.view.size);
   }
 
   private tapAt(
@@ -558,7 +617,7 @@ export class ScreenPage {
     action: 'CLICK' | 'DOUBLE' | 'DOWN' | 'UP',
     at: TouchPoint,
   ): void {
-    const target = this.targetAt(at);
+    const target = this.targetAt(at, action === 'UP');
     if (!target) return;
     if (!this.direct.accepts('pc.tap.v1')) {
       this.touchNotice.set(this.noChannelText());
@@ -581,7 +640,6 @@ export class ScreenPage {
   }
 
   private pinchView(factor: number, center: TouchPoint, dx: number, dy: number): void {
-    this.box();
     this.view.pinch(factor, center, dx, dy);
     this.syncZoom();
   }
@@ -649,7 +707,9 @@ export class ScreenPage {
       const frame = link.assembler.push(data);
       if (frame) {
         link.painting = true;
-        void this.paint(link, frame).catch(() => {
+        // O quadro responde ao único pedido em andamento: mostra o monitor e o arranjo daquele pedido.
+        const view = link.requestedView ?? null;
+        void this.paint(link, frame, view).catch(() => {
           if (this.link === link) this.finish('failed');
         });
       }
@@ -660,12 +720,14 @@ export class ScreenPage {
       case 's.mon': {
         // O PC manda a lista de monitores assim que a sessão autoriza, sem esperar pedido: é o sinal de que está pronto.
         const before = this.current();
+        const beforeLayout = this.layout();
         const chosen =
           message.monitors.find((item) => item.id === this.monitorId()) ??
           message.monitors.find((item) => item.primary) ??
           message.monitors[0];
         this.monitors.set(message.monitors);
         this.monitorId.set(chosen.id);
+        this.layout.set(message.layout);
         if (!link.loop.active) {
           clearTimeout(link.watchdog);
           this.phase.set('live');
@@ -676,8 +738,10 @@ export class ScreenPage {
           const gone =
             link.requested !== undefined &&
             !message.monitors.some((item) => item.id === link.requested);
+          // Outra impressão é outro arranjo, mesmo com o monitor de mesmo número e tamanho (dois iguais, o primeiro desligado).
           if (
             gone ||
+            beforeLayout !== message.layout ||
             before === null ||
             before.id !== chosen.id ||
             before.width !== chosen.width ||
@@ -715,7 +779,7 @@ export class ScreenPage {
     else this.phase.set('failed');
   }
 
-  private async paint(link: Link, frame: ScreenViewerFrame): Promise<void> {
+  private async paint(link: Link, frame: ScreenViewerFrame, view: FrameView | null): Promise<void> {
     const bitmap = await createImageBitmap(new Blob(frame.chunks, { type: 'image/jpeg' }));
     try {
       const canvas = this.surface()?.nativeElement;
@@ -729,6 +793,7 @@ export class ScreenPage {
       const context = canvas.getContext('2d');
       if (!context) throw new Error('canvas indisponível');
       context.drawImage(bitmap, 0, 0);
+      this.painted.set(view);
       this.hasFrame.set(true);
     } finally {
       bitmap.close();
@@ -766,6 +831,8 @@ export class ScreenPage {
     this.cursor.set(null);
     this.monitors.set([]);
     this.monitorId.set(null);
+    this.layout.set(null);
+    this.painted.set(null);
     this.phase.set(next);
   }
 }

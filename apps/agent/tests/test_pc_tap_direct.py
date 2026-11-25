@@ -17,7 +17,8 @@ from .support import dump, envelope
 from .test_pc_direct import SESSION, FakePeer, Lab, _Approvals, settle
 from .test_pc_screen_lifecycle import _DEVICE, _SCREEN, FakeScreen, offer
 
-SIZE = {"w": 2560, "h": 1440}
+# O tamanho do monitor e a impressão do arranjo como o app os viu (o dublê do ponteiro não confere).
+SIZE = {"w": 2560, "h": 1440, "l": 7}
 
 
 class FakeAbsolute:
@@ -132,21 +133,84 @@ async def test_with_the_screen_open_the_tap_and_the_drag_reach_the_pointer(taps:
 
 async def test_a_late_position_never_moves_the_pointer_back(taps: TapLab) -> None:
     peer = await taps.with_screen()
+    peer.phone(INPUT_CHANNEL, taps.tap("DOWN", "d"))
+    await settle()
     peer.phone(POINTER_CHANNEL, taps.abs(5, u=50))
     peer.phone(POINTER_CHANNEL, taps.abs(3, u=30))  # chegou depois da 5, no canal sem ordem
     peer.phone(POINTER_CHANNEL, taps.abs(5, u=50))  # repetida
     await settle()
     # O toque leva o maior número que o app já mandou: a 7, que vem atrás, já não vale.
-    peer.phone(INPUT_CHANNEL, taps.tap(a=7))
+    peer.phone(INPUT_CHANNEL, taps.tap("DOWN", "d2", a=7))
     await settle()
     peer.phone(POINTER_CHANNEL, taps.abs(7, u=70))
     peer.phone(POINTER_CHANNEL, taps.abs(8, u=80))
     await settle()
     assert taps.pointer.calls == [
+        ("tap", 1, 100, 200, "LEFT", "DOWN"),
         ("move_to", 1, 50, 0),
-        ("tap", 1, 100, 200, "LEFT", "CLICK"),
+        ("tap", 1, 100, 200, "LEFT", "DOWN"),
         ("move_to", 1, 80, 0),
     ]
+
+
+async def test_a_position_that_overtakes_the_down_never_moves_the_pointer(taps: TapLab) -> None:
+    """O canal do ponteiro não é ordenado: a primeira posição do arrasto pode chegar antes do
+    `DOWN`. Ela é descartada (o botão seria apertado fora do ponto); depois do `DOWN` executado as
+    posições valem, e depois do `UP` não valem mais."""
+    peer = await taps.with_screen()
+    peer.phone(POINTER_CHANNEL, taps.abs(1, u=40))  # passou na frente do DOWN
+    peer.phone(INPUT_CHANNEL, taps.tap("DOWN", "d"))
+    await settle()
+    peer.phone(POINTER_CHANNEL, taps.abs(2, u=60))
+    await settle()
+    peer.phone(INPUT_CHANNEL, taps.tap("UP", "u", a=2))
+    await settle()
+    peer.phone(POINTER_CHANNEL, taps.abs(3, u=90))  # fora de arrasto
+    # Um clique simples não abre arrasto.
+    peer.phone(INPUT_CHANNEL, taps.tap("CLICK", "c", a=3))
+    await settle()
+    peer.phone(POINTER_CHANNEL, taps.abs(4, u=95))
+    await settle()
+    assert taps.pointer.calls == [
+        ("tap", 1, 100, 200, "LEFT", "DOWN"),
+        ("move_to", 1, 60, 0),
+        ("tap", 1, 100, 200, "LEFT", "UP"),
+        ("tap", 1, 100, 200, "LEFT", "CLICK"),
+    ]
+
+
+async def test_a_refused_down_does_not_open_the_drag(taps: TapLab) -> None:
+    peer = await taps.with_screen()
+    taps.pointer.stale = True
+    peer.phone(INPUT_CHANNEL, taps.tap("DOWN", "d"))
+    await settle()
+    assert _ack(peer, "d")["c"] == STALE_LAYOUT
+    taps.pointer.stale = False
+    peer.phone(POINTER_CHANNEL, taps.abs(1, u=60))
+    await settle()
+    assert taps.pointer.calls == []
+
+
+async def test_closing_the_screen_ends_the_drag_for_positions(taps: TapLab) -> None:
+    peer = await taps.with_screen()
+    peer.phone(INPUT_CHANNEL, taps.tap("DOWN", "d"))
+    await settle()
+    await taps.lab.service.close(_SCREEN)
+    # A tela abre de novo (outra sessão de tela), sem um DOWN novo.
+    taps.screen = FakeScreen()
+    await taps.lab.service.open(
+        "sessao-tela-2",
+        "OFFER-SCREEN",
+        "TOKEN-SCREEN",
+        15,
+        900,
+        scopes=["screen"],
+        parent_session_id=SESSION,
+        device_id=_DEVICE,
+    )
+    peer.phone(POINTER_CHANNEL, taps.abs(1, u=60))
+    await settle()
+    assert taps.pointer.calls == [("tap", 1, 100, 200, "LEFT", "DOWN")]
 
 
 async def test_an_old_tap_expires_but_letting_go_always_passes(taps: TapLab) -> None:
@@ -187,7 +251,20 @@ async def test_a_changed_layout_is_refused_with_its_own_code(taps: TapLab) -> No
 
 @pytest.mark.parametrize(
     "body",
-    [{"u": 65536}, {"v": -1}, {"m": True}, {"m": 64}, {"w": 0}, {"u": 0.5}, {"action": "HOLD"}],
+    [
+        {"u": 65536},
+        {"v": -1},
+        {"m": True},
+        {"m": 64},
+        {"w": 0},
+        {"u": 0.5},
+        {"action": "HOLD"},
+        {"l": -1},
+        {"l": 2**32},
+        # Um modificador apertado numa ponta do arrasto e solto na outra ficaria preso.
+        {"action": "DOWN", "modifiers": ["CTRL"]},
+        {"action": "UP", "modifiers": ["SHIFT"]},
+    ],
 )
 async def test_values_outside_the_contract_are_refused_on_the_channel(
     taps: TapLab, body: dict[str, Any]
@@ -200,7 +277,17 @@ async def test_values_outside_the_contract_are_refused_on_the_channel(
 
 
 @pytest.mark.parametrize(
-    "extra", [{"s": 0}, {"s": 2_147_483_648}, {"s": True}, {"u": 70_000}, {"m": "1"}, {"h": None}]
+    "extra",
+    [
+        {"s": 0},
+        {"s": 2_147_483_648},
+        {"s": True},
+        {"u": 70_000},
+        {"m": "1"},
+        {"h": None},
+        {"l": None},
+        {"l": 2**32},
+    ],
 )
 async def test_positions_outside_the_contract_count_as_violations(
     taps: TapLab, extra: dict[str, Any]

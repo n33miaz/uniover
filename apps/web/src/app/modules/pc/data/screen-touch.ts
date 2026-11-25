@@ -13,9 +13,13 @@ export interface TouchPoint {
   readonly y: number;
 }
 
-/** O que vai ao PC: o monitor, a posição relativa nele e o tamanho dele que o app viu em `s.mon`. */
+/**
+ * O que vai ao PC: o monitor, a posição relativa nele, o tamanho dele que o app viu em `s.mon` e a impressão do arranjo daquele
+ * mesmo `s.mon` (`l`), com a qual o PC recusa o toque num arranjo que mudou.
+ */
 export interface TapTarget {
   readonly m: number;
+  readonly l: number;
   readonly u: number;
   readonly v: number;
   readonly w: number;
@@ -29,9 +33,11 @@ function clamp(value: number, min: number, max: number): number {
 /**
  * A posição do dedo sobre a imagem como `(m, u, v)`. `point` está em pixels do quadro mostrado (`box`), já sem o zoom
  * local; fora do quadro vale a borda. Ponto ou quadro sem sentido (NaN, tamanho zero) não vira alvo: o toque não sai.
+ * `monitor` e `layout` são os do quadro PINTADO (o que a pessoa vê), não os do monitor selecionado.
  */
 export function tapTarget(
   monitor: ScreenMonitor,
+  layout: number,
   point: TouchPoint,
   box: { readonly width: number; readonly height: number },
 ): TapTarget | null {
@@ -45,6 +51,7 @@ export function tapTarget(
   }
   return {
     m: monitor.id,
+    l: layout,
     u: Math.round(clamp(point.x / box.width, 0, 1) * RELATIVE_MAX),
     v: Math.round(clamp(point.y / box.height, 0, 1) * RELATIVE_MAX),
     w: monitor.width,
@@ -69,10 +76,21 @@ export class ImageView {
     private height: number,
   ) {}
 
-  resize(width: number, height: number): void {
+  /** O tamanho do quadro que o zoom e o deslocamento de agora supõem. */
+  get size(): { readonly width: number; readonly height: number } {
+    return { width: this.width, height: this.height };
+  }
+
+  /**
+   * O quadro mudou de tamanho: o deslocamento é limitado ao novo quadro. Devolve se o zoom ou o deslocamento mudaram (quem
+   * mostra a imagem tem de aplicar a transformação nova antes de mapear outro toque).
+   */
+  resize(width: number, height: number): boolean {
+    const { panX, panY } = this;
     this.width = width;
     this.height = height;
     this.limit();
+    return panX !== this.panX || panY !== this.panY;
   }
 
   reset(): void {
@@ -81,13 +99,16 @@ export class ImageView {
     this.panY = 0;
   }
 
-  /** `factor` multiplica o zoom em torno de `center`; `dx` e `dy` deslocam a imagem junto com os dedos. */
+  /**
+   * `factor` multiplica o zoom em torno do centro ANTERIOR dos dedos (`center` menos `dx`/`dy`, o ponto que estava sob eles) e
+   * `dx`/`dy` levam esse ponto junto com os dedos até `center`: o pedaço da imagem que estava entre os dedos continua entre eles.
+   */
   pinch(factor: number, center: TouchPoint, dx: number, dy: number): void {
     if (!Number.isFinite(factor) || factor <= 0) return;
     const next = clamp(this.scale * factor, MIN_ZOOM, MAX_ZOOM);
     const ratio = next / this.scale;
-    this.panX = center.x - (center.x - this.panX) * ratio + dx;
-    this.panY = center.y - (center.y - this.panY) * ratio + dy;
+    this.panX = center.x - (center.x - dx - this.panX) * ratio;
+    this.panY = center.y - (center.y - dy - this.panY) * ratio;
     this.scale = next;
     this.limit();
   }
@@ -327,9 +348,10 @@ export class ScreenTouch {
   }
 
   private startDrag(): void {
-    this.timer = null;
-    if (this.phase !== 'second' || this.fingers.size !== 1) return;
+    // Vem do tempo (segurou) ou do dedo que andou: neste caso o tempo de segurar ainda está armado e tem de ser cancelado já,
+    // senão ele dispara no próximo toque duplo e o transforma em DOWN/UP.
     this.cancelTimer();
+    if (this.phase !== 'second' || this.fingers.size !== 1) return;
     this.phase = 'dragging';
     this.handlers.tap('LEFT', 'DOWN', this.origin);
     if (this.last !== this.origin) this.handlers.drag(this.last);

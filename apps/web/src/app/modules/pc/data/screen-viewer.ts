@@ -15,7 +15,15 @@ export interface ScreenCursor {
 }
 
 export type ScreenViewerMessage =
-  | { readonly k: 's.mon'; readonly monitors: readonly ScreenMonitor[] }
+  | {
+      readonly k: 's.mon';
+      readonly monitors: readonly ScreenMonitor[];
+      /**
+       * A impressão do arranjo inteiro (CRC-32 dos monitores), que o toque na imagem devolve ao PC (`l`) para ele recusar o
+       * toque num arranjo que mudou. Um PC anterior ao toque não a manda: `null`, e o toque não sai.
+       */
+      readonly layout: number | null;
+    }
   | { readonly k: 's.same'; readonly crc: number }
   | { readonly k: 's.cur'; readonly cursor: ScreenCursor }
   | { readonly k: 's.state'; readonly state: ScreenViewState };
@@ -55,7 +63,10 @@ export function parseViewerMessage(text: string): ScreenViewerMessage {
         }
         monitors.push({ id, primary, width, height });
       }
-      return { k: 's.mon', monitors };
+      const layout = data['layout'];
+      if (layout !== undefined && !whole(layout, 0, 0xffff_ffff))
+        throw new Error('arranjo inválido');
+      return { k: 's.mon', monitors, layout: layout ?? null };
     }
     case 's.same':
       if (!whole(data['crc'], 0, 0xffff_ffff)) throw new Error('quadro igual inválido');

@@ -13,36 +13,49 @@ import type { ScreenMonitor } from './screen-viewer';
 
 const MONITOR: ScreenMonitor = { id: 7, primary: true, width: 1920, height: 1080 };
 const BOX = { width: 400, height: 225 };
+const LAYOUT = 0xdead_beef;
 
 describe('tapTarget', () => {
   it('maps the corners to 0 and 65535 and the middle to the middle', () => {
-    expect(tapTarget(MONITOR, { x: 0, y: 0 }, BOX)).toEqual({
+    expect(tapTarget(MONITOR, LAYOUT, { x: 0, y: 0 }, BOX)).toEqual({
       m: 7,
+      l: LAYOUT,
       u: 0,
       v: 0,
       w: 1920,
       h: 1080,
     });
-    expect(tapTarget(MONITOR, { x: 400, y: 225 }, BOX)).toMatchObject({
+    expect(tapTarget(MONITOR, LAYOUT, { x: 400, y: 225 }, BOX)).toMatchObject({
       u: RELATIVE_MAX,
       v: RELATIVE_MAX,
     });
-    expect(tapTarget(MONITOR, { x: 200, y: 112.5 }, BOX)).toMatchObject({ u: 32768, v: 32768 });
+    expect(tapTarget(MONITOR, LAYOUT, { x: 200, y: 112.5 }, BOX)).toMatchObject({
+      u: 32768,
+      v: 32768,
+    });
   });
 
   it('keeps a touch outside the frame on the border', () => {
-    expect(tapTarget(MONITOR, { x: -50, y: 900 }, BOX)).toMatchObject({ u: 0, v: RELATIVE_MAX });
+    expect(tapTarget(MONITOR, LAYOUT, { x: -50, y: 900 }, BOX)).toMatchObject({
+      u: 0,
+      v: RELATIVE_MAX,
+    });
   });
 
   it('does not produce a target from a point or frame that makes no sense', () => {
-    expect(tapTarget(MONITOR, { x: Number.NaN, y: 1 }, BOX)).toBeNull();
-    expect(tapTarget(MONITOR, { x: 1, y: Number.POSITIVE_INFINITY }, BOX)).toBeNull();
-    expect(tapTarget(MONITOR, { x: 1, y: 1 }, { width: 0, height: 225 })).toBeNull();
+    expect(tapTarget(MONITOR, LAYOUT, { x: Number.NaN, y: 1 }, BOX)).toBeNull();
+    expect(tapTarget(MONITOR, LAYOUT, { x: 1, y: Number.POSITIVE_INFINITY }, BOX)).toBeNull();
+    expect(tapTarget(MONITOR, LAYOUT, { x: 1, y: 1 }, { width: 0, height: 225 })).toBeNull();
   });
 
-  it('carries the monitor id and the size the app saw, for any arrangement', () => {
+  it('carries the monitor id, the size and the layout print the app saw, for any arrangement', () => {
     const left: ScreenMonitor = { id: 0, primary: false, width: 2880, height: 1620 };
-    expect(tapTarget(left, { x: 100, y: 50 }, BOX)).toMatchObject({ m: 0, w: 2880, h: 1620 });
+    expect(tapTarget(left, LAYOUT, { x: 100, y: 50 }, BOX)).toMatchObject({
+      m: 0,
+      l: LAYOUT,
+      w: 2880,
+      h: 1620,
+    });
   });
 });
 
@@ -58,6 +71,30 @@ describe('ImageView', () => {
     expect(view.scale).toBe(2);
     expect(view.toImage({ x: 200, y: 100 })).toEqual({ x: 200, y: 100 });
     expect(view.toImage({ x: 0, y: 0 })).toEqual({ x: 100, y: 50 });
+  });
+
+  it('pinching while the fingers move keeps the image point that was between them under them', () => {
+    const view = new ImageView(400, 225);
+    view.pinch(2, { x: 200, y: 100 }, 0, 0);
+    // O ponto da imagem sob o centro anterior dos dedos (180, 90)...
+    const under = view.toImage({ x: 180, y: 90 });
+    // ...os dedos afastam (1,5x) e andam 20 px à direita e 10 px para baixo: o centro novo é (200, 100).
+    view.pinch(1.5, { x: 200, y: 100 }, 20, 10);
+    expect(view.scale).toBe(3);
+    const now = view.toImage({ x: 200, y: 100 });
+    expect(now.x).toBeCloseTo(under.x, 9);
+    expect(now.y).toBeCloseTo(under.y, 9);
+  });
+
+  it('a smaller frame limits the pan and says so, so the page applies the new transform first', () => {
+    const view = new ImageView(400, 225);
+    view.pinch(1, { x: 0, y: 0 }, 0, 0);
+    view.pinch(2, { x: 400, y: 225 }, 0, 0);
+    expect([view.panX, view.panY]).toEqual([-400, -225]);
+    expect(view.resize(400, 225)).toBe(false);
+    expect(view.resize(300, 200)).toBe(true);
+    expect([view.panX, view.panY]).toEqual([-300, -200]);
+    expect(view.size).toEqual({ width: 300, height: 200 });
   });
 
   it('never goes past the zoom limits nor leaves the frame', () => {
@@ -179,6 +216,26 @@ describe('ScreenTouch', () => {
     touch.move(1, 140, 100);
     expect(handlers.tap).toHaveBeenCalledWith('LEFT', 'DOWN', { x: 100, y: 100 });
     expect(handlers.drag).toHaveBeenCalledWith({ x: 140, y: 100 });
+  });
+
+  it('a drag started by walking cancels the hold timer: a quick double tap afterwards stays a double click', () => {
+    const { handlers, touch, at } = setup();
+    // Toque e segundo toque que anda logo: o arrasto começa pelo dedo, antes do tempo de segurar.
+    touch.down(1, 100, 100, at(0));
+    touch.up(1, at(40));
+    touch.down(1, 100, 100, at(20));
+    touch.move(1, 140, 100);
+    touch.up(1, at(30));
+    expect(handlers.tap.mock.calls.map(([, action]) => action)).toEqual(['DOWN', 'UP']);
+    handlers.tap.mockClear();
+    // Um toque duplo rápido em seguida: o tempo de segurar do arrasto anterior não pode disparar no meio dele.
+    touch.down(1, 300, 200, at(20));
+    touch.up(1, at(40));
+    touch.down(1, 300, 200, at(40));
+    at(DEFAULT_SCREEN_TOUCH.dragHoldMs - 61);
+    touch.up(1, at(20));
+    at(DEFAULT_SCREEN_TOUCH.doubleTapMs + 50);
+    expect(handlers.tap.mock.calls).toEqual([['LEFT', 'DOUBLE', { x: 300, y: 200 }]]);
   });
 
   it('a cancelled gesture in the middle of a drag releases the button', () => {

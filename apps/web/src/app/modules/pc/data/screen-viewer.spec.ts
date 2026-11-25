@@ -46,7 +46,22 @@ describe('parseViewerMessage', () => {
         { id: 1, width: 1920, height: 1080, primary: true },
         { id: 2, width: 1280, height: 1024, primary: false },
       ],
+      layout: null,
     });
+  });
+
+  it('reads the layout print the tap sends back, and an older PC without it', () => {
+    const monitors = '[{"id":0,"width":1920,"height":1080,"primary":true}]';
+    expect(parseViewerMessage(`{"k":"s.mon","monitors":${monitors},"layout":4294967295}`)).toEqual({
+      k: 's.mon',
+      monitors: [{ id: 0, width: 1920, height: 1080, primary: true }],
+      layout: 4294967295,
+    });
+    for (const bad of ['-1', '4294967296', '1.5', '"7"', 'null']) {
+      expect(() =>
+        parseViewerMessage(`{"k":"s.mon","monitors":${monitors},"layout":${bad}}`),
+      ).toThrow();
+    }
   });
 
   it('reads cursor, same and state messages', () => {
