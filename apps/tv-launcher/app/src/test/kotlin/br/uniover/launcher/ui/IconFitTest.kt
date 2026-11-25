@@ -131,4 +131,27 @@ class IconFitTest {
         assertTrue(IconFit.needsFit(withPlate, IconFit.cropSquare(withPlate.trim)))
         assertNotNull(withPlate.background)
     }
+
+    @Test
+    fun `a seam pixel on a tiny center never leaves a zero sized crop`() {
+        val icon = grid(64) { x, y ->
+            when {
+                x in 31 until 33 && y in 31 until 33 -> black
+                x in 24 until 40 && y in 24 until 40 -> white
+                else -> clear
+            }
+        }
+        val crop = IconFit.cropSquare(IconFit.analyze(icon, 64, 64).trim)
+        assertTrue("o recorte ficou com tamanho ${crop.size}", crop.size > 0f)
+        assertTrue(crop.x >= 0f && crop.x + crop.size <= 1.0001f)
+    }
+
+    @Test
+    fun `an image with only faint paint is not blank`() {
+        val faint = grid(64) { _, _ -> 0x7F808080 }
+        val result = IconFit.analyze(faint, 64, 64)
+        assertFalse(result.blank)
+        assertEquals(0f, result.trim.left, tolerance)
+        assertNull(result.background)
+    }
 }

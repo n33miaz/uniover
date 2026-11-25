@@ -94,6 +94,19 @@ class AppTileTest {
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun `an adaptive icon with transparent layers shows the initial, a painted one stays as it is`() {
+        // O desenho do adaptativo no Robolectric não respeita camadas transparentes: o teste controla o que ele pinta.
+        fun adaptive(paint: Int?) = object : android.graphics.drawable.AdaptiveIconDrawable(null, null) {
+            override fun draw(canvas: android.graphics.Canvas) { paint?.let { canvas.drawColor(it) } }
+        }
+        val letter = FallbackIcon.drawable("com.exemplo.som", "Som")
+        assertTrue(imageOf(tile(adaptive(null), fallback = { letter })).drawable === letter)
+        val painted = adaptive(Color.BLUE)
+        assertTrue(imageOf(tile(painted, fallback = { letter })).drawable === painted)
+    }
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun `a small square in the middle of a wide transparent margin grows to fill the circle`() {
         // 40% do lado no meio: antes ficava um quadrado pequeno no centro do círculo.
         val bitmap = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888)
