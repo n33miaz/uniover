@@ -1,8 +1,11 @@
 using AwesomeAssertions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Ports;
+using UniOver.Modules.Tv.Tests.Support;
 
 namespace UniOver.Modules.Tv.Tests.Adapters;
 
@@ -15,7 +18,14 @@ public class TvLinkWatcherTests
     {
         public bool Fresh { get; set; } = true;
 
-        public bool IsOnline(string agentId) => true;
+        public Func<string, bool>? FailOnCheck { get; set; }
+
+        public string CheckFailureMessage { get; set; } = "Erro de presença";
+
+        public bool IsOnline(string agentId) =>
+            FailOnCheck?.Invoke(agentId) == true
+                ? throw new InvalidOperationException(CheckFailureMessage)
+                : true;
 
         public DateTimeOffset? OfflineSince(string agentId) => null;
 
@@ -32,10 +42,19 @@ public class TvLinkWatcherTests
 
         public Task? Pending { get; set; }
 
+        public Func<Guid, bool>? FailOnPublish { get; set; }
+
+        public string PublishFailureMessage { get; set; } = "Erro ao publicar";
+
         public void PublishState(TvState state) => Published.Add((Guid.Empty, state));
 
         public void PublishState(Guid tvId, TvState state)
         {
+            if (FailOnPublish?.Invoke(tvId) == true)
+            {
+                throw new InvalidOperationException(PublishFailureMessage);
+            }
+
             lock (Published)
             {
                 Published.Add((tvId, state));
@@ -53,13 +72,14 @@ public class TvLinkWatcherTests
         }
     }
 
-    private static (TvLinkWatcher Watcher, Presence Presence, Stream Stream) Rig()
+    private static (TvLinkWatcher Watcher, Presence Presence, Stream Stream) Rig(
+        ILogger<TvLinkWatcher>? logger = null)
     {
         var store = new InMemoryTvStateStore();
         store.Apply(Agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
         var presence = new Presence();
         var stream = new Stream();
-        var watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()));
+        var watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()), logger ?? NullLogger<TvLinkWatcher>.Instance);
         watcher.Track(TvId, Agent, TvState.From(store.Last(Agent), agentOnline: true));
         return (watcher, presence, stream);
     }
@@ -111,7 +131,7 @@ public class TvLinkWatcherTests
     {
         var stream = new Stream();
         var watcher = new TvLinkWatcher(
-            new InMemoryTvStateStore(), new Presence { Fresh = false }, stream, Options.Create(new TvModuleOptions()));
+            new InMemoryTvStateStore(), new Presence { Fresh = false }, stream, Options.Create(new TvModuleOptions()), NullLogger<TvLinkWatcher>.Instance);
 
         watcher.Check();
 
@@ -171,7 +191,7 @@ public class TvLinkWatcherTests
             Thread.Sleep(100);
             stream.OnPublish = null;
         };
-        watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()));
+        watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()), NullLogger<TvLinkWatcher>.Instance);
         watcher.Track(TvId, Agent, ready);
 
         presence.Fresh = false;
@@ -204,7 +224,7 @@ public class TvLinkWatcherTests
         var stream = new Stream();
         var presence = new Presence();
         var store = new InMemoryTvStateStore();
-        var watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()));
+        var watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()), NullLogger<TvLinkWatcher>.Instance);
         var handler = new UniOver.Modules.Tv.Features.Config.BindAgentHandler(
             null!, null!, null!, null!, store, presence, stream, null!, TimeProvider.System, watcher: watcher);
 
@@ -225,7 +245,7 @@ public class TvLinkWatcherTests
         var presence = new Presence { Fresh = false };
         var store = new InMemoryTvStateStore();
         store.Apply(Agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
-        var watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()));
+        var watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()), NullLogger<TvLinkWatcher>.Instance);
         var handler = new UniOver.Modules.Tv.Features.Config.BindAgentHandler(
             null!, null!, null!, null!, store, presence, stream, null!, TimeProvider.System, watcher: watcher,
             options: Options.Create(new TvModuleOptions()));
@@ -260,7 +280,7 @@ public class TvLinkWatcherTests
         var presence = new Presence();
         var stream = new Stream();
         var options = Options.Create(new TvModuleOptions());
-        var watcher = new TvLinkWatcher(store, presence, stream, options);
+        var watcher = new TvLinkWatcher(store, presence, stream, options, NullLogger<TvLinkWatcher>.Instance);
         watcher.Track(TvId, Agent, TvState.From(store.Last(Agent), agentOnline: true));
         var target = new UniOver.Modules.Tv.Features.Selection.TvTarget(TvId, Agent, "TV", true);
         var provider = new TvStateProvider(new Selection(target), store, presence, options, watcher);
@@ -270,5 +290,105 @@ public class TvLinkWatcherTests
         watcher.Check();
 
         stream.Published.Should().ContainSingle("a leitura já publicou o elo e a passada não repete");
+    }
+
+    [Fact]
+    public void WhenOneAgentThrowsDuringCheck_SubsequentAgentsAreStillProcessed_AndFailureIsLogged()
+    {
+        var store = new InMemoryTvStateStore();
+        var tv1 = Guid.NewGuid();
+        var tv2 = Guid.NewGuid();
+        const string agent1 = "pc-falho";
+        const string agent2 = "pc-bom";
+
+        store.Apply(agent1, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
+        store.Apply(agent2, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
+
+        var presence = new Presence
+        {
+            FailOnCheck = id => id == agent1,
+            CheckFailureMessage = "Host=ep-segredo.neon.tech;Username=uniover_owner;Password=senha-do-banco",
+        };
+        var stream = new Stream();
+        var logger = new CapturingLogger<TvLinkWatcher>();
+        var watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()), logger);
+
+        watcher.Track(tv1, agent1, TvState.From(store.Last(agent1), agentOnline: true));
+        watcher.Track(tv2, agent2, TvState.From(store.Last(agent2), agentOnline: true));
+
+        // pc-bom fica stale, logo seu elo deve mudar para pc_offline
+        presence.Fresh = false;
+
+        watcher.Check();
+
+        // 1. O agente subsequente (pc-bom) foi devidamente processado e publicado
+        var (publishedTvId, publishedState) = stream.Published.Should().ContainSingle().Subject;
+        publishedTvId.Should().Be(tv2);
+        publishedState.Link!.State.Should().Be(TvLinkText.PcOffline);
+
+        // 2. A falha no pc-falho foi devidamente registrada no log com identificador e tipo de erro
+        var line = logger.Lines.Should().ContainSingle().Subject;
+        line.Level.Should().Be(LogLevel.Error);
+        line.Exception.Should().BeNull("a regra de arquitetura proíbe passar a exceção inteira ao log");
+        line.Message.Should().Contain(agent1);
+        line.Message.Should().Contain(tv1.ToString());
+        line.Message.Should().Contain(nameof(InvalidOperationException));
+        logger.Everything.Should().NotContain("ep-segredo").And.NotContain("senha-do-banco");
+    }
+
+    [Fact]
+    public void WhenStreamPublishThrowsForAnAgent_SubsequentAgentsAreStillProcessed_AndFailureIsLogged()
+    {
+        var store = new InMemoryTvStateStore();
+        var tv1 = Guid.NewGuid();
+        var tv2 = Guid.NewGuid();
+        const string agent1 = "pc-com-stream-quebrado";
+        const string agent2 = "pc-com-stream-ok";
+
+        store.Apply(agent1, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
+        store.Apply(agent2, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
+
+        var presence = new Presence { Fresh = false };
+        var stream = new Stream
+        {
+            FailOnPublish = id => id == tv1,
+            PublishFailureMessage = "Host=ep-privado.neon.tech;Secret=token-invalido",
+        };
+        var logger = new CapturingLogger<TvLinkWatcher>();
+        var watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()), logger);
+
+        watcher.Track(tv1, agent1, TvState.From(store.Last(agent1), agentOnline: true));
+        watcher.Track(tv2, agent2, TvState.From(store.Last(agent2), agentOnline: true));
+
+        watcher.Check();
+
+        // O segundo agente foi publicado com sucesso apesar do erro no primeiro
+        var (publishedTvId, publishedState) = stream.Published.Should().ContainSingle().Subject;
+        publishedTvId.Should().Be(tv2);
+        publishedState.Link!.State.Should().Be(TvLinkText.PcOffline);
+
+        // O erro do primeiro foi logado
+        var line = logger.Lines.Should().ContainSingle().Subject;
+        line.Level.Should().Be(LogLevel.Error);
+        line.Exception.Should().BeNull();
+        line.Message.Should().Contain(agent1);
+        line.Message.Should().Contain(tv1.ToString());
+        line.Message.Should().Contain(nameof(InvalidOperationException));
+        logger.Everything.Should().NotContain("ep-privado").And.NotContain("token-invalido");
+    }
+
+    [Fact]
+    public void WhenPassFails_LogsPassFailureWithoutExceptionObject()
+    {
+        var logger = new CapturingLogger<TvLinkWatcher>();
+        var watcher = new TvLinkWatcher(
+            new InMemoryTvStateStore(), new Presence(), new Stream(), Options.Create(new TvModuleOptions()), logger);
+
+        watcher.LogPassFailed(nameof(InvalidOperationException));
+
+        var line = logger.Lines.Should().ContainSingle().Subject;
+        line.Level.Should().Be(LogLevel.Error);
+        line.Exception.Should().BeNull();
+        line.Message.Should().Contain(nameof(InvalidOperationException));
     }
 }
