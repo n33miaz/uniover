@@ -415,6 +415,68 @@ async def test_a_reset_ime_counter_after_the_session_ends_still_limits_the_resum
         await setup.manager.aclose()
 
 
+@pytest.mark.parametrize(
+    ("reports", "deletes"),
+    [
+        pytest.param([("xx", 3), ("xxx", 10)], 3, id="grows-past-the-old-value"),
+        pytest.param([("xx", 3), ("xxx", 10), ("x", 9)], 3, id="late-echo-after-growing"),
+        pytest.param([("xxx", 10)], None, id="repeat-of-the-old-value-first"),
+    ],
+)
+async def test_the_erase_threshold_follows_the_reports_of_the_new_connection(
+    monkeypatch: pytest.MonkeyPatch,
+    reports: list[tuple[str, int]],
+    deletes: int | None,
+) -> None:
+    """O limiar da limpeza interrompida (10) avança com cada relato aceito na conexão nova.
+
+    Depois do contador reiniciado (3), o 10 é um relato novo e vale. Como primeiro relato, o 10 não
+    se distingue da repetição do último de antes da queda: a retomada é abandonada, sem teclas.
+    """
+    remote = FakeTvRemote()
+    pair_fake_tv(monkeypatch, remote)
+    setup = make_tv(Settings(tv_host=TV_HOST))
+    assert setup is not None and setup.text is not None
+    await setup.manager.wake()
+    remote.push_text_field(TextFieldStatus("x" * 202, 202, 202, "Buscar", 1, 10))
+    original = remote.send_key
+
+    async def drop_on_y(
+        key: str, direction: str = "SHORT", *, before_send: Callable[[], None] | None = None
+    ) -> None:
+        if key == "TYPE_Y":
+            raise TvUnreachable("controle indisponível")
+        await original(key, direction, before_send=before_send)
+
+    def push_reports() -> None:
+        for value, sequence in reports:
+            remote.push_text_field(
+                TextFieldStatus(value, len(value), len(value), "Buscar", 1, sequence)
+            )
+
+    try:
+        monkeypatch.setattr(remote, "send_key", drop_on_y)
+        with pytest.raises(TvSessionError):
+            await setup.text.set_text("x" * 201 + "y")
+        monkeypatch.setattr(remote, "send_key", original)
+        with pytest.raises(TvSessionError, match="grande demais"):
+            await setup.text.set_text("xyz")
+        await remote.disconnect()
+        remote.on_connect = push_reports
+        remote.keys.clear()
+
+        if deletes is None:
+            with pytest.raises(TvSessionError) as caught:
+                await setup.text.set_text("xyz")
+            assert caught.value.code == "text_resync_abandoned"
+            assert remote.keys == []
+        else:
+            await setup.text.set_text("xyz")
+            assert remote.keys == ["DEL"] * deletes + ["TYPE_X", "TYPE_Y", "TYPE_Z"]
+    finally:
+        await setup.manager.aclose()
+
+
 async def test_the_composed_typing_forgets_the_field_when_another_app_takes_focus(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
