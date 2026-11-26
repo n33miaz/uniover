@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Ports;
@@ -11,8 +12,12 @@ namespace UniOver.Modules.Tv.Adapters;
 /// transições, então uma checagem leve, só em memória, recalcula o elo das TVs já vistas e avisa o fluxo da TV afetada
 /// quando ele difere do último publicado.
 /// </summary>
-internal sealed class TvLinkWatcher(
-    ITvStateStore state, ITvAgentPresence presence, ITvStreamPublisher stream, IOptions<TvModuleOptions> options)
+internal sealed partial class TvLinkWatcher(
+    ITvStateStore state,
+    ITvAgentPresence presence,
+    ITvStreamPublisher stream,
+    IOptions<TvModuleOptions> options,
+    ILogger<TvLinkWatcher> logger)
     : BackgroundService
 {
     internal static readonly TimeSpan Interval = TimeSpan.FromSeconds(5);
@@ -99,26 +104,44 @@ internal sealed class TvLinkWatcher(
 
         foreach (var agentId in agents)
         {
+            CheckAgent(agentId);
+        }
+    }
+
+    private void CheckAgent(string agentId)
+    {
+        Guid? tvId = null;
+#pragma warning disable CA1031 // A falha ao vigiar um agente não interrompe os demais.
+        try
+        {
             // Visão, comparação, publicação e anotação juntas sob a trava: um relato que chegar no meio espera e vence depois.
             lock (_gate)
             {
                 if (!_watched.TryGetValue(agentId, out var watched))
                 {
-                    continue;
+                    return;
                 }
 
+                tvId = watched.TvId;
                 var view = TvState.From(
-                    state.Last(agentId), presence.IsOnline(agentId), offlineSince: presence.OfflineSince(agentId),
+                    state.Last(agentId),
+                    presence.IsOnline(agentId),
+                    offlineSince: presence.OfflineSince(agentId),
                     reportFresh: presence.HasRecentReport(agentId, options.Value.LinkStale));
                 if (string.Equals(view.Link?.State, watched.LinkState, StringComparison.Ordinal))
                 {
-                    continue;
+                    return;
                 }
 
-                _watched[agentId] = watched with { LinkState = view.Link?.State };
                 stream.PublishState(watched.TvId, view);
+                _watched[agentId] = watched with { LinkState = view.Link?.State };
             }
         }
+        catch (Exception ex)
+        {
+            LogAgentCheckFailed(agentId, tvId ?? Guid.Empty, ex.GetType().Name);
+        }
+#pragma warning restore CA1031
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -128,15 +151,7 @@ internal sealed class TvLinkWatcher(
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
-#pragma warning disable CA1031 // Uma passada com defeito não pode parar a vigia das próximas.
-                try
-                {
-                    Check();
-                }
-                catch (Exception)
-                {
-                }
-#pragma warning restore CA1031
+                RunPass();
             }
         }
         catch (OperationCanceledException)
@@ -144,4 +159,25 @@ internal sealed class TvLinkWatcher(
             // Parada normal do host.
         }
     }
+
+    internal void RunPass()
+    {
+#pragma warning disable CA1031 // Uma passada com defeito não pode parar a vigia das próximas.
+        try
+        {
+            Check();
+        }
+        catch (Exception ex)
+        {
+            LogPassFailed(ex.GetType().Name);
+        }
+#pragma warning restore CA1031
+    }
+
+    // Só o tipo do erro: a mensagem da exceção pode citar infraestrutura ou vazar segredos.
+    [LoggerMessage(Level = LogLevel.Error, Message = "Falha ao verificar elo do agente {AgentId} da TV {TvId} ({ErrorType}).")]
+    internal partial void LogAgentCheckFailed(string agentId, Guid tvId, string errorType);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Falha na passada da vigia de elo das TVs ({ErrorType}).")]
+    internal partial void LogPassFailed(string errorType);
 }
