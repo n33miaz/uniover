@@ -96,15 +96,18 @@ class ScreenProcess:
                 if not self._stopped:
                     self._record_error(err)
                 raise err
-            self._job = ScreenJob(process.pid)
+            await self._attach_job(process)
             offer = {
                 "sdp": sdp,
                 "token": token,
                 "tokenTtlSeconds": ttl_seconds,
                 "maxLifetimeSeconds": lifetime_seconds,
             }
-            process.stdin.write(json.dumps(offer).encode("ascii") + b"\n")
-            await process.stdin.drain()
+            try:
+                process.stdin.write(json.dumps(offer).encode("ascii") + b"\n")
+                await process.stdin.drain()
+            except OSError as exc:
+                raise await self._premature_exit(process) from exc
 
             raw_line = await process.stdout.readline()
             if not raw_line:
@@ -153,6 +156,16 @@ class ScreenProcess:
             await process.wait()
             await self._finish_drains()
             raise
+
+    async def _attach_job(self, process: asyncio.subprocess.Process) -> None:
+        try:
+            self._job = ScreenJob(process.pid)
+        except OSError as exc:
+            if self._stopped or process.returncode is not None:
+                raise await self._premature_exit(process) from exc
+            error = ScreenWorkerInitError("Não foi possível vincular o worker de tela ao job.")
+            self._record_error(error)
+            raise error from exc
 
     async def _premature_exit(self, process: asyncio.subprocess.Process) -> ScreenWorkerInitError:
         await process.wait()
