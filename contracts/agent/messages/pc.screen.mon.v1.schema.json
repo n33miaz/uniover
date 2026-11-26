@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/messages/pc.screen.mon.v1.schema.json",
+  "title": "pc.screen.mon.v1",
+  "description": "Agente para API: lista de monitores do PC anunciada no canal de dados WebRTC ('screen'). 'monitors' lista de 1 a 16 monitores com id estável na sessão, dimensões e posição física no desktop virtual. 'layout' é a impressão do arranjo inteiro (CRC-32 dos monitores, 0 a 4294967295) ou null para agente antigo.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "id",
+    "type",
+    "source",
+    "target",
+    "ts",
+    "correlationId",
+    "body"
+  ],
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "../envelope.schema.json#/$defs/uuid"
+    },
+    "type": {
+      "const": "pc.screen.mon.v1"
+    },
+    "source": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "target": {
+      "$ref": "../envelope.schema.json#/$defs/endpoint"
+    },
+    "ts": {
+      "$ref": "../envelope.schema.json#/$defs/timestamp"
+    },
+    "correlationId": {
+      "oneOf": [
+        {
+          "$ref": "../envelope.schema.json#/$defs/uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "k",
+        "monitors"
+      ],
+      "properties": {
+        "k": {
+          "const": "s.mon"
+        },
+        "monitors": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "primary",
+              "width",
+              "height"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "primary": {
+                "type": "boolean"
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100000
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100000
+              },
+              "x": {
+                "type": "integer",
+                "minimum": -100000,
+                "maximum": 100000
+              },
+              "y": {
+                "type": "integer",
+                "minimum": -100000,
+                "maximum": 100000
+              },
+              "left": {
+                "type": "integer",
+                "minimum": -100000,
+                "maximum": 100000
+              },
+              "top": {
+                "type": "integer",
+                "minimum": -100000,
+                "maximum": 100000
+              }
+            }
+          }
+        },
+        "layout": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
