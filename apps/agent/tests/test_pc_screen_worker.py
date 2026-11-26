@@ -341,7 +341,7 @@ async def test_unchanged_screen_answers_s_same_and_cursor_is_throttled() -> None
     texts = [json.loads(item) for item in channel.sent if isinstance(item, str)]
     assert texts[0] == {
         "k": "s.mon",
-        "monitors": [{"id": 0, "width": 1920, "height": 1080, "primary": True}],
+        "monitors": [{"id": 0, "width": 1920, "height": 1080, "primary": True, "x": 0, "y": 0}],
         "layout": layout_print([PRIMARY]),
     }
     assert {"k": "s.same", "crc": 9} in texts
@@ -426,6 +426,22 @@ async def test_capture_lock_waits_for_the_notice_being_drained() -> None:
 
 PRIMARY = Monitor(0, 0, 0, 1920, 1080, True)
 LEFT = Monitor(1, -1280, -200, 1280, 1024, False)
+RIGHT = Monitor(2, 1920, 0, 1920, 1080, False)
+
+
+def test_announce_monitors_includes_virtual_desktop_origin_coordinates() -> None:
+    measure, channel = session("192.168.1.6")
+    measure.monitors = [PRIMARY, RIGHT]
+    measure.announce_monitors()
+    assert len(channel.sent) == 1
+    assert json.loads(channel.sent[0]) == {
+        "k": "s.mon",
+        "monitors": [
+            {"id": 0, "width": 1920, "height": 1080, "primary": True, "x": 0, "y": 0},
+            {"id": 2, "width": 1920, "height": 1080, "primary": False, "x": 1920, "y": 0},
+        ],
+        "layout": layout_print([PRIMARY, RIGHT]),
+    }
 
 
 def test_frame_request_monitor_is_optional_and_validated() -> None:
@@ -463,8 +479,8 @@ async def test_s_mon_lists_every_monitor_and_requests_pick_one_by_id() -> None:
     assert first == {
         "k": "s.mon",
         "monitors": [
-            {"id": 1, "width": 1280, "height": 1024, "primary": False},
-            {"id": 0, "width": 1920, "height": 1080, "primary": True},
+            {"id": 1, "width": 1280, "height": 1024, "primary": False, "x": -1280, "y": -200},
+            {"id": 0, "width": 1920, "height": 1080, "primary": True, "x": 0, "y": 0},
         ],
         "layout": layout_print([LEFT, PRIMARY]),
     }

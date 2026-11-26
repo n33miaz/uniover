@@ -336,6 +336,101 @@ describe('Tela do PC (página)', () => {
     expect(cursor.style.top).toBe('25%');
   });
 
+  it('positions cursor relative to the secondary monitor when selected', async () => {
+    const { fixture, peer, root, action } = setup();
+    action().click();
+    await flush();
+    peer.channel.receive(
+      JSON.stringify({
+        k: 's.mon',
+        monitors: [
+          { id: 0, width: 1920, height: 1080, primary: true, x: 0, y: 0 },
+          { id: 1, width: 1920, height: 1080, primary: false, x: 1920, y: 0 },
+        ],
+        layout: 0x1234,
+      }),
+    );
+    fixture.detectChanges();
+    root.querySelectorAll<HTMLButtonElement>('.monitors button')[1].click();
+    fixture.detectChanges();
+
+    peer.channel.receive('{"k":"s.cur","x":2880,"y":540}');
+    fixture.detectChanges();
+
+    const cursor = root.querySelector<SVGElement>('.cursor')!;
+    expect(cursor).not.toBeNull();
+    expect(cursor.style.left).toBe('50%');
+    expect(cursor.style.top).toBe('50%');
+  });
+
+  it('hides the cursor when it is located outside the selected monitor', async () => {
+    const { fixture, peer, root, action } = setup();
+    action().click();
+    await flush();
+    peer.channel.receive(
+      JSON.stringify({
+        k: 's.mon',
+        monitors: [
+          { id: 0, width: 1920, height: 1080, primary: true, x: 0, y: 0 },
+          { id: 1, width: 1920, height: 1080, primary: false, x: 1920, y: 0 },
+        ],
+        layout: 0x1234,
+      }),
+    );
+    fixture.detectChanges();
+    root.querySelectorAll<HTMLButtonElement>('.monitors button')[1].click();
+    fixture.detectChanges();
+
+    peer.channel.receive('{"k":"s.cur","x":960,"y":540}');
+    fixture.detectChanges();
+
+    expect(root.querySelector<SVGElement>('.cursor')).toBeNull();
+
+    peer.channel.receive('{"k":"s.cur","x":2400,"y":540}');
+    fixture.detectChanges();
+
+    expect(root.querySelector<SVGElement>('.cursor')).not.toBeNull();
+  });
+
+  it('calculates cursor position and visibility with negative monitor coordinates', async () => {
+    const { fixture, peer, root, action } = setup();
+    action().click();
+    await flush();
+    peer.channel.receive(
+      JSON.stringify({
+        k: 's.mon',
+        monitors: [
+          { id: 1, width: 1920, height: 1080, primary: false, x: -1920, y: 0 },
+          { id: 0, width: 1920, height: 1080, primary: true, x: 0, y: 0 },
+        ],
+        layout: 0x5678,
+      }),
+    );
+    fixture.detectChanges();
+    root.querySelectorAll<HTMLButtonElement>('.monitors button')[0].click();
+    fixture.detectChanges();
+
+    peer.channel.receive('{"k":"s.cur","x":-960,"y":270}');
+    fixture.detectChanges();
+
+    const cursor = root.querySelector<SVGElement>('.cursor')!;
+    expect(cursor).not.toBeNull();
+    expect(cursor.style.left).toBe('50%');
+    expect(cursor.style.top).toBe('25%');
+
+    peer.channel.receive('{"k":"s.cur","x":500,"y":500}');
+    fixture.detectChanges();
+
+    expect(root.querySelector<SVGElement>('.cursor')).toBeNull();
+
+    root.querySelectorAll<HTMLButtonElement>('.monitors button')[1].click();
+    fixture.detectChanges();
+
+    const primaryCursor = root.querySelector<SVGElement>('.cursor')!;
+    expect(primaryCursor).not.toBeNull();
+    expect(primaryCursor.style.left).toBe(`${(500 / 1920) * 100}%`);
+  });
+
   it('shows the locked notice without touching the pending request', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { fixture, peer, root, requests, open } = setup();

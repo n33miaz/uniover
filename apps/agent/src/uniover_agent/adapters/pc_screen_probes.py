@@ -31,7 +31,7 @@ def read_state() -> str:
 
 
 def read_cursor() -> tuple[int, int] | None:
-    """Posição física do cursor no monitor principal; `None` se o Windows não informa."""
+    """Posição física do cursor no desktop virtual; `None` se o Windows não informa."""
     point = wintypes.POINT()
     if not ctypes.windll.user32.GetCursorPos(ctypes.byref(point)):
         return None

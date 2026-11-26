@@ -362,10 +362,17 @@ export class ScreenPage {
     const monitor = this.current();
     const cursor = this.cursor();
     if (!monitor || !cursor) return null;
+    const originX = monitor.x ?? 0;
+    const originY = monitor.y ?? 0;
+    const relX = cursor.x - originX;
+    const relY = cursor.y - originY;
+    if (relX < 0 || relX >= monitor.width || relY < 0 || relY >= monitor.height) {
+      return null;
+    }
     const clamp = (value: number) => Math.min(100, Math.max(0, value));
     return {
-      left: clamp((cursor.x / monitor.width) * 100),
-      top: clamp((cursor.y / monitor.height) * 100),
+      left: clamp((relX / monitor.width) * 100),
+      top: clamp((relY / monitor.height) * 100),
     };
   });
   protected readonly notice = computed(() => {
