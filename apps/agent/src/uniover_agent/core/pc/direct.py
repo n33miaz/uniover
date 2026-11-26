@@ -39,7 +39,9 @@ regras. Sem ela o toque é recusado (`not_allowed`), exceto o `UP`, que solta o 
 posição absoluta que chega depois de uma mais nova (`s`) é descartada, e o toque aceito leva o maior
 `s` que o app já mandou (`a`): uma posição atrasada nunca move o ponteiro depois do toque. E a
 posição só move o ponteiro dentro de um arrasto cujo `DOWN` já executou: ela vai no canal sem ordem
-e pode passar na frente do `DOWN`, que vai no de entrada.
+e pode passar na frente do `DOWN`, que vai no de entrada. Se a tela que aceitou o `DOWN` para (no
+meio do arrasto ou antes de ele executar), o agente solta só o botão dele e o arrasto não passa para
+a tela seguinte.
 
 O ponteiro viaja como TOTAL ACUMULADO com número de sequência, num canal sem retransmissão: a
 mensagem perdida não perde caminho (a seguinte traz a soma), a que chega fora de ordem é ignorada.
@@ -427,8 +429,10 @@ class _Session:
     # O arrasto sobre a imagem: só depois de o `DOWN` do toque EXECUTAR (o canal do ponteiro não é
     # ordenado e a posição pode passar na frente dele) as posições absolutas movem o ponteiro.
     # `taps` conta os toques aceitos: a resposta de um `DOWN` que chega depois de outro toque (o
-    # `UP`) não reabre o arrasto.
+    # `UP`) não reabre o arrasto. `drag_button` é o botão do último `DOWN` aceito, o único que o
+    # agente solta quando a tela para no meio do arrasto.
     drag_held: bool = False
+    drag_button: str = ""
     taps: int = 0
     totals: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
     lost_pointers: int = 0
@@ -795,8 +799,12 @@ class PcDirectService:
         if screen is not None and (session_id is None or screen[0] == session_id):
             self._screen = None
             self._screen_parent = None
-            if self._current is not None:
-                self._current.drag_held = False
+            session = self._current
+            if session is not None and session.drag_held:
+                session.drag_held = False
+                # Canal fechando (`_halt`) já solta tudo o que o PC segurava.
+                if not session.closed:
+                    self._release_drag(session)
             self._remember_closed(screen[0])
             screen[1].stop()
             self._screen_exit = asyncio.create_task(screen[1].wait())
@@ -1201,11 +1209,13 @@ class PcDirectService:
             rate.charge(now, cost)
         self._accepted(session)
         drag_turn = self._note_tap(session, data, body) if is_tap else 0
+        # A tela que aceitou o toque: o arrasto só abre se ela ainda for a atual na execução.
+        screen = self._screen
 
         def answered(result: CommandResult) -> None:
             ok = result.status.value == "ok"
-            if drag_turn and ok and session.taps == drag_turn and not session.closed:
-                session.drag_held = True
+            if drag_turn and ok:
+                self._drag_pressed(session, drag_turn, screen)
             payload: dict[str, Any] = {"k": "ack", "i": command_id, "ok": ok}
             if not ok:
                 payload["c"] = result.code or result.status.value
@@ -1225,7 +1235,30 @@ class PcDirectService:
         # Qualquer toque novo encerra o arrasto anterior; o `DOWN` só o abre quando executar.
         session.drag_held = False
         session.taps += 1
-        return session.taps if body.get("action") == "DOWN" else 0
+        if body.get("action") != "DOWN":
+            return 0
+        session.drag_button = str(body["button"])
+        return session.taps
+
+    def _drag_pressed(
+        self, session: _Session, turn: int, screen: tuple[str, ScreenPeer] | None
+    ) -> None:
+        """O `DOWN` do toque executou: o botão está apertado no PC."""
+        if session.taps != turn or session.closed:
+            return  # há outro toque depois dele na faixa, ou o canal fechou (e soltou tudo)
+        if self._screen is screen and self._screen_open_for(session):
+            session.drag_held = True
+        else:
+            self._release_drag(session)  # a tela que o aceitou parou enquanto ele esperava
+
+    def _release_drag(self, session: _Session) -> None:
+        """Solta só o botão que o `DOWN` do toque apertou: um `UP` na faixa, depois do que já
+        espera nela, sem mover o ponteiro (o ponto do `DOWN` desfaria o arrasto) e sem mexer no
+        que mais estiver segurado."""
+        body = {"button": session.drag_button, "action": "UP"}
+        accepted = self._validate("pc.click.v1", body, 0.0)
+        if accepted is not None:
+            self._submit(accepted.command, None)
 
     def _on_tv_command(  # noqa: PLR0913, PLR0917, PLR0911 - uma recusa por regra, cada uma com código
         self,
