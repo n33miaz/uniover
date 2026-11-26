@@ -16598,6 +16598,7 @@ export interface components {
       /** Format: int32 */
       launcherLevel?: null | number | string;
       notice?: null | string;
+      publishedVersion?: null | string;
       /** Format: int32 */
       revision: number;
       /** Format: date-time */

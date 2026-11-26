@@ -19,6 +19,7 @@ public class GetModuleInfoHandlerTests
         info.Features.Should().Contain("tv.livre.v2", "o agente só declara os acréscimos do TV Livre depois de a API os listar");
         info.Features.Should().Contain("tv.livre.sleep-no-install.v1", "o agente só declara o dormir sem instalar depois de a API o listar");
         info.Features.Should().Contain("tv.livre.notice.v1", "o agente só manda o aviso ao dono no resultado depois de a API o listar");
+        info.Features.Should().Contain("tv.livre.state.published_version", "o agente só manda a versão publicada do launcher depois de a API aceitar o campo");
         info.Features.Should().Contain("pc.rtc.v1", "o agente só declara o canal direto depois de a API o listar");
         info.Features.Should().Contain("tv.rtc.v1", "o agente só declara as teclas da TV pelo canal depois de a API listar");
         info.Features.Should().Contain("pc.rtc.reconcile.v1", "o agente só reconcilia o canal direto depois de a API listar");

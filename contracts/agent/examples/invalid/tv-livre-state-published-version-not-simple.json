@@ -1,0 +1,1 @@
+{"v":1,"id":"0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e9f","type":"tv.livre.state.v1","source":"agent:pc-casa","target":"api","ts":"2026-10-31T14:00:00Z","correlationId":"0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea0","body":{"requestId":"0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea0","supported":true,"installed":true,"isHome":true,"apps":[],"publishedVersion":"v0.80.0","at":"2026-10-31T14:00:00Z"}}

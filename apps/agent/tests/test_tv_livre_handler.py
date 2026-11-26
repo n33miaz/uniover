@@ -4,6 +4,7 @@ As mensagens que o agente envia passam pelo `EnvelopeGate` (esquema JSON + model
 contrato), então um estado fora do contrato falha aqui e não na API.
 """
 
+import asyncio
 import base64
 import hashlib
 import threading
@@ -37,24 +38,28 @@ COMMAND_ID = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e9f"
 PHOTO_ID = "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8ea1"
 
 
-def build(
+def build(  # noqa: PLR0913 - opções independentes da montagem
     tmp_path: Path,
     android: FakeAndroid | None = None,
     error: LauncherApkError | None = None,
     *,
     extended: bool = False,
     notice: bool = False,
+    published: bool = False,
+    apk: FakeApkSource | None = None,
+    clock: FakeClock | None = None,
 ) -> tuple[Handler, FakeTransport, FakeAndroid, TvLivre]:
-    clock = FakeClock()
+    clock = clock or FakeClock()
     android = android or FakeAndroid()
     livre = TvLivre(
         android,
-        FakeApkSource(tmp_path, error),
+        apk or FakeApkSource(tmp_path, error),
         LivreStateFile(tmp_path / "tv-livre.json"),
         PhotoStaging(clock),
         clock,
         extended=lambda: extended,
         notice=lambda: notice,
+        published=lambda: published,
     )
     transport = FakeTransport()
     handler = tv_livre_handler(
@@ -110,6 +115,173 @@ async def test_the_new_state_fields_go_only_to_an_api_that_lists_them(tmp_path: 
     new = transport.sent[-1]["body"]
     assert new["launcherLevel"] == 2
     assert "applyDeferred" not in new
+
+
+async def test_the_published_version_goes_with_an_installed_launcher(tmp_path: Path) -> None:
+    apk = FakeApkSource(tmp_path)
+    apk.published = "0.31.0"
+    handler, transport, _, _ = build(tmp_path, published=True, apk=apk)
+
+    # Sem o app na TV não há o que comparar.
+    await handler(command({"action": "status"}))
+    assert "publishedVersion" not in transport.sent[-1]["body"]
+
+    await handler(command({"action": "install"}))
+    body = transport.sent[-1]["body"]
+    assert (body["version"], body["publishedVersion"]) == ("0.30.0", "0.31.0")
+
+
+@pytest.mark.parametrize(
+    ("publication", "level"),
+    [
+        pytest.param("0.30.1", 2, id="publicada mais nova"),
+        pytest.param("0.30.0", 2, id="igual"),
+        pytest.param("0.29.9", 2, id="instalada mais nova"),
+        pytest.param("0.30.0", 1, id="nível antigo"),
+    ],
+)
+async def test_the_agent_tells_both_versions_and_the_level_without_judging(
+    tmp_path: Path, publication: str, level: int
+) -> None:
+    android = FakeAndroid()
+    android.level = level
+    apk = FakeApkSource(tmp_path)
+    apk.published = publication
+    handler, transport, _, _ = build(tmp_path, android, extended=True, published=True, apk=apk)
+
+    await handler(command({"action": "install"}))
+
+    body = transport.sent[-1]["body"]
+    assert (body["version"], body["publishedVersion"], body["launcherLevel"]) == (
+        "0.30.0",
+        publication,
+        level,
+    )
+    assert android.mutating().count("install") == 1  # só a instalação pedida
+
+
+async def test_the_publication_is_asked_while_the_tv_is_still_being_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    order: list[str] = []
+    tv_read = asyncio.Event()
+
+    class SlowPublication(FakeApkSource):
+        async def published_version(self) -> str | None:
+            order.append("publicação pedida")
+            await tv_read.wait()
+            return "0.31.0"
+
+    android = FakeAndroid()
+    android.installed = True
+    original = android.shell
+
+    async def shell(text: str) -> ShellResult:
+        await asyncio.sleep(0)  # o ADB de verdade cede a vez ao laço
+        result = await original(text)
+        if text == "pm list packages -d":  # a última leitura do estado
+            order.append("TV lida")
+            tv_read.set()
+        return result
+
+    monkeypatch.setattr(android, "shell", shell)
+    handler, transport, _, _ = build(
+        tmp_path, android, published=True, apk=SlowPublication(tmp_path)
+    )
+
+    await asyncio.wait_for(handler(command({"action": "status"})), 5)
+
+    assert order[-2:] == ["publicação pedida", "TV lida"]
+    assert transport.sent[-1]["body"]["publishedVersion"] == "0.31.0"
+
+
+@pytest.mark.parametrize("failure", ["sem o app", "TV fora do alcance"])
+async def test_an_unneeded_lookup_is_not_awaited_nor_left_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    class NeverAnswers(FakeApkSource):
+        async def published_version(self) -> str | None:
+            await asyncio.Event().wait()
+            return None
+
+    android = FakeAndroid()
+
+    async def shell(text: str) -> ShellResult:
+        await asyncio.sleep(0)
+        if failure == "TV fora do alcance":
+            raise AdbUnreachable("a TV não respondeu pelo ADB")
+        return await FakeAndroid.shell(android, text)
+
+    monkeypatch.setattr(android, "shell", shell)
+    handler, _, _, _ = build(tmp_path, android, published=True, apk=NeverAnswers(tmp_path))
+    before = asyncio.all_tasks()
+
+    await asyncio.wait_for(handler(command({"action": "status"})), 5)
+
+    assert asyncio.all_tasks() == before
+
+
+async def test_an_api_that_does_not_list_the_published_version_never_gets_it(
+    tmp_path: Path,
+) -> None:
+    apk = FakeApkSource(tmp_path)
+    apk.published = "0.31.0"
+    # A API anterior lista os outros acréscimos e tem o estado fechado sem o campo.
+    handler, transport, _, _ = build(tmp_path, extended=True, notice=True, apk=apk)
+
+    result = await handler(command({"action": "install"}))
+
+    assert result.status is ResultStatus.OK
+    assert "publishedVersion" not in transport.sent[-1]["body"]
+    assert apk.version_reads == 0
+
+
+async def test_an_unreadable_publication_leaves_the_field_out(tmp_path: Path) -> None:
+    handler, transport, _, _ = build(tmp_path, published=True)
+
+    result = await handler(command({"action": "install"}))
+
+    assert result.status is ResultStatus.OK
+    assert transport.sent[-1]["body"]["installed"] is True
+    assert "publishedVersion" not in transport.sent[-1]["body"]
+
+
+async def test_the_published_version_is_remembered_for_a_while_and_a_failure_for_less(
+    tmp_path: Path,
+) -> None:
+    clock = FakeClock()
+    apk = FakeApkSource(tmp_path)
+    _, _, _, livre = build(tmp_path, apk=apk, clock=clock)
+
+    assert await livre.published_version() is None
+    apk.published = "1.0.0"
+    clock.advance(livre_module.PUBLISHED_VERSION_RETRY_SECONDS - 1)
+    assert await livre.published_version() is None
+    clock.advance(1)
+    assert await livre.published_version() == "1.0.0"
+    assert apk.version_reads == 2
+
+    apk.published = "1.1.0"
+    clock.advance(livre_module.PUBLISHED_VERSION_TTL_SECONDS - 1)
+    assert await livre.published_version() == "1.0.0"
+    clock.advance(1)
+    assert await livre.published_version() == "1.1.0"
+    assert apk.version_reads == 3
+
+
+async def test_installing_reads_the_published_version_again(tmp_path: Path) -> None:
+    apk = FakeApkSource(tmp_path)
+    apk.published = "1.0.0"
+    handler, transport, _, _ = build(tmp_path, published=True, apk=apk)
+    await handler(command({"action": "install"}))
+    apk.published = "1.1.0"
+
+    await handler(command({"action": "status"}))
+    assert transport.sent[-1]["body"]["publishedVersion"] == "1.0.0"
+
+    await handler(command({"action": "install"}))
+    assert transport.sent[-1]["body"]["publishedVersion"] == "1.1.0"
+    assert apk.fetches == 2
 
 
 async def test_a_deferred_apply_is_told_once_and_only_to_a_new_api(tmp_path: Path) -> None:

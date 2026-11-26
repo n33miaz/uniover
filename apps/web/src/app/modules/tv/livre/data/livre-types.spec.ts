@@ -3,6 +3,7 @@ import {
   DEFAULT_LIVRE_CONFIG,
   TV_LIVRE_CAPABILITY,
   TV_LIVRE_SLEEP_NO_INSTALL_CAPABILITY,
+  isNewerPublished,
   normalizeColor,
   parseLivreConfig,
   parseLivreView,
@@ -49,6 +50,40 @@ describe('parseLivreView, the extension fields', () => {
     );
     expect(parseLivreView({ ...base, notice: '   ' })?.notice).toBeNull();
     expect(parseLivreView({ ...base, notice: 3 })?.notice).toBeNull();
+  });
+});
+
+describe('the published launcher version', () => {
+  it('is read as a filled text, and an old server tells none', () => {
+    const base = { available: true };
+    expect(parseLivreView(base)?.publishedVersion).toBeNull();
+    expect(parseLivreView({ ...base, publishedVersion: '1.2.3' })?.publishedVersion).toBe('1.2.3');
+    expect(parseLivreView({ ...base, publishedVersion: '' })?.publishedVersion).toBeNull();
+    expect(parseLivreView({ ...base, publishedVersion: 2 })?.publishedVersion).toBeNull();
+  });
+
+  it.each([
+    ['1.0.0', '1.0.1', true],
+    ['1.9.0', '1.10.0', true],
+    ['0.99.99', '1.0.0', true],
+    ['1.2.3', '1.2.3', false],
+    ['1.2.4', '1.2.3', false],
+    ['1.10.0', '1.9.9', false],
+    ['2.0.0', '1.99.99', false],
+  ])('installed %s, published %s: newer is %s', (installed, published, newer) => {
+    expect(isNewerPublished(installed, published)).toBe(newer);
+  });
+
+  it.each([
+    [null, '1.0.0'],
+    ['1.0.0', null],
+    ['', '1.0.0'],
+    ['1.0', '1.0.1'],
+    ['1.0.0', 'v1.0.1'],
+    ['1.0.0-debug', '1.0.1'],
+    ['1.0.0', '1.0.1.2'],
+  ])('cannot compare installed %j with published %j', (installed, published) => {
+    expect(isNewerPublished(installed, published)).toBeNull();
   });
 });
 

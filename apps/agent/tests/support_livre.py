@@ -280,6 +280,13 @@ class FakeApkSource:
         self._tmp = tmp
         self._error = error
         self.fetches = 0
+        # A versão que a publicação diz ter; `None` é uma publicação que não deu para ler.
+        self.published: str | None = None
+        self.version_reads = 0
+
+    async def published_version(self) -> str | None:
+        self.version_reads += 1
+        return self.published
 
     async def fetch(self) -> LauncherApk:
         self.fetches += 1

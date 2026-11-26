@@ -765,6 +765,7 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         var state = StateBody(command, installed: true, version: "0.69.0");
         state["launcherLevel"] = 2;
         state["applyDeferred"] = true;
+        state["publishedVersion"] = "0.70.0";
         await StateThenReplyAsync(agent, command, state);
         using var response = await Within(request);
 
@@ -772,6 +773,7 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         view.GetProperty("extended").GetBoolean().Should().BeTrue();
         view.GetProperty("launcherLevel").GetInt32().Should().Be(2);
         view.GetProperty("applyDeferred").GetBoolean().Should().BeTrue();
+        view.GetProperty("publishedVersion").GetString().Should().Be("0.70.0");
     }
 
     [Fact]
@@ -788,6 +790,7 @@ public sealed class TvLivreTests(PostgresFixture postgres)
         view.GetProperty("extended").GetBoolean().Should().BeFalse();
         view.GetProperty("launcherLevel").ValueKind.Should().Be(JsonValueKind.Null);
         view.GetProperty("applyDeferred").GetBoolean().Should().BeFalse();
+        view.GetProperty("publishedVersion").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]

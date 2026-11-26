@@ -24,10 +24,10 @@ import { TvLivreApi } from './livre-api';
 import { LIVRE_PHOTO_REDUCER } from './photo-fit';
 import {
   DEFAULT_LIVRE_CONFIG,
-  LAUNCHER_LEVEL_LATEST,
   LivreConfig,
   SLEEP_MAX_MINUTES,
   TvLivreView,
+  launcherOutdated,
   normalizeColor,
 } from './livre-types';
 
@@ -104,8 +104,11 @@ export class TvLivreStore {
   /** A configuração foi guardada, mas a TV não a aplicou (falha na hora de aplicar): ainda falta tentar de novo. */
   private readonly _unapplied = signal(false);
   private readonly _showPrompt = signal(false);
-  /** O launcher mais novo que existe já foi instalado e o nível não subiu: a versão nova ainda não foi publicada. */
-  private readonly _updateStale = signal(false);
+  /**
+   * "Atualizar" instalou o que há e o launcher seguiu atrás: guarda a versão publicada que se conhecia então (`null`:
+   * nenhuma). Enquanto a publicação for essa (ou desconhecida), a atualização não é oferecida de novo.
+   */
+  private readonly _staleUpdate = signal<{ readonly published: string | null } | null>(null);
   private supportRetry: ReturnType<typeof setTimeout> | null = null;
   private supportAttempts = 0;
 
@@ -134,16 +137,13 @@ export class TvLivreStore {
   /** Os ajustes que só o launcher de nível 2 conhece (Rede, Entradas, nome na tela da TV) fazem efeito. */
   readonly launcherExtras = computed(() => (this._view()?.launcherLevel ?? 0) >= 2);
 
-  /** Há launcher mais novo para instalar: o agente leu o nível na TV e ele está abaixo do que esta versão espera. */
+  /** Há launcher mais novo para instalar: a publicação passou a versão instalada ou, sem comparar, o nível está atrás. */
   readonly updateAvailable = computed(() => {
     const view = this._view();
-    return (
-      view !== null &&
-      !this._updateStale() &&
-      view.installed &&
-      view.launcherLevel !== null &&
-      view.launcherLevel < LAUNCHER_LEVEL_LATEST
-    );
+    if (view === null || !launcherOutdated(view)) return false;
+    const stale = this._staleUpdate();
+    if (stale === null) return true;
+    return view.publishedVersion !== null && view.publishedVersion !== stale.published;
   });
 
   /** O TV Livre pode mexer na TV agora: o agente está ao alcance e a TV é compatível. */
@@ -346,10 +346,10 @@ export class TvLivreStore {
     return this.run('update', async (epoch) => {
       const view = await this.live(epoch, this.api.install());
       this.adopt(view, epoch);
-      if (view.launcherLevel !== null && view.launcherLevel < LAUNCHER_LEVEL_LATEST) {
-        // Instalou o último que há e o nível não subiu: o launcher novo ainda não foi publicado. O aviso sai (sem isso
-        // "Atualizar" reinstalaria o mesmo para sempre) e volta quando a tela é reaberta com a TV ou a conta trocadas.
-        this._updateStale.set(true);
+      if (launcherOutdated(view)) {
+        // Instalou o último que há e o launcher segue atrás: o novo ainda não foi publicado. O aviso sai (sem isso
+        // "Atualizar" reinstalaria o mesmo para sempre) e volta com outra publicação, ou com a TV ou a conta trocadas.
+        this._staleUpdate.set({ published: view.publishedVersion });
         return this.withAgentNotice(
           $localize`:@@tv-livre.notice.update-pending:Instalado o mais novo que há. O launcher novo ainda não foi publicado.`,
           view,
@@ -659,7 +659,7 @@ export class TvLivreStore {
     this._notice.set(null);
     this._unapplied.set(false);
     this._showPrompt.set(false);
-    this._updateStale.set(false);
+    this._staleUpdate.set(null);
   }
 
   private scheduleSupportRetry(): void {

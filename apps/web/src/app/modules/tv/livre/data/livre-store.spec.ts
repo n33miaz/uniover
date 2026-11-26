@@ -22,6 +22,7 @@ function view(overrides: Partial<TvLivreView> = {}): TvLivreView {
     supported: true,
     installed: true,
     version: '1.0.0',
+    publishedVersion: null,
     isHome: false,
     factoryLauncher: null,
     disabledPackages: [],
@@ -479,6 +480,74 @@ describe('TvLivreStore', () => {
       expect(store.notice()?.text).toBe(
         'Instalado o mais novo que há. O launcher novo ainda não foi publicado.',
       );
+    });
+
+    describe('update offer', () => {
+      const openWith = async (current: TvLivreView) => {
+        api.get.mockResolvedValue(current);
+        await open();
+      };
+      const launcher = (overrides: Partial<TvLivreView> = {}) =>
+        view({ extended: true, launcherLevel: 2, version: '1.0.0', ...overrides });
+
+      it.each<[string, Partial<TvLivreView>, boolean]>([
+        ['the published one is newer', { publishedVersion: '1.0.1' }, true],
+        ['the published one is the installed one', { publishedVersion: '1.0.0' }, false],
+        ['the installed one is newer', { publishedVersion: '0.9.9' }, false],
+        ['the agent told no published version', { publishedVersion: null }, false],
+        ['the published version is unreadable', { publishedVersion: 'v1.2.0' }, false],
+        [
+          'the installed version is unreadable',
+          { version: 'dev', publishedVersion: '1.2.0' },
+          false,
+        ],
+        ['the installed version is unknown', { version: null, publishedVersion: '1.2.0' }, false],
+        ['the level is old and nothing was published', { launcherLevel: 1 }, true],
+        [
+          'the level is old and the comparison is impossible',
+          { launcherLevel: 1, version: 'dev', publishedVersion: '1.2.0' },
+          true,
+        ],
+        [
+          'the level is old but the installed one is already the published one',
+          { launcherLevel: 1, publishedVersion: '1.0.0' },
+          false,
+        ],
+        [
+          'a newer one exists and the level was not read',
+          { launcherLevel: null, extended: false, publishedVersion: '1.1.0' },
+          true,
+        ],
+        ['the TV has no launcher', { installed: false, publishedVersion: '1.1.0' }, false],
+      ])('when %s', async (_name, overrides, offered) => {
+        await openWith(launcher(overrides));
+        expect(store.updateAvailable()).toBe(offered);
+        expect(api.install).not.toHaveBeenCalled();
+      });
+
+      it('goes away once the update reaches the published version', async () => {
+        await openWith(launcher({ publishedVersion: '1.1.0' }));
+        api.install.mockResolvedValue(launcher({ version: '1.1.0', publishedVersion: '1.1.0' }));
+        expect(await store.update()).toBe(true);
+        expect(store.updateAvailable()).toBe(false);
+        expect(store.notice()?.text).toBe('TV Livre atualizado.');
+      });
+
+      it('does not offer the same publication again after an update that stayed behind, only a new one', async () => {
+        await openWith(launcher({ publishedVersion: '1.1.0' }));
+        api.install.mockResolvedValue(launcher({ publishedVersion: '1.1.0' }));
+        expect(await store.update()).toBe(true);
+        expect(store.notice()?.text).toContain('ainda não foi publicado');
+        expect(store.updateAvailable()).toBe(false);
+
+        api.refresh.mockResolvedValue(launcher({ publishedVersion: null, launcherLevel: 1 }));
+        await store.refresh();
+        expect(store.updateAvailable()).toBe(false);
+
+        api.refresh.mockResolvedValue(launcher({ publishedVersion: '1.2.0' }));
+        await store.refresh();
+        expect(store.updateAvailable()).toBe(true);
+      });
     });
 
     it('sets as home with the choice about the factory launcher', async () => {

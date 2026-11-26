@@ -241,10 +241,12 @@ class EnvelopeFactory:
         apps: Sequence[tuple[str, bool, bool]],
         launcher_level: int | None = None,
         apply_deferred: bool | None = None,
+        published_version: str | None = None,
     ) -> dict[str, Any]:
         """`tv.livre.state.v1`: o estado do TV Livre na TV (apps: pacote, de fábrica, desativado).
 
         `launcher_level` e `apply_deferred` são da capacidade `tv.livre.v2`: só vão à API que a tem.
+        `published_version` só vai à API que lista `tv.livre.state.published_version`.
         """
         body: dict[str, Any] = {
             "requestId": request_id,
@@ -269,6 +271,8 @@ class EnvelopeFactory:
             body["launcherLevel"] = launcher_level
         if apply_deferred is not None:
             body["applyDeferred"] = apply_deferred
+        if published_version is not None:
+            body["publishedVersion"] = published_version
         return self._build("tv.livre.state.v1", body, correlation_id)
 
     def tv_watchdog(

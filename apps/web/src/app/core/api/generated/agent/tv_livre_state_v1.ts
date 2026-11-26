@@ -52,6 +52,10 @@ export interface TvLivreStateV1Body {
    * Verdadeiro quando este apply só gravou a configuração porque outro app estava na frente: a tela inicial a lê sozinha na próxima vez. Só vai com a capacidade tv.livre.v2.
    */
   applyDeferred?: boolean;
+  /**
+   * Versão (x.y.z) do launcher publicado agora, para comparar com version. Sem o campo, o agente não soube ler (TV sem o app, publicação fora do alcance ou ilegível, ou agente anterior). Só vai à API que lista tv.livre.state.published_version em features.
+   */
+  publishedVersion?: string;
 }
 export interface TvLivreStateV1BodyAppsItem {
   package: string;

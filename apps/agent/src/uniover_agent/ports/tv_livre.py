@@ -66,3 +66,11 @@ class LauncherApkSource(Protocol):
         Levanta `LauncherApkError` (`apk_unavailable`, `apk_hash_mismatch`, `apk_invalid`).
         """
         ...
+
+    async def published_version(self) -> str | None:
+        """A versão (`x.y.z`) do launcher que `fetch` baixaria agora, sem baixá-lo.
+
+        Nunca levanta: `None` quando a publicação não responde ou não diz a versão. Responde em
+        poucos segundos, porque um pedido da tela espera por ela.
+        """
+        ...

@@ -18,7 +18,8 @@ internal sealed record LivreAppView(string Package, bool Factory, bool Disabled)
 /// acréscimos (<see cref="TvCapabilities.LivreV2"/>); <c>LauncherLevel</c> é o nível do launcher que ele leu (nulo: não
 /// leu) e <c>ApplyDeferred</c> diz que o último apply só gravou a configuração porque outro app estava na frente.
 /// <c>Notice</c> é o aviso que o agente deixou para o dono num pedido que deu certo (só nas respostas das ações; a leitura
-/// do estado o devolve nulo).
+/// do estado o devolve nulo). <c>PublishedVersion</c> é a versão do launcher publicado que o agente leu junto do estado,
+/// para a tela comparar com <c>Version</c> (nula: não leu, ou agente anterior).
 /// </summary>
 internal sealed record TvLivreView(
     bool Available,
@@ -36,7 +37,8 @@ internal sealed record TvLivreView(
     bool Extended = false,
     int? LauncherLevel = null,
     bool ApplyDeferred = false,
-    string? Notice = null)
+    string? Notice = null,
+    string? PublishedVersion = null)
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
@@ -59,7 +61,8 @@ internal sealed record TvLivreView(
             entry?.Revision ?? 0,
             extended,
             state?.LauncherLevel,
-            state?.ApplyDeferred ?? false);
+            state?.ApplyDeferred ?? false,
+            PublishedVersion: state?.PublishedVersion);
     }
 
     /// <summary>O estado guardado vem do agente (já conferido pelo contrato); ilegível por defeito vira "sem estado".</summary>
@@ -91,7 +94,8 @@ internal sealed record LivreAgentState(
     IReadOnlyList<string>? DisabledPackages,
     IReadOnlyList<LivreAppView>? Apps,
     int? LauncherLevel = null,
-    bool? ApplyDeferred = null);
+    bool? ApplyDeferred = null,
+    string? PublishedVersion = null);
 
 /// <summary>Corpo de <c>POST /livre/set-home</c>: desativar o launcher de fábrica depois de verificar a home nova (reversível).</summary>
 internal sealed record SetHomeRequest(bool DisableFactory = false);
