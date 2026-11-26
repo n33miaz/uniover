@@ -67,6 +67,7 @@ interface Link {
   painting: boolean;
   /** Monitor do último `s.get` enviado (o do pedido em andamento, se houver). */
   requested?: number;
+  requestedWidth?: number;
   /** O monitor e o arranjo do último `s.get` enviado: o quadro que chega responde a ele (um pedido por vez). */
   requestedView?: FrameView;
   watchdog?: ReturnType<typeof setTimeout>;
@@ -464,6 +465,7 @@ export class ScreenPage {
             const monitor = this.current();
             if (view && monitor) {
               active.requested = view.monitor;
+              active.requestedWidth = view.width;
               active.requestedView = { monitor, layout: this.layout() };
             }
             return view;
@@ -711,7 +713,7 @@ export class ScreenPage {
   private receive(link: Link, data: unknown): void {
     if (typeof data !== 'string') {
       if (!(data instanceof ArrayBuffer) || link.painting) throw new Error('quadro inválido');
-      const frame = link.assembler.push(data);
+      const frame = link.assembler.push(data, link.requestedWidth ?? 0);
       if (frame) {
         link.painting = true;
         // O quadro responde ao único pedido em andamento: mostra o monitor e o arranjo daquele pedido.
@@ -791,7 +793,7 @@ export class ScreenPage {
     try {
       const canvas = this.surface()?.nativeElement;
       if (this.link !== link || !canvas) return;
-      // O JPEG tem de ter o tamanho que o cabeçalho declarou (e já validou): outro tamanho é recusado.
+      // Confere também o tamanho que o decodificador devolveu.
       if (bitmap.width !== frame.width || bitmap.height !== frame.height) {
         throw new Error('imagem diverge do cabeçalho');
       }

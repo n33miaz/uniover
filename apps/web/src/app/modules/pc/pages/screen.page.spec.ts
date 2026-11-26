@@ -57,16 +57,36 @@ const TWO_MONITORS = {
   layout: 0x0bad_cafe,
 };
 
-/** Um quadro no formato do PC (cabeçalho `UOSF` de 16 bytes e 2 bytes de JPEG). */
-function jpegFrame(sequence: number): ArrayBuffer {
-  const bytes = new Uint8Array(18);
+/** Um quadro com cabeçalho `UOSF` e SOF de 640 × 360 para o decodificador simulado. */
+function jpegFrame(sequence: number, jpegWidth = 640): ArrayBuffer {
+  const jpeg = [
+    0xff,
+    0xd8,
+    0xff,
+    0xc0,
+    0,
+    11,
+    8,
+    1,
+    104,
+    jpegWidth >> 8,
+    jpegWidth & 0xff,
+    1,
+    1,
+    0x11,
+    0,
+    0xff,
+    0xd9,
+  ];
+  const bytes = new Uint8Array(16 + jpeg.length);
   const view = new DataView(bytes.buffer);
   view.setUint32(0, 0x554f5346);
   view.setUint8(4, 1);
   view.setUint16(6, 640);
   view.setUint16(8, 360);
   view.setUint16(10, sequence);
-  view.setUint32(12, 2);
+  view.setUint32(12, jpeg.length);
+  bytes.set(jpeg, 16);
   return bytes.buffer;
 }
 
@@ -235,7 +255,7 @@ describe('Tela do PC (página)', () => {
     const { peer, requests, open } = setup();
     await open();
     peer.channel.receive(
-      JSON.stringify({ k: 's.mon', monitors: [{ id: 7, width: 800, height: 600, primary: true }] }),
+      JSON.stringify({ k: 's.mon', monitors: [{ id: 7, width: 320, height: 600, primary: true }] }),
     );
     vi.advanceTimersByTime(2_000);
     expect(requests().map((r) => r['width'])).toEqual([1280]);
@@ -243,7 +263,7 @@ describe('Tela do PC (página)', () => {
     peer.channel.receive(jpegFrame(1));
     await flush();
     vi.advanceTimersByTime(0);
-    expect(requests().map((r) => r['width'])).toEqual([1280, 800]);
+    expect(requests().map((r) => r['width'])).toEqual([1280, 320]);
   });
 
   it('shows no selector with a single monitor', async () => {
@@ -614,6 +634,16 @@ describe('Tela do PC (página)', () => {
     await flush();
     fixture.detectChanges();
     expect(drawImage).not.toHaveBeenCalled();
+    expect(root.querySelector('.notice')?.textContent).toContain('Não foi possível');
+  });
+
+  it('recusa dimensões divergentes no SOF antes de chamar o decodificador', async () => {
+    const { fixture, peer, root, open } = setup();
+    await open();
+    peer.channel.receive(jpegFrame(1, 641));
+    await flush();
+    fixture.detectChanges();
+    expect(createImageBitmap).not.toHaveBeenCalled();
     expect(root.querySelector('.notice')?.textContent).toContain('Não foi possível');
   });
 

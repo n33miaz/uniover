@@ -6,6 +6,11 @@ import {
 } from './screen-viewer';
 
 const VIEW: ScreenViewRequest = { monitor: 1, width: 1280 };
+// SOI, APP0, SOF0 de 640 × 360 com um componente e EOI.
+const JPEG = [
+  0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, 0xc0, 0, 11, 8, 1, 104, 2, 128, 1, 1, 0x11, 0, 0xff,
+  0xd9,
+];
 
 /** Um quadro no formato do PC: `>4sBBHHHI` (marca, versão, reservado, largura, altura, sequência, tamanho). */
 function frameBytes(
@@ -85,7 +90,10 @@ describe('parseViewerMessage', () => {
       monitors: [{ id: 0, width: 1920, height: 1080, primary: true }],
       layout: 4294967295,
     });
-    for (const bad of ['-1', '4294967296', '1.5', '"7"', 'null']) {
+    expect(parseViewerMessage(`{"k":"s.mon","monitors":${monitors},"layout":null}`)).toMatchObject({
+      layout: null,
+    });
+    for (const bad of ['-1', '4294967296', '1.5', '"7"']) {
       expect(() =>
         parseViewerMessage(`{"k":"s.mon","monitors":${monitors},"layout":${bad}}`),
       ).toThrow();
@@ -140,14 +148,21 @@ describe('parseViewerMessage', () => {
 describe('ScreenViewerFrameAssembler', () => {
   it('assembles a frame split across messages', () => {
     const assembler = new ScreenViewerFrameAssembler();
-    expect(assembler.push(frameBytes(3, [1, 2, 3, 4, 5], { size: 8 }))).toBeNull();
-    const frame = assembler.push(new Uint8Array([6, 7, 8]).buffer);
-    expect(frame).toMatchObject({ sequence: 3, width: 640, height: 360 });
-    expect(frame?.chunks.reduce((n, c) => n + c.byteLength, 0)).toBe(8);
+    const packet = frameBytes(3, JPEG);
+    expect(assembler.push(packet.slice(0, 21), VIEW.width)).toBeNull();
+    expect(assembler.push(packet.slice(21, 31), VIEW.width)).toBeNull();
+    const frame = assembler.push(packet.slice(31), VIEW.width);
+    expect(frame).toMatchObject({
+      sequence: 3,
+      width: 640,
+      height: 360,
+      wireBytes: packet.byteLength,
+    });
+    expect(frame?.chunks.reduce((n, c) => n + c.byteLength, 0)).toBe(JPEG.length);
   });
 
   it('returns a frame that fits in one message', () => {
-    expect(new ScreenViewerFrameAssembler().push(frameBytes(1, [9, 9]))).toMatchObject({
+    expect(new ScreenViewerFrameAssembler().push(frameBytes(1, JPEG), VIEW.width)).toMatchObject({
       sequence: 1,
     });
   });
@@ -155,23 +170,75 @@ describe('ScreenViewerFrameAssembler', () => {
   it('requires the UOSF header: a bare JPEG is refused', () => {
     const jpeg = new Uint8Array(64);
     jpeg.set([0xff, 0xd8, 0xff, 0xe0]);
-    expect(() => new ScreenViewerFrameAssembler().push(jpeg.buffer)).toThrow('cabeçalho');
-  });
-
-  it('refuses another version', () => {
-    expect(() => new ScreenViewerFrameAssembler().push(frameBytes(1, [1], { version: 2 }))).toThrow(
+    expect(() => new ScreenViewerFrameAssembler().push(jpeg.buffer, VIEW.width)).toThrow(
       'cabeçalho',
     );
   });
 
+  it('refuses another version', () => {
+    expect(() =>
+      new ScreenViewerFrameAssembler().push(frameBytes(1, JPEG, { version: 2 }), VIEW.width),
+    ).toThrow('cabeçalho');
+  });
+
   it('rejects a wrong magic, an empty frame and an overflowing chunk', () => {
     const assembler = new ScreenViewerFrameAssembler();
-    expect(() => assembler.push(frameBytes(1, [1], { magic: 1 }))).toThrow();
-    expect(() => assembler.push(new Uint8Array(16).buffer)).toThrow();
-    assembler.push(frameBytes(1, [1, 2], { size: 3 }));
-    expect(() => assembler.push(new Uint8Array(5).buffer)).toThrow();
+    expect(() => assembler.push(frameBytes(1, [1], { magic: 1 }), VIEW.width)).toThrow();
+    expect(() => assembler.push(new Uint8Array(16).buffer, VIEW.width)).toThrow();
+    assembler.push(frameBytes(1, [1, 2], { size: 3 }), VIEW.width);
+    expect(() => assembler.push(new Uint8Array(5).buffer, VIEW.width)).toThrow();
     // Depois do erro o montador volta a esperar um cabeçalho.
-    expect(assembler.push(frameBytes(2, [1]))).toMatchObject({ sequence: 2 });
+    expect(assembler.push(frameBytes(2, JPEG), VIEW.width)).toMatchObject({ sequence: 2 });
+  });
+
+  it('recusa dimensões divergentes, JPEG sem SOF e segmentos truncados', () => {
+    const assembler = new ScreenViewerFrameAssembler();
+    expect(() => assembler.push(frameBytes(1, JPEG, { height: 361 }), VIEW.width)).toThrow(
+      'diverge',
+    );
+    expect(() => assembler.push(frameBytes(1, [0xff, 0xd8, 0xff, 0xd9]), VIEW.width)).toThrow(
+      'sem dimensões',
+    );
+    expect(() => assembler.push(frameBytes(1, JPEG.slice(0, 17)), VIEW.width)).toThrow('segmento');
+  });
+
+  it('limita largura ao pedido e pixels ao teto, aceitando 8K em retrato reduzido', () => {
+    const assembler = new ScreenViewerFrameAssembler();
+    expect(() => assembler.push(frameBytes(1, JPEG), 639)).toThrow('cabeçalho');
+    expect(() => assembler.push(frameBytes(1, JPEG, { width: 1920, height: 4321 }), 1920)).toThrow(
+      'cabeçalho',
+    );
+    const portrait = JPEG.slice();
+    portrait.splice(13, 4, 0x0d, 0x55, 0x07, 0x80);
+    expect(
+      assembler.push(frameBytes(1, portrait, { width: 1920, height: 3413 }), 1920),
+    ).toMatchObject({ width: 1920, height: 3413 });
+  });
+
+  it('recusa continuação vazia e o fragmento 514 mesmo abaixo de 8 MiB', () => {
+    const assembler = new ScreenViewerFrameAssembler();
+    const first = frameBytes(1, [1], { size: 514 });
+    expect(assembler.push(first, VIEW.width)).toBeNull();
+    expect(() => assembler.push(new ArrayBuffer(0), VIEW.width)).toThrow('pedaço');
+    expect(assembler.push(first, VIEW.width)).toBeNull();
+    for (let i = 1; i < 513; i++) {
+      expect(assembler.push(new ArrayBuffer(1), VIEW.width)).toBeNull();
+    }
+    expect(() => assembler.push(new ArrayBuffer(1), VIEW.width)).toThrow('pedaço');
+  });
+
+  it('aceita os 513 fragmentos de um JPEG de 8 MiB enviado em blocos de 16 KiB', () => {
+    const assembler = new ScreenViewerFrameAssembler();
+    const size = 8 * 1024 ** 2;
+    const chunkBytes = 16 * 1024;
+    const packet = new Uint8Array(16 + size);
+    packet.set(new Uint8Array(frameBytes(1, JPEG, { size })));
+    for (let offset = 0; offset < size; offset += chunkBytes) {
+      expect(
+        assembler.push(packet.buffer.slice(offset, offset + chunkBytes), VIEW.width),
+      ).toBeNull();
+    }
+    expect(assembler.push(packet.buffer.slice(size), VIEW.width)?.chunks).toHaveLength(513);
   });
 });
 

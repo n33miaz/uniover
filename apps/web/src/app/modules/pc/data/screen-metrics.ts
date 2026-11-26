@@ -1,57 +1,4 @@
-/** Metadados da imagem enviados antes dos pedaços binários. */
-export interface ScreenFrameHeader {
-  readonly bytes: number;
-  readonly cpu: number;
-  readonly privateMB: number;
-}
-
-export interface ScreenFrame extends ScreenFrameHeader {
-  readonly chunks: ArrayBuffer[];
-}
-
-const MAX_JPEG_BYTES = 8 * 1024 ** 2;
-
-export class ScreenFrameBuffer {
-  private frame: (ScreenFrame & { received: number }) | null = null;
-
-  header(value: unknown): void {
-    const data = value as Partial<ScreenFrameHeader> | null;
-    if (
-      this.frame !== null ||
-      typeof data?.bytes !== 'number' ||
-      !Number.isInteger(data.bytes) ||
-      data.bytes < 1 ||
-      data.bytes > MAX_JPEG_BYTES ||
-      typeof data.cpu !== 'number' ||
-      !Number.isFinite(data.cpu) ||
-      data.cpu < 0 ||
-      typeof data.privateMB !== 'number' ||
-      !Number.isFinite(data.privateMB) ||
-      data.privateMB < 0
-    ) {
-      throw new Error('cabeçalho de quadro inválido');
-    }
-    this.frame = {
-      bytes: data.bytes,
-      cpu: data.cpu,
-      privateMB: data.privateMB,
-      received: 0,
-      chunks: [],
-    };
-  }
-
-  chunk(data: ArrayBuffer): ScreenFrame | null {
-    const frame = this.frame;
-    if (!frame || data.byteLength === 0 || frame.received + data.byteLength > frame.bytes) {
-      throw new Error('pedaço de quadro inválido');
-    }
-    frame.chunks.push(data);
-    frame.received += data.byteLength;
-    if (frame.received < frame.bytes) return null;
-    this.frame = null;
-    return frame;
-  }
-}
+import type { ScreenFrameStats } from './screen-viewer';
 
 /** Lê o marcador desenhado antes da codificação JPEG. Cada bit ocupa 8 × 8 pixels. */
 export function readScreenMarker(readRed: (x: number, y: number) => number): number {
@@ -75,7 +22,7 @@ export class ScreenMetrics {
   private maxPointerGap = 0;
   private latestTouch: { marker: number; at: number } | null = null;
   private requestedTouch: { marker: number; at: number } | null = null;
-  private marker = 0;
+  private marker = 1;
   private frames = 0;
   private bytes = 0;
   private width: number | null = null;
@@ -88,7 +35,8 @@ export class ScreenMetrics {
   ) {}
 
   touch(at: number): void {
-    this.marker = (this.marker + 1) & 0xffff;
+    // O agente só envia métricas com um marcador diferente de zero.
+    this.marker = (this.marker % 0xffff) + 1;
     this.latestTouch = { marker: this.marker, at };
   }
 
@@ -97,7 +45,7 @@ export class ScreenMetrics {
     return this.marker;
   }
 
-  frame(header: ScreenFrameHeader, width: number, marker: number, at: number): void {
+  frame(stats: ScreenFrameStats, width: number, marker: number, at: number): void {
     const touch = this.requestedTouch;
     this.requestedTouch = null;
     if (touch && touch.marker === marker && touch.at <= at) {
@@ -105,10 +53,10 @@ export class ScreenMetrics {
       if (this.latestTouch === touch) this.latestTouch = null;
     }
     this.frames++;
-    this.bytes += header.bytes;
+    this.bytes += stats.bytes;
     this.width = width;
-    this.cpu = header.cpu;
-    this.privateMB = Math.max(this.privateMB ?? 0, header.privateMB);
+    this.cpu = stats.cpu;
+    this.privateMB = Math.max(this.privateMB ?? 0, stats.privateMB);
   }
 
   pointerRtt(milliseconds: number, at: number): void {

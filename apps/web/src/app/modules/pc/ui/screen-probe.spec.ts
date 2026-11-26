@@ -40,6 +40,32 @@ class FakeScreenConnection extends EventTarget {
   }
 }
 
+const MONITORS = JSON.stringify({
+  k: 's.mon',
+  monitors: [{ id: 0, width: 1920, height: 1080, primary: true, x: 0, y: 0 }],
+  layout: 123,
+});
+const CHUNK_BYTES = 16 * 1024;
+
+function framePacket(sequence: number, jpegWidth = 1280): ArrayBuffer {
+  const packet = new Uint8Array(CHUNK_BYTES + 32);
+  const view = new DataView(packet.buffer);
+  view.setUint32(0, 0x554f5346);
+  view.setUint8(4, 1);
+  view.setUint16(6, 1280);
+  view.setUint16(8, 720);
+  view.setUint16(10, sequence);
+  view.setUint32(12, packet.length - 16);
+  // SOI e APP0 levam o SOF a cruzar o limite de um fragmento.
+  packet.set([0xff, 0xd8, 0xff, 0xe0], 16);
+  view.setUint16(20, CHUNK_BYTES - 26);
+  packet.set(
+    [0xff, 0xc0, 0, 11, 8, 2, 208, jpegWidth >> 8, jpegWidth & 0xff, 1, 1, 0x11, 0],
+    CHUNK_BYTES - 6,
+  );
+  return packet.buffer;
+}
+
 function setup(role = signal<'owner' | 'guest'>('owner')) {
   const session = signal<string | null>('sessao-ponteiro');
   const pongs = new Subject<{ sessionId: string; milliseconds: number }>();
@@ -128,15 +154,22 @@ describe('Medição da tela do PC', () => {
     vi.stubGlobal('navigator', { clipboard: { writeText: copy } });
 
     await open();
-    peer.channel.receive(JSON.stringify({ k: 'ready' }));
+    expect(peer.channel.send).toHaveBeenLastCalledWith(
+      JSON.stringify({ k: 'auth', token: 'autorizacao-tela' }),
+    );
+    peer.channel.receive(MONITORS);
     expect(peer.channel.binaryType).toBe('arraybuffer');
     expect(peer.channel.send).toHaveBeenLastCalledWith(
-      JSON.stringify({ k: 's.get', width: 1280, fps: 8, marker: 0, reset: true }),
+      JSON.stringify({ k: 's.get', width: 1280, fps: 8, marker: 1, reset: true }),
     );
     for (let elapsed = 0; elapsed < 60_000; elapsed += 5_000) {
-      peer.channel.receive(JSON.stringify({ bytes: 7, cpu: 19, privateMB: 63 }));
-      peer.channel.receive(new ArrayBuffer(3));
-      peer.channel.receive(new ArrayBuffer(4));
+      const packet = framePacket(elapsed / 5_000 + 1);
+      peer.channel.receive(
+        JSON.stringify({ k: 's.stat', bytes: packet.byteLength, cpu: null, privateMB: 63 }),
+      );
+      peer.channel.receive(packet.slice(0, CHUNK_BYTES));
+      peer.channel.receive('{"k":"s.cur","x":10,"y":20}');
+      peer.channel.receive(packet.slice(CHUNK_BYTES));
       await vi.advanceTimersByTimeAsync(5);
       pongs.next({ sessionId: 'outro-ponteiro', milliseconds: 80 });
       pongs.next({ sessionId: 'sessao-ponteiro', milliseconds: 10 });
@@ -170,5 +203,33 @@ describe('Medição da tela do PC', () => {
     expect(copy).toHaveBeenCalledWith(
       expect.stringContaining('| JPEG binário e ponteiro ativos por 60 s | Sim | Sim |'),
     );
+    expect(copy).toHaveBeenCalledWith(
+      expect.stringContaining('| CPU média do processo de tela | —%'),
+    );
+    expect(copy).toHaveBeenCalledWith(
+      expect.stringContaining('| Pico de memória privada do processo de tela | 63 MB'),
+    );
   });
+
+  it.each([
+    { jpegWidth: 1281, omitHeader: false },
+    { jpegWidth: 1280, omitHeader: true },
+  ])(
+    'recusa quadro antes de decodificar se o SOF ou a contagem de bytes divergir (%j)',
+    async ({ jpegWidth, omitHeader }) => {
+      const { fixture, root, peer, open } = setup();
+      const decode = vi.fn();
+      vi.stubGlobal('createImageBitmap', decode);
+      await open();
+      peer.channel.receive(MONITORS);
+      const packet = framePacket(1, jpegWidth);
+      const bytes = packet.byteLength - (omitHeader ? 16 : 0);
+      peer.channel.receive(JSON.stringify({ k: 's.stat', bytes, cpu: 19, privateMB: 63 }));
+      peer.channel.receive(packet.slice(0, CHUNK_BYTES));
+      peer.channel.receive(packet.slice(CHUNK_BYTES));
+      fixture.detectChanges();
+      expect(decode).not.toHaveBeenCalled();
+      expect(root.textContent).toContain('Não foi possível medir a tela.');
+    },
+  );
 });
