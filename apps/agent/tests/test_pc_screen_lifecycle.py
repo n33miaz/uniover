@@ -152,7 +152,7 @@ class FakeSubprocess:
         self,
         stdout_lines: list[bytes] | None = None,
         stderr_lines: list[bytes] | None = None,
-        returncode: int = 0,
+        returncode: int | None = 0,
         pid: int = 99999,
     ) -> None:
         self.stdin = FakeStdin()
@@ -166,10 +166,13 @@ class FakeSubprocess:
         self.terminated = False
 
     async def wait(self) -> int:
+        assert self.returncode is not None
         return self.returncode
 
     def terminate(self) -> None:
         self.terminated = True
+        if self.returncode is None:
+            self.returncode = -1
 
 
 async def test_screen_process_raises_syntax_error_and_records_diagnostic(
@@ -407,6 +410,82 @@ def patch_worker_process(monkeypatch: pytest.MonkeyPatch, fake: FakeSubprocess) 
         "uniover_agent.adapters.pc_screen_process.ScreenJob",
         lambda _pid: SimpleNamespace(close=lambda: None),
     )
+
+
+@pytest.mark.parametrize("failure", ["write", "drain", "stopped"])
+async def test_screen_process_reports_pipe_failure_during_offer(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, failure: str
+) -> None:
+    records: list[tuple[str, str, str]] = []
+    fake_proc = FakeSubprocess(stderr_lines=[b"DPI: texto reservado\n"], returncode=1)
+    patch_worker_process(monkeypatch, fake_proc)
+    process = ScreenProcess(record=lambda cat, lvl, msg: records.append((cat, lvl, msg)))
+
+    def fail_write(_data: bytes) -> None:
+        raise BrokenPipeError
+
+    async def fail_drain() -> None:
+        if failure == "stopped":
+            process.stop()
+            raise ConnectionResetError
+        raise OSError
+
+    if failure == "write":
+        monkeypatch.setattr(fake_proc.stdin, "write", fail_write)
+    else:
+        monkeypatch.setattr(fake_proc.stdin, "drain", fail_drain)
+
+    with pytest.raises(ScreenWorkerInitError) as exc_info:
+        await process.accept_offer("sdp", "token", 10, 60)
+    await process.wait()
+
+    assert fake_proc.terminated and fake_proc.stdin.closed
+    assert "texto reservado" not in caplog.text
+    if failure == "stopped":
+        assert exc_info.value.code == "closed"
+        assert records == []
+        assert caplog.records == []
+    else:
+        assert exc_info.value.code == "dpi_failed"
+        assert records == [("pc.screen_error", "warn", "ScreenWorkerError: dpi_failed")]
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stopped", "code"),
+    [(None, False, "init_failed"), (1, False, "dpi_failed"), (1, True, "closed")],
+)
+async def test_screen_process_reports_job_attachment_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    returncode: int | None,
+    stopped: bool,
+    code: str,
+) -> None:
+    records: list[tuple[str, str, str]] = []
+    fake_proc = FakeSubprocess(stderr_lines=[b"DPI: texto reservado\n"], returncode=returncode)
+    patch_worker_process(monkeypatch, fake_proc)
+    process = ScreenProcess(record=lambda cat, lvl, msg: records.append((cat, lvl, msg)))
+
+    def fail_job(_pid: int) -> None:
+        if stopped:
+            process.stop()
+        raise OSError
+
+    monkeypatch.setattr("uniover_agent.adapters.pc_screen_process.ScreenJob", fail_job)
+
+    with pytest.raises(ScreenWorkerInitError) as exc_info:
+        await process.accept_offer("sdp", "token", 10, 60)
+    await process.wait()
+
+    assert exc_info.value.code == code
+    assert fake_proc.terminated and fake_proc.stdin.closed
+    assert fake_proc.stdin.written == []
+    assert "texto reservado" not in caplog.text
+    assert records == (
+        [] if stopped else [("pc.screen_error", "warn", f"ScreenWorkerError: {code}")]
+    )
+    if stopped:
+        assert caplog.records == []
 
 
 async def test_screen_process_stop_right_after_answer_does_not_leak_cancellation(
