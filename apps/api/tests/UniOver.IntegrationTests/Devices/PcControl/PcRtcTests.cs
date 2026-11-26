@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -11,9 +12,10 @@ using UniOver.IntegrationTests.Devices.Pairing;
 using UniOver.IntegrationTests.Devices.Transport;
 using UniOver.IntegrationTests.Identity;
 using UniOver.IntegrationTests.Identity.Guests;
+using UniOver.IntegrationTests.Infrastructure;
 using UniOver.Modules.Devices.Features.PcControl;
 using UniOver.Modules.Identity.Contracts;
-using UniOver.IntegrationTests.Infrastructure;
+using UniOver.Modules.Identity.Security;
 
 namespace UniOver.IntegrationTests.Devices.PcControl;
 
@@ -316,6 +318,360 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-device-denied");
         await ExpectStillOpenAsync(app, agent, parentId);
+    }
+
+    // ---- a liberação da tela: permissão, dono, aparelho, canal pai e a trilha de começo e fim ----
+
+    /// <summary>
+    /// Respostas forçadas por permissão sobre a porta de verdade. O dono tem o catálogo inteiro e não há rota que lhe tire uma
+    /// permissão: sem isto a conferência de <c>pc:screen</c> nunca decidiria nada num teste.
+    /// </summary>
+    private sealed class GrantGate
+    {
+        public ConcurrentDictionary<string, bool> Forced { get; } = new(StringComparer.Ordinal);
+    }
+
+    private sealed class GatedGrants(IAccessGrants inner, GrantGate gate) : IAccessGrants
+    {
+        public Task<bool> HasAsync(Guid userId, string permission, CancellationToken cancellationToken = default) =>
+            gate.Forced.TryGetValue(permission, out var forced) ? Task.FromResult(forced) : inner.HasAsync(userId, permission, cancellationToken);
+
+        public Task<IReadOnlyList<string>> GetAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            inner.GetAsync(userId, cancellationToken);
+    }
+
+    private Task<TransportApp> StartScreenAppAsync(GrantGate? gate = null) =>
+        TransportApp.StartAsync(postgres, new DevicesAppOptions
+        {
+            PcScreen = true,
+            ConfigureServices = gate is null
+                ? null
+                : services => services.AddSingleton<IAccessGrants>(
+                    provider => new GatedGrants(provider.GetRequiredService<AccessGrantsService>(), gate)),
+        });
+
+    private static Task<FakeAgent> ConnectScreenAsync(TransportApp app) =>
+        ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1");
+
+    private static object ScreenRequest(Guid parentId) => new { sdp = FakeSdp, scopes = ScreenScopes, parentSessionId = parentId };
+
+    /// <summary>Abre a tela sobre o canal pai; com <paramref name="replacing"/>, consome o aviso <c>replaced</c> da visualização anterior.</summary>
+    private static async Task<Guid> OpenScreenAsync(TransportApp app, FakeAgent agent, Guid parentId, Guid? replacing = null)
+    {
+        var posting = PostAsync(app, "offer", ScreenRequest(parentId));
+        await AnswerOfferAsync(agent);
+        if (replacing is { } old)
+        {
+            var told = (await agent.ReceiveAsync())!.Value;
+            told.GetProperty("body").GetProperty("sessionId").GetGuid().Should().Be(old);
+            told.GetProperty("body").GetProperty("reason").GetString().Should().Be("replaced");
+        }
+
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return (await DevicesApp.JsonAsync(response)).GetProperty("sessionId").GetGuid();
+    }
+
+    private static async Task<int> CountAuditAsync(TransportApp app, string auditEvent)
+    {
+        await using var db = app.App.Db();
+        return await db.PairingAudit.CountAsync(a => a.Event == auditEvent, Ct);
+    }
+
+    /// <summary>Quantas linhas de começo e de fim de visualização, e quantas de fechamento do canal de controle.</summary>
+    private static async Task<(int ScreenOpened, int ScreenClosed, int DirectClosed)> ScreenTrailAsync(TransportApp app) =>
+        (await CountAuditAsync(app, "pc_screen_opened"),
+            await CountAuditAsync(app, "pc_screen_closed"),
+            await CountAuditAsync(app, "pc_direct_closed"));
+
+    private static async Task ExpectProblemAsync(HttpResponseMessage response, HttpStatusCode status, string problemType)
+    {
+        response.StatusCode.Should().Be(status);
+        (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/" + problemType);
+    }
+
+    /// <summary>Os dois avisos <c>revoked</c> (controle e tela), em qualquer ordem.</summary>
+    private static async Task ExpectBothRevokedAsync(FakeAgent agent, Guid parentId, Guid screenId)
+    {
+        var closed = new List<Guid>();
+        for (var i = 0; i < 2; i++)
+        {
+            var told = (await agent.ReceiveAsync())!.Value;
+            told.GetProperty("type").GetString().Should().Be("pc.rtc.close.v1");
+            told.GetProperty("body").GetProperty("reason").GetString().Should().Be("revoked");
+            closed.Add(told.GetProperty("body").GetProperty("sessionId").GetGuid());
+        }
+
+        closed.Should().BeEquivalentTo([parentId, screenId]);
+    }
+
+    [Theory]
+    [InlineData("pc:screen")]
+    [InlineData("module:pc")]
+    public async Task ScreenPermissionLostBetweenTwoOffers_RefusesTheNextOne_WithoutTouchingWhatIsOpen(string permission)
+    {
+        var gate = new GrantGate();
+        await using var app = await StartScreenAppAsync(gate);
+        await using var agent = await ConnectScreenAsync(app);
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        var screenId = await OpenScreenAsync(app, agent, parentId);
+
+        // Flag ligada, dono, mesmo login, mesmo aparelho e mesmo canal pai: só a permissão mudou.
+        gate.Forced[permission] = false;
+        using var refused = await PostAsync(app, "offer", ScreenRequest(parentId));
+
+        await ExpectProblemAsync(refused, HttpStatusCode.Forbidden, "pc-direct-forbidden");
+        (await ScreenTrailAsync(app)).Should().Be((1, 0, 0), "a oferta recusada não começa nem termina visualização");
+        await ExpectStillOpenAsync(app, agent, screenId);
+        await ExpectStillOpenAsync(app, agent, parentId);
+    }
+
+    [Fact]
+    public async Task ScreenPermissionLostWhileTheAgentAnswers_Gets409_AndNoViewingIsRecorded()
+    {
+        var gate = new GrantGate();
+        await using var app = await StartScreenAppAsync(gate);
+        await using var agent = await ConnectScreenAsync(app);
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+
+        var posting = PostAsync(app, "offer", ScreenRequest(parentId));
+        var offer = (await agent.ReceiveAsync())!.Value;
+        var screenId = offer.GetProperty("body").GetProperty("sessionId").GetGuid();
+        gate.Forced["pc:screen"] = false;
+        await ReplyToOfferAsync(agent, offer);
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
+
+        await ExpectProblemAsync(response, HttpStatusCode.Conflict, "pc-direct-revoked");
+        (await response.Content.ReadAsStringAsync(Ct)).Should().NotContain("ANSWER-SDP", "nada do canal chega a quem perdeu o acesso");
+        await ExpectRevokedCloseAsync(agent, screenId);
+        (await ScreenTrailAsync(app)).Should().Be((0, 0, 0));
+        await ExpectStillOpenAsync(app, agent, parentId);
+    }
+
+    [Fact]
+    public async Task LosingThePcScreenPermission_ClosesOnlyTheScreen_AndRecordsTheEndOfTheViewing()
+    {
+        await using var app = await StartScreenAppAsync();
+        await using var agent = await ConnectScreenAsync(app);
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        var screenId = await OpenScreenAsync(app, agent, parentId);
+
+        await using (var scope = app.App.Services.CreateAsyncScope())
+        {
+            var listener = scope.ServiceProvider.GetServices<IUserAccessListener>().OfType<PcRtcAccessListener>().Single();
+            await listener.ChangedAsync(
+                new UserAccessChange(await OwnerIdAsyncFromToken(app), UserAccessChangeKind.PermissionRemoved, Permission: "pc:screen"), Ct);
+        }
+
+        await ExpectRevokedCloseAsync(agent, screenId);
+        // O próximo aviso é o fechamento pedido agora: o canal de controle não levou `revoked` nenhum.
+        await ExpectStillOpenAsync(app, agent, parentId);
+        (await ScreenTrailAsync(app)).Should().Be((1, 1, 1), "o único fechamento do controle é o pedido pelo teste");
+    }
+
+    [Fact]
+    public async Task ScreenIsRefusedForAnAccountThatIsNotTheOwners_EvenOnItsOwnPcAndWithThePortGrantingTheScreen()
+    {
+        var gate = new GrantGate();
+        gate.Forced["pc:screen"] = true;
+        await using var app = await StartScreenAppAsync(gate);
+        // Tudo o que a tela exige, menos o papel de dono: PC próprio, canal pai próprio e as capacidades do agente.
+        var (agent, guest, parentId) = await GuestWithChannelAsync(app, "Elisa", "pc.device.v1", "pc.screen.v1");
+        await using var _ = agent;
+
+        using var refused = await PostAsync(app, "offer", ScreenRequest(parentId), guest.Login.AccessToken);
+
+        await ExpectProblemAsync(refused, HttpStatusCode.Forbidden, "pc-direct-forbidden");
+        (await ScreenTrailAsync(app)).Should().Be((0, 0, 0));
+        using var close = await PostAsync(app, $"{parentId}/close", null, guest.Login.AccessToken);
+        close.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var told = (await agent.ReceiveAsync())!.Value;
+        told.GetProperty("body").GetProperty("reason").GetString().Should().Be("requested", "nenhuma oferta de tela chegou ao agente");
+    }
+
+    [Fact]
+    public async Task ScreenAfterTheParentChannelWasClosed_IsRefused()
+    {
+        await using var app = await StartScreenAppAsync();
+        await using var agent = await ConnectScreenAsync(app);
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        await CloseOpenChannelAsync(app, agent, parentId);
+
+        using var refused = await PostAsync(app, "offer", ScreenRequest(parentId));
+
+        await ExpectProblemAsync(refused, HttpStatusCode.Forbidden, "pc-direct-forbidden");
+        (await ScreenTrailAsync(app)).Should().Be((0, 0, 1));
+    }
+
+    [Fact]
+    public async Task ScreenWhoseParentChannelClosesWhileTheAgentAnswers_Gets409_AndNoViewingIsRecorded()
+    {
+        await using var app = await StartScreenAppAsync();
+        await using var agent = await ConnectScreenAsync(app);
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+
+        var posting = PostAsync(app, "offer", ScreenRequest(parentId));
+        var offer = (await agent.ReceiveAsync())!.Value;
+        var screenId = offer.GetProperty("body").GetProperty("sessionId").GetGuid();
+        await CloseOpenChannelAsync(app, agent, parentId);
+        await ReplyToOfferAsync(agent, offer);
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
+
+        await ExpectProblemAsync(response, HttpStatusCode.Conflict, "pc-direct-revoked");
+        (await response.Content.ReadAsStringAsync(Ct)).Should().NotContain("ANSWER-SDP");
+        await ExpectRevokedCloseAsync(agent, screenId);
+        (await ScreenTrailAsync(app)).Should().Be((0, 0, 1));
+    }
+
+    [Theory]
+    [InlineData("pending", "pc-device-pending")]
+    [InlineData("denied", "pc-device-denied")]
+    public async Task ScreenDeviceThatLosesTheApprovalBetweenTwoOffers_RefusesTheNextOne(string state, string problemType)
+    {
+        await using var app = await StartScreenAppAsync();
+        await using var agent = await ConnectScreenAsync(app);
+        var (parent, parentOffer) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        var screenId = await OpenScreenAsync(app, agent, parentId);
+
+        app.App.Services.GetRequiredService<PcDeviceStates>()
+            .Set(app.Agent.Slug, parentOffer.GetProperty("deviceId").GetString()!, state);
+        using var refused = await PostAsync(app, "offer", ScreenRequest(parentId));
+
+        await ExpectProblemAsync(refused, HttpStatusCode.Forbidden, problemType);
+        (await ScreenTrailAsync(app)).Should().Be((1, 0, 0));
+        // A API só recusa a oferta nova: ela não fecha o que já estava aberto (e a oferta recusada nem chega ao agente).
+        await ExpectStillOpenAsync(app, agent, screenId);
+        await ExpectStillOpenAsync(app, agent, parentId);
+    }
+
+    [Theory]
+    [InlineData("device_pending", "pc-device-pending")]
+    [InlineData("device_denied", "pc-device-denied")]
+    [InlineData("device_unknown", "pc-device-unknown")]
+    public async Task ScreenOfferTheAgentRefusesForTheDevice_Gets403_KeepsTheEarlierViewing_AndRecordsNothing(
+        string code, string problemType)
+    {
+        await using var app = await StartScreenAppAsync();
+        await using var agent = await ConnectScreenAsync(app);
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        var screenId = await OpenScreenAsync(app, agent, parentId);
+
+        // A API ainda não sabe de nada: quem recusa é o agente, na resposta à oferta.
+        var posting = PostAsync(app, "offer", ScreenRequest(parentId));
+        var offer = (await agent.ReceiveAsync())!.Value;
+        await agent.SendTextAsync(agent.Envelope("command.result.v1", new JsonObject
+        {
+            ["ok"] = false,
+            ["error"] = new JsonObject { ["code"] = code, ["message"] = "texto livre do agente" },
+        }, offer.GetProperty("id").GetGuid()));
+        using var refused = await posting.WaitAsync(FakeAgent.Patience, Ct);
+
+        await ExpectProblemAsync(refused, HttpStatusCode.Forbidden, problemType);
+        (await ScreenTrailAsync(app)).Should().Be((1, 0, 0));
+        await ExpectStillOpenAsync(app, agent, screenId);
+        await ExpectStillOpenAsync(app, agent, parentId);
+    }
+
+    [Fact]
+    public async Task ScreenRequiresAnAgentThatDeclaresTheDeviceApproval()
+    {
+        await using var app = await StartScreenAppAsync();
+        await using var agent = await ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.screen.v1");
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+
+        using var refused = await PostAsync(app, "offer", ScreenRequest(parentId));
+
+        await ExpectProblemAsync(refused, HttpStatusCode.Forbidden, "pc-direct-forbidden");
+        (await ScreenTrailAsync(app)).Should().Be((0, 0, 0));
+        await ExpectStillOpenAsync(app, agent, parentId);
+    }
+
+    [Fact]
+    public async Task ScreenReplacedByANewOffer_RecordsTheEndOfTheOldViewingAndTheStartOfTheNewOne()
+    {
+        await using var app = await StartScreenAppAsync();
+        await using var agent = await ConnectScreenAsync(app);
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        var first = await OpenScreenAsync(app, agent, parentId);
+
+        await OpenScreenAsync(app, agent, parentId, replacing: first);
+
+        (await ScreenTrailAsync(app)).Should().Be((2, 1, 0));
+    }
+
+    [Fact]
+    public async Task ScreenClosedByTheAgent_RecordsTheEndOfTheViewingOnce_AndKeepsTheControlChannel()
+    {
+        await using var app = await StartScreenAppAsync();
+        await using var agent = await ConnectScreenAsync(app);
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        var screenId = await OpenScreenAsync(app, agent, parentId);
+
+        // É o aviso que o agente manda quando a visualização acaba sozinha no PC (parada na bandeja ou vida máxima).
+        var closed = agent.Envelope("pc.rtc.closed.v1", new JsonObject { ["sessionId"] = screenId, ["reason"] = "requested" });
+        await agent.SendTextAsync(closed);
+        await agent.SendTextAsync(closed);
+        await TransportApp.WaitUntilAsync(
+            async () => await CountAuditAsync(app, "pc_screen_closed") >= 1, "fim da visualização gravado");
+
+        using var late = await PostAsync(app, $"{screenId}/close", null);
+        late.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await ScreenTrailAsync(app)).Should().Be((1, 1, 0));
+        await ExpectStillOpenAsync(app, agent, parentId);
+    }
+
+    [Fact]
+    public async Task ScreenRevokedByLogout_RecordsTheEndOfTheViewingApartFromTheControlChannel()
+    {
+        await using var app = await StartScreenAppAsync();
+        await using var agent = await ConnectScreenAsync(app);
+        var (parent, _) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        var screenId = await OpenScreenAsync(app, agent, parentId);
+
+        using var logout = await app.App.SendAsync(HttpMethod.Post, "/api/v1/identity/auth/logout", bearer: app.Login.AccessToken);
+
+        logout.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await ExpectBothRevokedAsync(agent, parentId, screenId);
+        await TransportApp.WaitUntilAsync(
+            async () => await ScreenTrailAsync(app) == (1, 1, 1), "trilha dos dois fechamentos");
+    }
+
+    [Fact]
+    public async Task ScreenRevocationThatFoundTheAgentOffline_RecordsTheEndOfTheViewingWhenItComesBack()
+    {
+        await using var app = await StartScreenAppAsync();
+        var first = await ConnectScreenAsync(app);
+        var (parent, _) = await OpenAsync(app, first);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+        var screenId = await OpenScreenAsync(app, first, parentId);
+        await first.DisposeAsync();
+        await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda registrada");
+
+        using var logout = await app.App.SendAsync(HttpMethod.Post, "/api/v1/identity/auth/logout", bearer: app.Login.AccessToken);
+        logout.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await ScreenTrailAsync(app)).Should().Be((1, 0, 0), "o aviso não alcançou o agente");
+
+        await using var back = await ConnectScreenAsync(app);
+        await back.SendTextAsync(back.Envelope("pc.apps.v1", new JsonObject
+        {
+            ["apps"] = new JsonArray(),
+            ["at"] = "2026-11-01T14:00:00Z",
+        }));
+
+        await ExpectBothRevokedAsync(back, parentId, screenId);
+        await TransportApp.WaitUntilAsync(
+            async () => await ScreenTrailAsync(app) == (1, 1, 1), "trilha dos dois fechamentos");
     }
 
     [Fact]
@@ -987,7 +1343,8 @@ public sealed class PcRtcTests(PostgresFixture postgres)
     }
 
     /// <summary>O convidado pareia o PRÓPRIO PC (com o canal direto) e abre um canal com a sessão dele.</summary>
-    private static async Task<(FakeAgent Agent, GuestSession Guest, Guid ChannelId)> GuestWithChannelAsync(TransportApp app, string label)
+    private static async Task<(FakeAgent Agent, GuestSession Guest, Guid ChannelId)> GuestWithChannelAsync(
+        TransportApp app, string label, params string[] moreCapabilities)
     {
         var guest = await app.App.NewGuestAsync(["module:tv", "module:pc"], label);
         await app.App.ConfirmWithPasswordAsync(guest);
@@ -998,7 +1355,7 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         var credentials = await DevicesApp.JsonAsync(poll);
         var slug = credentials.GetProperty("agentId").GetString()!;
         var agent = await FakeAgent.ConnectAsync(app.Server, slug, credentials.GetProperty("deviceToken").GetString()!);
-        await agent.SendHelloAsync("0.1.0+3f2a9c1d4e5b", "transport.keepalive.v1", Control, Rtc);
+        await agent.SendHelloAsync("0.1.0+3f2a9c1d4e5b", ["transport.keepalive.v1", Control, Rtc, .. moreCapabilities]);
         await TransportApp.WaitUntilAsync(() => app.Presence.Get(slug)?.AgentVersion is not null, $"hello do PC de {label}");
 
         var posting = PostAsync(app, "offer", new { sdp = FakeSdp }, guest.Login.AccessToken);

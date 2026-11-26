@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AwesomeAssertions;
+using Microsoft.Extensions.Configuration;
 using UniOver.BuildingBlocks.AgentProtocol;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.Modules.Devices.Features.PcControl;
@@ -96,6 +97,23 @@ public sealed class PcRtcScopesTests
         sessions.FinishNegotiation(screen.Id, UserId, time.GetUtcNow().AddMinutes(1)).Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("false", false)]
+    [InlineData("1", false)]
+    [InlineData("yes", false)]
+    [InlineData("true", true)]
+    [InlineData("True", true)]
+    public void TheScreenFlagIsOnOnlyWithAnExplicitTrue(string? value, bool expected)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [PcScreenFlag.ConfigurationKey] = value })
+            .Build();
+
+        new PcScreenFlag(configuration).Enabled.Should().Be(expected);
+    }
+
     // ---- a oferta ao agente ----
 
     [Fact]
@@ -136,7 +154,7 @@ public sealed class PcRtcScopesTests
 
     // ---- o que cada mudança de acesso fecha ----
 
-    // Escopos: 1 = pc, 2 = tv, 3 = os dois. Motivo: "" = nada, "revoked" ou "rescoped".
+    // Escopos: 1 = pc, 2 = tv, 3 = os dois, 8 = tela. Motivo: "" = nada, "revoked" ou "rescoped".
     [Theory]
     [InlineData(1, UserAccessChangeKind.ModuleRemoved, "module:pc", null, "revoked")]
     [InlineData(1, UserAccessChangeKind.ModuleRemoved, "module:tv", null, "")]
@@ -149,6 +167,12 @@ public sealed class PcRtcScopesTests
     [InlineData(3, UserAccessChangeKind.ModuleRemoved, "module:tv", null, "rescoped")]
     [InlineData(3, UserAccessChangeKind.PermissionRemoved, null, "tv:control", "rescoped")]
     [InlineData(3, UserAccessChangeKind.ModuleRemoved, "module:training", null, "")]
+    [InlineData(8, UserAccessChangeKind.PermissionRemoved, null, "pc:screen", "revoked")]
+    [InlineData(8, UserAccessChangeKind.ModuleRemoved, "module:pc", null, "revoked")]
+    [InlineData(8, UserAccessChangeKind.ModuleRemoved, "module:tv", null, "")]
+    [InlineData(8, UserAccessChangeKind.PermissionRemoved, null, "tv:control", "")]
+    [InlineData(1, UserAccessChangeKind.PermissionRemoved, null, "pc:screen", "")]
+    [InlineData(3, UserAccessChangeKind.PermissionRemoved, null, "pc:screen", "")]
     public void LosingAPermissionClosesOrReopensOnlyWhatUsedIt(
         int scopes, UserAccessChangeKind kind, string? module, string? permission, string expected)
     {
@@ -163,6 +187,7 @@ public sealed class PcRtcScopesTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(8)]
     public void ASessionThatEndedOrADisabledAccountRevokesEveryScope(int scopes)
     {
         var family = Guid.NewGuid();
