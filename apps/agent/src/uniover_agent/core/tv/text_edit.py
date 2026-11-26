@@ -321,8 +321,9 @@ class _FieldState:
     # Relato do campo da dúvida chegado depois da interrupção: o retrato fresco que a retomada
     # confere (ver `_resume_erase`).
     erase_report: TextFieldStatus | None = None
-    # Maior sequência observada do campo e seu valor no instante da interrupção, cada uma com a
-    # conexão em que chegou: o contador de IME pode recomeçar na reconexão (ver `_ImeSequence`).
+    # Maior sequência observada do campo e o limiar da limpeza interrompida (o valor na
+    # interrupção, que avança a cada relato aceito para a retomada), cada uma com a conexão em que
+    # chegou: o contador de IME pode recomeçar na reconexão (ver `_ImeSequence`).
     field_sequence: tuple[int, _ImeSequence] | None = None
     erase_sequence: _ImeSequence | None = None
     # Relato de outro campo chegado no meio de uma edição: entra quando ela termina.
@@ -478,11 +479,14 @@ class TextReconciler:
             and self._f.doubt_counter is not None
             and field.counter == self._f.doubt_counter
             and self._f.erase_sequence is not None
+            and sequence is not None
             and self._f.erase_sequence.admits(sequence, self._link)
             and fresh
         ):
             # A sequência precisa avançar: um eco velho também pode chegar depois da queda.
             self._f.erase_report = field
+            # O limiar acompanha o relato aceito: o contador reiniciado pode alcançar o antigo.
+            self._f.erase_sequence = _ImeSequence(sequence, self._link)
         if self._lock.locked():
             if field.counter != self._f.field_counter:
                 self._f.pending_field = field
