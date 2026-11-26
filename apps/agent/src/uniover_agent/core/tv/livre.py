@@ -52,6 +52,12 @@ SLEEP_NO_INSTALL_CAPABILITY: Final = "tv.livre.sleep-no-install.v1"
 # O aviso ao dono (`notice`) num resultado `ok`. Separada de `tv.livre.v2`: a API que só conhece
 # aquela tem o resultado fechado e recusaria o campo. Só vai ao `hello` depois de a API listá-la.
 NOTICE_CAPABILITY: Final = "tv.livre.notice.v1"
+# A API aceita `publishedVersion` no estado (uma anterior recusaria o campo). É só uma entrada de
+# `features`: o agente não a declara no `hello`, porque a API nada faz de diferente por causa dela.
+PUBLISHED_VERSION_FEATURE: Final = "tv.livre.state.published_version"
+# Quanto vale a versão publicada já lida; a leitura que falhou é refeita mais cedo.
+PUBLISHED_VERSION_TTL_SECONDS: Final = 300.0
+PUBLISHED_VERSION_RETRY_SECONDS: Final = 60.0
 PACKAGE: Final = "br.uniover.launcher"
 HOME_COMPONENT: Final = f"{PACKAGE}/.HomeActivity"
 SLEEP_COMPONENT: Final = f"{PACKAGE}/.SleepActivity"
@@ -316,12 +322,17 @@ class TvLivre:
         remote_guard: RemoteDropGuard | None = None,
         extended: Callable[[], bool] = lambda: False,
         notice: Callable[[], bool] = lambda: False,
+        published: Callable[[], bool] = lambda: False,
     ) -> None:
         self._remote_guard = remote_guard
         # A API entende os acréscimos (`EXTENDED_CAPABILITY`): sem isso o agente age como antes.
         self._extended = extended
         # A API aceita `notice` no resultado `ok` (`NOTICE_CAPABILITY`): sem isso o aviso não vai.
         self._notice_supported = notice
+        # A API aceita a versão publicada no estado (`PUBLISHED_VERSION_FEATURE`).
+        self._published_supported = published
+        # A versão publicada lida por último e até quando vale; `None` pede uma nova leitura.
+        self._published: tuple[str | None, float] | None = None
         self._apply_deferred = False
         self._notice: str | None = None
         self._notice_is_failure = False
@@ -339,6 +350,22 @@ class TvLivre:
     @property
     def notice_supported(self) -> bool:
         return self._notice_supported()
+
+    @property
+    def published_supported(self) -> bool:
+        return self._published_supported()
+
+    async def published_version(self) -> str | None:
+        """A versão do launcher publicado agora; `None` se não deu para saber.
+
+        Fica fora da trava do ADB: é só rede, e não pode segurar o próximo passo na TV."""
+        now = self._clock.monotonic()
+        if self._published is not None and now < self._published[1]:
+            return self._published[0]
+        version = await self._apk.published_version()
+        ttl = PUBLISHED_VERSION_RETRY_SECONDS if version is None else PUBLISHED_VERSION_TTL_SECONDS
+        self._published = (version, now + ttl)
+        return version
 
     def take_apply_deferred(self) -> bool:
         """Se o último `apply` só gravou a configuração (outro app estava na frente); lê uma vez."""
@@ -603,6 +630,8 @@ class TvLivre:
         # Antes de instalar: é melhor esforço e o aviso não pode se perder se a instalação falhar.
         await self._ensure_tcl_tv_package()
         apk = await self._apk.fetch()
+        # O que se baixou é a publicação de agora: o estado que sai a seguir a lê de novo.
+        self._published = None
         result = await self._adb.install(apk.path)
         if "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in result.text:
             raise LivreError(
@@ -1020,8 +1049,14 @@ def tv_livre_handler(livre: TvLivre, transport: Transport, envelopes: EnvelopeFa
                 # Só a API que lista `tv.livre.notice.v1` aceita `notice` no resultado `ok`.
                 outcome = CommandResult("", ResultStatus.OK, notice=notice)
         livre.audit(action, outcome.code or "ok", _detail(command.body))
+        # A consulta à publicação corre junto com a leitura da TV: o pedido tem prazo curto na API e
+        # não deve esperar uma depois da outra.
+        lookup = (
+            asyncio.create_task(livre.published_version()) if livre.published_supported else None
+        )
         try:
             state = await livre.read_state()
+            published = await lookup if lookup is not None and state.installed else None
             await transport.send(
                 envelopes.tv_livre_state(
                     request_id,
@@ -1037,6 +1072,7 @@ def tv_livre_handler(livre: TvLivre, transport: Transport, envelopes: EnvelopeFa
                     # Campos novos só vão à API que os entende (o esquema do estado é fechado).
                     launcher_level=state.launcher_level if livre.extended else None,
                     apply_deferred=True if deferred and livre.extended else None,
+                    published_version=published,
                 )
             )
         except AdbError:
@@ -1045,6 +1081,11 @@ def tv_livre_handler(livre: TvLivre, transport: Transport, envelopes: EnvelopeFa
             return CommandResult(
                 command.id, ResultStatus.FAILED, "não consegui enviar o estado à API", SEND_FAILED
             )
+        finally:
+            if lookup is not None:
+                # Sem o app ou sem estado ninguém a esperou: não fica tarefa solta.
+                lookup.cancel()
+                await asyncio.wait([lookup])
         return CommandResult(
             command.id, outcome.status, outcome.detail, outcome.code, outcome.notice
         )

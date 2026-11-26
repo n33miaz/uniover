@@ -65,6 +65,8 @@ export interface TvLivreView {
   readonly supported: boolean | null;
   readonly installed: boolean;
   readonly version: string | null;
+  /** A versão do launcher publicado, lida pelo agente junto do estado; `null` quando não leu (ou agente anterior). */
+  readonly publishedVersion: string | null;
   /** O TV Livre é a tela inicial da TV agora. */
   readonly isHome: boolean;
   readonly factoryLauncher: string | null;
@@ -89,11 +91,46 @@ export interface TvLivreView {
 }
 
 /**
- * O nível do launcher que esta versão do app espera: o que a publicação atual instala. Não é a versão (essa muda a cada
- * publicação e faria o aviso de atualização disparar sempre): só cresce quando o launcher ganha algo que a tela usa.
+ * O nível do launcher que esta versão do app espera: o que a publicação atual instala. Não é a versão: só cresce quando o
+ * launcher ganha algo que a tela usa. O aviso de atualização compara as versões (`isNewerPublished`) e recorre ao nível
+ * quando essa comparação não dá para fazer.
  * 2: Modo Dormir com volume e mídia e com o tempo no pedido; Rede, Entradas e o nome na tela inicial; ícones aparados.
  */
 export const LAUNCHER_LEVEL_LATEST = 2;
+
+const SIMPLE_VERSION = /^(\d{1,6})\.(\d{1,6})\.(\d{1,6})$/;
+
+function versionParts(value: string | null): number[] | null {
+  const found = value === null ? null : SIMPLE_VERSION.exec(value);
+  return found ? found.slice(1).map(Number) : null;
+}
+
+/**
+ * A versão publicada é mais nova que a instalada? `null` quando não dá para comparar (alguma delas falta ou não é
+ * `x.y.z`). Publicada igual ou mais antiga que a instalada é `false`.
+ */
+export function isNewerPublished(
+  installed: string | null,
+  published: string | null,
+): boolean | null {
+  const have = versionParts(installed);
+  const offered = versionParts(published);
+  if (have === null || offered === null) return null;
+  const first = offered.findIndex((part, index) => part !== have[index]);
+  return first !== -1 && offered[first] > have[first];
+}
+
+/**
+ * Há o que atualizar no launcher instalado? Com as duas versões legíveis, só elas decidem (instalar a publicação não
+ * muda nada para quem já está nela ou à frente); sem a comparação, vale o nível que o agente leu na TV.
+ */
+export function launcherOutdated(view: TvLivreView): boolean {
+  if (!view.installed) return false;
+  return (
+    isNewerPublished(view.version, view.publishedVersion) ??
+    (view.launcherLevel !== null && view.launcherLevel < LAUNCHER_LEVEL_LATEST)
+  );
+}
 
 /** O padrão da Home aprovada: relógio grande, degradê azul-arroxeado e os apps de fábrica ocultos (todo o resto à vista). */
 export const DEFAULT_LIVRE_CONFIG: LivreConfig = {
@@ -218,6 +255,10 @@ export function parseLivreView(value: unknown): TvLivreView | null {
     supported: typeof dto['supported'] === 'boolean' ? dto['supported'] : null,
     installed: dto['installed'] === true,
     version: typeof dto['version'] === 'string' && dto['version'] !== '' ? dto['version'] : null,
+    publishedVersion:
+      typeof dto['publishedVersion'] === 'string' && dto['publishedVersion'] !== ''
+        ? dto['publishedVersion']
+        : null,
     isHome: dto['isHome'] === true,
     factoryLauncher:
       typeof dto['factoryLauncher'] === 'string' && dto['factoryLauncher'] !== ''

@@ -1142,6 +1142,12 @@ gravados antes de cada passo; o mesmo arquivo guarda as últimas 50 ações (aud
 `pm disable-user` (reversível) com lista de proteção própria: o launcher de fábrica e o novo, o teclado e os serviços de
 acessibilidade em uso, o serviço do controle remoto, as Configurações e as peças do sistema.
 
+Para a tela oferecer a atualização, o estado leva também a versão publicada (`publishedVersion`), com o app instalado
+e só à API que lista `tv.livre.state.published_version`. O agente a lê sem baixar nada: um `HEAD` no endereço do APK, e
+o número sai do redirecionamento para `releases/download/v<versão>/`. A resposta vale 5 minutos (1 minuto quando a
+leitura falha; instalar a esquece), a consulta tem teto de 3 segundos e, sem um redirecionamento nesse formato (outro
+endereço em `UNIOVER_TV_LIVRE_APK_URL`, publicação fora do alcance), o campo não vai. Nada é instalado sem o dono pedir.
+
 `UNIOVER_TV_LIVRE=0` desliga o módulo neste PC. Limite honesto: o hash vem do mesmo endereço do APK, então a conferência
 protege de download corrompido; a autenticidade vem do certificado fixado (sem ele o agente não instala).
 

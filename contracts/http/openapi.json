@@ -8210,6 +8210,12 @@
               "string"
             ]
           },
+          "publishedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "revision": {
             "format": "int32",
             "type": "integer"

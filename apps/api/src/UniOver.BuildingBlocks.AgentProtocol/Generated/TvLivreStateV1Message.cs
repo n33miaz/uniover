@@ -95,6 +95,16 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("launcherLevel")]
         public long? LauncherLevel { get; set; }
 
+        /// <summary>
+        /// Versão (x.y.z) do launcher publicado agora, para comparar com version. Sem o campo, o
+        /// agente não soube ler (TV sem o app, publicação fora do alcance ou ilegível, ou agente
+        /// anterior). Só vai à API que lista tv.livre.state.published_version em features.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("publishedVersion")]
+        [JsonConverter(typeof(TvLivreStateV1MessageTentacledMinMaxLengthCheckConverter))]
+        public string? PublishedVersion { get; set; }
+
         [JsonPropertyName("requestId")]
         public Guid RequestId { get; set; }
 
@@ -113,7 +123,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         [JsonPropertyName("version")]
-        [JsonConverter(typeof(TvLivreStateV1MessageTentacledMinMaxLengthCheckConverter))]
+        [JsonConverter(typeof(TvLivreStateV1MessageStickyMinMaxLengthCheckConverter))]
         public string? Version { get; set; }
     }
 
@@ -248,6 +258,33 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
             var value = reader.GetString();
+            if (value.Length <= 20)
+            {
+                return value;
+            }
+            throw new Exception("Cannot unmarshal type string");
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        {
+            if (value.Length <= 20)
+            {
+                JsonSerializer.Serialize(writer, value, options);
+                return;
+            }
+            throw new Exception("Cannot marshal type string");
+        }
+
+        public static readonly TvLivreStateV1MessageTentacledMinMaxLengthCheckConverter Singleton = new TvLivreStateV1MessageTentacledMinMaxLengthCheckConverter();
+    }
+
+    internal class TvLivreStateV1MessageStickyMinMaxLengthCheckConverter : JsonConverter<string>
+    {
+        public override bool CanConvert(Type t) => t == typeof(string);
+
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
             if (value.Length >= 1 && value.Length <= 40)
             {
                 return value;
@@ -265,7 +302,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             throw new Exception("Cannot marshal type string");
         }
 
-        public static readonly TvLivreStateV1MessageTentacledMinMaxLengthCheckConverter Singleton = new TvLivreStateV1MessageTentacledMinMaxLengthCheckConverter();
+        public static readonly TvLivreStateV1MessageStickyMinMaxLengthCheckConverter Singleton = new TvLivreStateV1MessageStickyMinMaxLengthCheckConverter();
     }
 
     internal class TvLivreStateV1MessageIsoDateTimeOffsetConverter : JsonConverter<DateTimeOffset>

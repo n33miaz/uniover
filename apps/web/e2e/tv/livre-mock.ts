@@ -63,6 +63,7 @@ export function livreView(overrides: Record<string, unknown> = {}): Record<strin
     revision: 0,
     extended: false,
     launcherLevel: null,
+    publishedVersion: null,
     applyDeferred: false,
     notice: null,
     ...overrides,

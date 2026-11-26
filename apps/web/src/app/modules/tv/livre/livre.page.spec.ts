@@ -23,6 +23,7 @@ function view(overrides: Partial<TvLivreView> = {}): TvLivreView {
     supported: true,
     installed: true,
     version: null,
+    publishedVersion: null,
     isHome: false,
     factoryLauncher: null,
     disabledPackages: [],
@@ -741,7 +742,25 @@ describe('LivrePage', () => {
       expect(api.install).toHaveBeenCalledTimes(1);
     });
 
+    it('offers a newer publication even when the level is up to date, and installs only on request', async () => {
+      const old = { installed: true, extended: true, launcherLevel: 2, version: '1.0.0' };
+      api.get.mockResolvedValue(view({ ...old, publishedVersion: '1.0.1' }));
+      await render();
+      expect(el.textContent).toContain('Há versão nova do TV Livre.');
+      expect(api.install).not.toHaveBeenCalled();
+      api.install.mockResolvedValue(view({ ...old, version: '1.0.1', publishedVersion: '1.0.1' }));
+      button('Atualizar')!.click();
+      await change();
+      await change();
+      expect(api.install).toHaveBeenCalledTimes(1);
+      expect(el.textContent).not.toContain('Há versão nova do TV Livre.');
+      expect(q('.ui-action-bar .ui-notice').textContent).toContain('TV Livre atualizado.');
+    });
+
     it.each([
+      ['the published version installed', { version: '1.0.0', publishedVersion: '1.0.0' }],
+      ['a newer version installed', { version: '1.1.0', publishedVersion: '1.0.0' }],
+      ['an old agent that tells no publication', { version: '1.0.0' }],
       ['an up to date launcher', { launcherLevel: 2 }],
       ['an agent that cannot read the level', { launcherLevel: null }],
       ['a TV without the launcher', { installed: false, launcherLevel: 1 }],

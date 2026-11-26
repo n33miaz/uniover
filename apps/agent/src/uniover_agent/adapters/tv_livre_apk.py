@@ -6,8 +6,12 @@ O agente só entrega o APK ao ADB depois de o hash bater E de o `verifier` (a as
 conferida contra o certificado fixado, em `tv_livre_signer.py`) aceitar. O hash vem do mesmo
 endereço (HTTPS) do APK: protege de download corrompido, mas quem trocasse a publicação trocaria
 o hash junto; quem autentica é a assinatura.
+
+A versão publicada sai do próprio endereço: `releases/latest/download/...` redireciona para
+`releases/download/v<versão>/...`, e o `versionName` do APK é o mesmo `VERSION` que dá nome à tag.
 """
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -28,6 +32,11 @@ APK_NAME: Final = "uniover-launcher.apk"
 MAX_APK_BYTES: Final = 5 * 1024 * 1024
 _HASH: Final = re.compile(r"[0-9a-fA-F]{64}")
 _ZIP_MAGIC: Final = b"PK\x03\x04"
+# Um pedido da tela espera esta consulta (o estado só sai depois dela): o teto é curto.
+VERSION_TIMEOUT_SECONDS: Final = 3.0
+_RELEASE_TAG: Final = re.compile(
+    r"/releases/download/v([0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6})/" + re.escape(APK_NAME) + r"\Z"
+)
 
 
 class ReleaseApkSource:
@@ -87,6 +96,20 @@ class ReleaseApkSource:
                 target.unlink(missing_ok=True)
                 raise
         return LauncherApk(target, declared)
+
+    async def published_version(self) -> str | None:
+        """Lê só o primeiro redirecionamento da publicação (nada é baixado)."""
+        try:
+            async with asyncio.timeout(VERSION_TIMEOUT_SECONDS), await self._client() as client:
+                response = await client.head(f"{self._base}/{APK_NAME}", follow_redirects=False)
+        except (httpx.HTTPError, httpx.InvalidURL, OSError) as exc:
+            # `TimeoutError` é um `OSError`: o teto de cima cai aqui também.
+            _log.info("TV Livre: não li a versão publicada (%s)", type(exc).__name__)
+            return None
+        if not response.is_redirect:
+            return None
+        found = _RELEASE_TAG.search(response.headers.get("location", ""))
+        return found.group(1) if found else None
 
     async def _client(self) -> httpx.AsyncClient:
         if self._client_factory is not None:
