@@ -112,6 +112,25 @@ public sealed class PcMessagesTests
     }
 
     [Fact]
+    public void ScreenProtocolMessages_GoInTheirDeclaredDirections()
+    {
+        string[] fromAgent =
+        [
+            AgentMessageTypes.PcScreenCurV1,
+            AgentMessageTypes.PcScreenMonV1,
+            AgentMessageTypes.PcScreenSameV1,
+            AgentMessageTypes.PcScreenStatV1,
+            AgentMessageTypes.PcScreenStateV1,
+        ];
+
+        AgentMessageDirections.ToAgent.Should().Contain(AgentMessageTypes.PcScreenGetV1);
+        AgentMessageDirections.ToAgent.Should().NotContain(fromAgent);
+
+        AgentMessageDirections.FromAgent.Should().Contain(fromAgent);
+        AgentMessageDirections.FromAgent.Should().NotContain(AgentMessageTypes.PcScreenGetV1);
+    }
+
+    [Fact]
     public void AMessageThatDoesNotSayOtherwise_WaitsForTheReconnectionAsTheTvAlwaysDid() =>
         new OutboundMessage("tv.key.v1", JsonDocument.Parse("{}").RootElement.Clone()).Delivery
             .Should().Be(AgentDelivery.WaitForReconnect);
