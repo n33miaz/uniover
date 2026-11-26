@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 
 class PcScreenCurV1Message(BaseModel):
@@ -14,5 +14,5 @@ class PcScreenCurV1Message(BaseModel):
         extra='forbid',
     )
     k: Literal['s.cur']
-    x: Annotated[int, Field(ge=-100000, le=100000)]
-    y: Annotated[int, Field(ge=-100000, le=100000)]
+    x: Annotated[StrictInt, Field(ge=-100000, le=100000)]
+    y: Annotated[StrictInt, Field(ge=-100000, le=100000)]

@@ -6,25 +6,33 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import MISSING, BaseModel, ConfigDict, Field, RootModel
+from pydantic import (
+    MISSING,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    StrictBool,
+    StrictInt,
+)
 
 
 class PcScreenMonV1MonitorsItem(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    id: Annotated[int, Field(ge=0, le=2147483647)]
-    primary: bool
-    width: Annotated[int, Field(ge=1, le=100000)]
-    height: Annotated[int, Field(ge=1, le=100000)]
-    x: Annotated[int | MISSING, Field(ge=-100000, le=100000)] = MISSING
-    y: Annotated[int | MISSING, Field(ge=-100000, le=100000)] = MISSING
-    left: Annotated[int | MISSING, Field(ge=-100000, le=100000)] = MISSING
-    top: Annotated[int | MISSING, Field(ge=-100000, le=100000)] = MISSING
+    id: Annotated[StrictInt, Field(ge=0, le=2147483647)]
+    primary: StrictBool
+    width: Annotated[StrictInt, Field(ge=1, le=100000)]
+    height: Annotated[StrictInt, Field(ge=1, le=100000)]
+    x: Annotated[StrictInt | MISSING, Field(ge=-100000, le=100000)] = MISSING
+    y: Annotated[StrictInt | MISSING, Field(ge=-100000, le=100000)] = MISSING
+    left: Annotated[StrictInt | MISSING, Field(ge=-100000, le=100000)] = MISSING
+    top: Annotated[StrictInt | MISSING, Field(ge=-100000, le=100000)] = MISSING
 
 
-class Layout(RootModel[int]):
-    root: Annotated[int, Field(ge=0, le=4294967295)]
+class Layout(RootModel[StrictInt]):
+    root: Annotated[StrictInt, Field(ge=0, le=4294967295)]
 
 
 class PcScreenMonV1Message(BaseModel):

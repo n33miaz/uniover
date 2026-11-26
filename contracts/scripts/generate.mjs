@@ -183,7 +183,11 @@ const DATAMODEL_CODEGEN = "datamodel-code-generator==0.86.0";
 
 // Só no canal `screen`: campo opcional pode faltar, mas não aceita `null` (como no esquema). O
 // `--strict-nullable` cobre os campos com default; o `--use-missing-sentinel`, os sem default (`pydantic.MISSING`).
-const SCREEN_PY_ARGS = ["--strict-nullable", "--use-missing-sentinel", "--target-pydantic-version", "2.14"];
+// `--strict-types` recusa coerções como texto para número e inteiro para booleano.
+const SCREEN_PY_ARGS = [
+  "--strict-nullable", "--use-missing-sentinel", "--target-pydantic-version", "2.14",
+  "--strict-types", "int", "float", "bool",
+];
 
 // ---------------------------------------------------------------------------------------------------------
 // (a) OpenAPI

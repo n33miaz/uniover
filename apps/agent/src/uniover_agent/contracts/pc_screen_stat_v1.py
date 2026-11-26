@@ -6,11 +6,11 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictFloat, StrictInt
 
 
-class Cpu(RootModel[float]):
-    root: Annotated[float, Field(ge=0.0)]
+class Cpu(RootModel[StrictFloat]):
+    root: Annotated[StrictFloat, Field(ge=0.0)]
 
 
 class PcScreenStatV1Message(BaseModel):
@@ -18,6 +18,6 @@ class PcScreenStatV1Message(BaseModel):
         extra='forbid',
     )
     k: Literal['s.stat']
-    bytes: Annotated[int, Field(ge=0)]
+    bytes: Annotated[StrictInt, Field(ge=0)]
     cpu: Cpu | None
-    privateMB: Annotated[float, Field(ge=0.0)]
+    privateMB: Annotated[StrictFloat, Field(ge=0.0)]
