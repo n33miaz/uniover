@@ -5,6 +5,7 @@ import contextlib
 import ctypes
 import hmac
 import json
+import logging
 import os
 import struct
 import sys
@@ -28,6 +29,8 @@ from uniover_agent.adapters.pc_screen_probes import STATE_LOCKED, STATE_OK, read
 from uniover_agent.adapters.pc_windows import USER_DESKTOP
 from uniover_agent.core.pc.absolute import layout_print
 from uniover_agent.ports.pc_direct import SCREEN_MAX_LIFETIME_SECONDS
+
+_log = logging.getLogger(__name__)
 
 CHUNK_BYTES = 16 * 1024
 FRAME_TIMEOUT = 10
@@ -486,6 +489,9 @@ class ScreenSession:
                 except DesktopLockedError:
                     await self.report_state(STATE_LOCKED)
                     return
+                except Exception as exc:
+                    _log.exception("exceção na captura do quadro: %s", type(exc).__name__)
+                    raise
                 # Com marca, o receptor exibe pixels diferentes do recorte: não serve de base.
                 self.crc = None if request.marker else shot.crc
                 peak = max(peak, memory())
@@ -529,18 +535,43 @@ class ScreenSession:
         probes: Probes | None = None,
     ) -> None:
         async def connect_and_stream() -> None:
-            async with asyncio.timeout_at(self.deadline):
-                try:
-                    reply({"sdp": await self.answer(offer.sdp)})
-                except Exception:
-                    reply({"error": "Não foi possível aceitar a oferta da tela."})
-                    return
-                await self.stream(
-                    capture_frame,
-                    private_bytes,
-                    viewing,
-                    Probes(list_monitors, read_cursor, read_state) if probes is None else probes,
-                )
+            try:
+                async with asyncio.timeout_at(self.deadline):
+                    try:
+                        reply({"sdp": await self.answer(offer.sdp)})
+                    except Exception as exc:
+                        _log.error("falha ao processar oferta SDP: %s", type(exc).__name__)
+                        code = (
+                            "sdp_syntax"
+                            if isinstance(exc, (ValueError, TypeError))
+                            else "sdp_failed"
+                        )
+                        reply({"error": "Não foi possível aceitar a oferta da tela.", "code": code})
+                        return
+                    try:
+                        probes_instance = (
+                            Probes(list_monitors, read_cursor, read_state)
+                            if probes is None
+                            else probes
+                        )
+                        await self.stream(
+                            capture_frame,
+                            private_bytes,
+                            viewing,
+                            probes_instance,
+                        )
+                    except TimeoutError:
+                        # Espera de autorização ou de pedido vencida: fim normal, sem erro.
+                        raise
+                    except Exception as exc:
+                        _log.exception(
+                            "exceção fatal na transmissão de tela: %s", type(exc).__name__
+                        )
+                        reply({"k": "error", "code": "capture_error", "error": type(exc).__name__})
+                        self.closed.set()
+                        raise
+            except TimeoutError:
+                _log.info("tempo limite da transmissão de tela atingido")
 
         tasks = [
             asyncio.create_task(connect_and_stream()),
@@ -548,7 +579,10 @@ class ScreenSession:
             asyncio.create_task(self.closed.wait()),
         ]
         try:
-            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                # Só falha real chega aqui: os prazos já foram tratados em `connect_and_stream`.
+                task.result()
         finally:
             for task in tasks:
                 task.cancel()
@@ -603,12 +637,17 @@ async def main() -> None:
         try:
             offer = Offer.parse(raw.result())
         except ValueError, RecursionError:
-            reply({"error": "Oferta inválida."})
+            reply({"error": "Oferta inválida.", "code": "invalid_offer"})
             return
         user = ctypes.windll.user32
         user.SetProcessDpiAwarenessContext.argtypes = (ctypes.c_void_p,)
         if not user.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
-            reply({"error": "Não foi possível habilitar as coordenadas físicas da tela."})
+            reply(
+                {
+                    "error": "Não foi possível habilitar as coordenadas físicas da tela.",
+                    "code": "dpi_failed",
+                }
+            )
             return
         await ScreenSession(offer).run(offer, closed, reply, screen_indicator)
     finally:

@@ -788,7 +788,11 @@ class PcDirectService:
 
     async def _watch_screen(self, screen: tuple[str, ScreenPeer]) -> None:
         session_id, peer = screen
-        await peer.wait()
+        try:
+            await peer.wait()
+        except Exception as error:
+            # Quem viu a falha já a registrou; a tela ainda precisa ser encerrada e avisada.
+            _log.warning("tela do PC encerrada com falha (%s)", type(error).__name__)
         if self._screen is screen:
             self._stop_screen(session_id)
             with contextlib.suppress(Exception):

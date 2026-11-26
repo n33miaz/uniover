@@ -6,6 +6,7 @@ import logging
 import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -690,7 +691,11 @@ def _build_direct(  # noqa: PLR0913, PLR0917 - dependências da montagem
         ),
         devices=devices,
         announce_reconcile=announce_reconcile,
-        screen_factory=ScreenProcess if sys.platform == "win32" and devices is not None else None,
+        screen_factory=(
+            partial(ScreenProcess, record)
+            if sys.platform == "win32" and devices is not None
+            else None
+        ),
         absolute=absolute,
     )
 
