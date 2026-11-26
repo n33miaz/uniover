@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 
 class PcScreenSameV1Message(BaseModel):
@@ -14,4 +14,4 @@ class PcScreenSameV1Message(BaseModel):
         extra='forbid',
     )
     k: Literal['s.same']
-    crc: Annotated[int, Field(ge=0, le=4294967295)]
+    crc: Annotated[StrictInt, Field(ge=0, le=4294967295)]

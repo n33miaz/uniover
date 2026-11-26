@@ -82,6 +82,27 @@ def test_every_invalid_object_is_refused(name: str, document: dict[str, Any]) ->
         model_of(document)
 
 
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"k": "s.cur", "x": 0, "y": True},
+        {"k": "s.get", "width": "1280"},
+        {"k": "s.get", "reset": 1},
+        {"k": "s.mon", "monitors": [{**MONITOR, "id": "0"}]},
+        {"k": "s.mon", "monitors": [{**MONITOR, "primary": "true"}]},
+        {"k": "s.mon", "monitors": [MONITOR], "layout": "42"},
+        {"k": "s.same", "crc": "42"},
+        {"k": "s.stat", "bytes": "42", "cpu": None, "privateMB": 1.5},
+        {"k": "s.stat", "bytes": 42, "cpu": "1.5", "privateMB": 1.5},
+        {"k": "s.stat", "bytes": 42, "cpu": None, "privateMB": "1.5"},
+    ],
+)
+def test_scalar_values_are_not_coerced(document: dict[str, Any]) -> None:
+    assert not schema_accepts(document)
+    with pytest.raises(ValidationError):
+        model_of(document)
+
+
 def test_an_enveloped_object_is_not_a_channel_message() -> None:
     enveloped = {"v": 1, "type": "pc.screen.get.v1", "body": {"k": "s.get"}}
     for name, model in MESSAGES.values():
