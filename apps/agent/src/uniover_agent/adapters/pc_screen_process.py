@@ -13,7 +13,8 @@ from uniover_agent.adapters.process import exec_hidden
 _log = logging.getLogger(__name__)
 
 _BELOW_NORMAL_PRIORITY_CLASS = 0x4000
-_MAX_STDERR_LINES = 50
+_STDERR_READ_SIZE = 4096
+_MAX_STDERR_BYTES = 64 * 1024
 
 
 class ScreenWorkerError(RuntimeError):
@@ -60,25 +61,13 @@ class ScreenWorkerRefusedError(ScreenWorkerError):
         super().__init__(message, code=code)
 
 
-class ScreenWorkerTimeoutError(ScreenWorkerError):
-    """Tempo limite excedido na comunicação com o worker."""
-
-    def __init__(
-        self,
-        message: str = "Tempo limite excedido no worker de tela.",
-        *,
-        code: str = "timeout",
-    ) -> None:
-        super().__init__(message, code=code)
-
-
 class ScreenProcess:
     def __init__(self, record: Callable[[str, str, str], None] | None = None) -> None:
         self._record = record
         self._process: asyncio.subprocess.Process | None = None
         self._stopped = False
         self._job: ScreenJob | None = None
-        self._stderr_lines: list[str] = []
+        self._stderr_tail = bytearray()
         self._stderr_task: asyncio.Task[None] | None = None
         self._stdout_task: asyncio.Task[None] | None = None
         self._last_error: ScreenWorkerError | None = None
@@ -104,7 +93,8 @@ class ScreenProcess:
                 err: ScreenWorkerError = ScreenWorkerInitError(
                     "Medição encerrada ou canais de comunicação indisponíveis.", code="closed"
                 )
-                self._record_error(err)
+                if not self._stopped:
+                    self._record_error(err)
                 raise err
             self._job = ScreenJob(process.pid)
             offer = {
@@ -118,21 +108,7 @@ class ScreenProcess:
 
             raw_line = await process.stdout.readline()
             if not raw_line:
-                # O processo do worker encerrou sem responder nada no stdout
-                await process.wait()
-                if self._stopped:
-                    # Parada pedida durante a abertura: não é falha e não vai ao diagnóstico.
-                    raise ScreenWorkerInitError(
-                        "Medição encerrada durante a inicialização.", code="closed"
-                    )
-                await self._finish_drains()
-                code = self._classify_stderr()
-                err = ScreenWorkerInitError(
-                    "Processo de medição encerrou prematuramente sem resposta.",
-                    code=code,
-                )
-                self._record_error(err)
-                raise err
+                raise await self._premature_exit(process)
 
             try:
                 answer = json.loads(raw_line)
@@ -175,7 +151,22 @@ class ScreenProcess:
         except Exception, asyncio.CancelledError:
             self.stop()
             await process.wait()
+            await self._finish_drains()
             raise
+
+    async def _premature_exit(self, process: asyncio.subprocess.Process) -> ScreenWorkerInitError:
+        await process.wait()
+        await self._finish_drains()
+        if self._stopped:
+            return ScreenWorkerInitError(
+                "Medição encerrada durante a inicialização.", code="closed"
+            )
+        error = ScreenWorkerInitError(
+            "Processo de medição encerrou prematuramente sem resposta.",
+            code=self._classify_stderr(),
+        )
+        self._record_error(error)
+        return error
 
     def _record_error(self, error: ScreenWorkerError) -> None:
         self._last_error = error
@@ -192,12 +183,10 @@ class ScreenProcess:
             return ScreenWorkerRefusedError
         if code in {"dpi_failed", "init_failed", "premature_exit"}:
             return ScreenWorkerInitError
-        if code in {"init_timeout", "timeout"}:
-            return ScreenWorkerTimeoutError
         return ScreenWorkerError
 
     def _classify_stderr(self) -> str:
-        combined = " ".join(self._stderr_lines).lower()
+        combined = self._stderr_tail.decode("utf-8", errors="replace").lower()
         if "syntaxerror" in combined or "invalid syntax" in combined:
             return "syntax_error"
         if (
@@ -215,18 +204,15 @@ class ScreenProcess:
         return "init_failed"
 
     async def _drain_stderr(self) -> None:
-        if self._process is None or self._process.stderr is None:
+        stderr = self._process.stderr if self._process is not None else None
+        if stderr is None:
             return
         with contextlib.suppress(Exception, asyncio.CancelledError):
-            while not self._process.stderr.at_eof():
-                line = await self._process.stderr.readline()
-                if not line:
-                    break
-                text = line.decode("utf-8", errors="replace").strip()
-                if text:
-                    self._stderr_lines.append(text)
-                    if len(self._stderr_lines) > _MAX_STDERR_LINES:
-                        self._stderr_lines.pop(0)
+            # Drena mesmo sem quebra de linha e guarda só o fim para classificar falhas.
+            while chunk := await stderr.read(_STDERR_READ_SIZE):
+                self._stderr_tail.extend(chunk)
+                if len(self._stderr_tail) > _MAX_STDERR_BYTES:
+                    del self._stderr_tail[:-_MAX_STDERR_BYTES]
 
     async def _finish_drains(self) -> None:
         """Espera a leitura das saídas acabar.
@@ -266,8 +252,7 @@ class ScreenProcess:
                 process.terminate()
         if self._stdout_task is not None:
             self._stdout_task.cancel()
-        if self._stderr_task is not None:
-            self._stderr_task.cancel()
+        # O stderr continua a ser drenado até o processo fechar o pipe.
 
     async def wait(self) -> None:
         if self._process is not None:

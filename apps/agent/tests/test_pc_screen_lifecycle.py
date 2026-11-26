@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -16,7 +17,7 @@ from uniover_agent.adapters.pc_screen_process import (
 )
 from uniover_agent.composition import pc as pc_composition
 from uniover_agent.core.pc.devices import DeviceDecision
-from uniover_agent.core.pc.direct import DirectRefused
+from uniover_agent.core.pc.direct import DirectRefused, DirectSettings
 
 from .test_pc_direct import SESSION, Lab, _Approvals, settle
 
@@ -156,7 +157,10 @@ class FakeSubprocess:
     ) -> None:
         self.stdin = FakeStdin()
         self.stdout = FakeStream(stdout_lines)
-        self.stderr = FakeStream(stderr_lines)
+        self.stderr = asyncio.StreamReader()
+        for line in stderr_lines or []:
+            self.stderr.feed_data(line)
+        self.stderr.feed_eof()
         self.returncode = returncode
         self.pid = pid
         self.terminated = False
@@ -268,6 +272,31 @@ async def test_screen_process_raises_init_error_on_dpi_failure_in_stderr(
         await process.accept_offer("sdp", "token", 10, 60)
 
     assert exc_info.value.code == "dpi_failed"
+
+
+async def test_screen_process_drains_stderr_after_an_oversized_line(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    records: list[tuple[str, str, str]] = []
+    fake_proc = FakeSubprocess(
+        stderr_lines=[
+            b"texto reservado " + b"x" * (70 * 1024) + b"\n",
+            b"mais saida\n" * (50 * 1024),
+            b"SyntaxError: outro texto reservado\n",
+        ],
+        returncode=1,
+    )
+    patch_worker_process(monkeypatch, fake_proc)
+    process = ScreenProcess(record=lambda cat, lvl, msg: records.append((cat, lvl, msg)))
+
+    with pytest.raises(ScreenWorkerInitError) as exc_info:
+        await process.accept_offer("sdp", "token", 10, 60)
+
+    assert exc_info.value.code == "syntax_error"
+    assert fake_proc.stderr.at_eof()
+    assert len(process._stderr_tail) <= 64 * 1024
+    assert records == [("pc.screen_error", "warn", "ScreenWorkerError: syntax_error")]
+    assert "texto reservado" not in caplog.text
 
 
 async def test_screen_process_raises_syntax_error_on_malformed_stdout(
@@ -413,6 +442,98 @@ async def test_screen_process_stop_during_startup_is_not_recorded_as_failure(
     assert records == []
 
 
+async def test_screen_process_stop_during_spawn_is_not_recorded_as_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records: list[tuple[str, str, str]] = []
+    process = ScreenProcess(record=lambda cat, lvl, msg: records.append((cat, lvl, msg)))
+    fake_proc = FakeSubprocess()
+
+    async def exec_stopped_worker(*_args: Any, **_kwargs: Any) -> FakeSubprocess:
+        process.stop()
+        return fake_proc
+
+    monkeypatch.setattr("uniover_agent.adapters.pc_screen_process.exec_hidden", exec_stopped_worker)
+    with pytest.raises(ScreenWorkerInitError) as exc_info:
+        await process.accept_offer("sdp", "token", 10, 60)
+
+    assert exc_info.value.code == "closed"
+    assert fake_proc.terminated
+    assert records == []
+
+
+@pytest.mark.parametrize("trigger", ["deadline", "cancel", "disconnect", "inner_timeout"])
+async def test_measurement_only_records_timeout_when_the_open_deadline_expires(
+    monkeypatch: pytest.MonkeyPatch, trigger: str
+) -> None:
+    screen = FakeScreen()
+    lab = Lab(
+        settings=DirectSettings(accept_timeout_seconds=5, tick_seconds=0.005),
+        screen_factory=lambda: screen,
+    )
+    lab.service._devices = _Approvals(DeviceDecision.APPROVED)  # type: ignore[assignment]
+    started = asyncio.Event()
+
+    async def pending_accept(_sdp: str, _token: str, _ttl: int, _lifetime: int) -> str:
+        started.set()
+        if trigger == "inner_timeout":
+            raise TimeoutError
+        await screen.stopped.wait()
+        return "ANSWER-SCREEN"
+
+    monkeypatch.setattr(screen, "accept_offer", pending_accept)
+    try:
+        await lab.open_authenticated(device_id=_DEVICE, clock=False)
+        if trigger == "deadline":
+            lab.service._settings = replace(lab.service._settings, accept_timeout_seconds=0)
+        task = asyncio.create_task(offer(lab))
+        async with asyncio.timeout(1):
+            await started.wait()
+            if trigger == "cancel":
+                task.cancel()
+            elif trigger == "disconnect":
+                lab.service.api_disconnected()
+            with pytest.raises(asyncio.CancelledError if trigger == "cancel" else DirectRefused):
+                await task
+        assert screen.stopped.is_set()
+        assert lab.records == (
+            [("pc.screen_error", "warn", "ScreenWorkerError: init_timeout")]
+            if trigger == "deadline"
+            else []
+        )
+    finally:
+        await lab.aclose()
+
+
+async def test_measurement_tray_refusal_after_answer_reports_diagnostic_and_failed_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_proc = FakeSubprocess(
+        stdout_lines=[
+            b'{"sdp": "resposta-sdp"}\n',
+            b'{"k": "error", "code": "tray_unavailable", "error": "Indicador indisponivel"}\n',
+        ]
+    )
+    patch_worker_process(monkeypatch, fake_proc)
+    records: list[tuple[str, str, str]] = []
+    lab = Lab(
+        screen_factory=lambda: ScreenProcess(
+            record=lambda cat, lvl, msg: records.append((cat, lvl, msg))
+        )
+    )
+    lab.service._devices = _Approvals(DeviceDecision.APPROVED)  # type: ignore[assignment]
+    try:
+        await lab.open_authenticated(device_id=_DEVICE, clock=False)
+        assert await offer(lab) == "resposta-sdp"
+        await settle()
+
+        assert lab.closed == [(_SCREEN, "failed")]
+        assert records == [("pc.screen_error", "warn", "ScreenWorkerError: tray_unavailable")]
+        assert lab.service.authenticated
+    finally:
+        await lab.aclose()
+
+
 async def test_measurement_failure_notifies_signaling_and_allows_a_new_offer(
     measurement: tuple[Lab, FakeScreen],
 ) -> None:
@@ -432,7 +553,7 @@ async def test_measurement_failure_notifies_signaling_and_allows_a_new_offer(
     await settle()
 
     assert screen.stopped.is_set()
-    assert lab.closed == [(_SCREEN, "requested")]
+    assert lab.closed == [(_SCREEN, "failed")]
     assert lab.peer is parent and lab.service.authenticated
     answer = await lab.service.open(
         "outra-sessao-tela",
