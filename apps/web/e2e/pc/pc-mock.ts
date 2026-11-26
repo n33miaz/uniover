@@ -142,9 +142,12 @@ export async function mockPcApi(context: BrowserContext, identity: IdentityMock)
         status: 200,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          sessionId: '0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e01',
+          sessionId: body?.['parentSessionId']
+            ? '0192f1e4-screen-0001'
+            : '0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e01',
           sdp: 'v=0\r\nANSWER',
           token: 'token-de-teste-0123456789abcdefghijklmnop',
+          scopes: Array.isArray(body?.['scopes']) ? body['scopes'] : ['pc'],
           expiresInSeconds: 30,
         }),
       });
