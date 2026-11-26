@@ -415,7 +415,14 @@ class ScreenSession:
             {
                 "k": "s.mon",
                 "monitors": [
-                    {"id": m.id, "width": m.width, "height": m.height, "primary": m.primary}
+                    {
+                        "id": m.id,
+                        "width": m.width,
+                        "height": m.height,
+                        "primary": m.primary,
+                        "x": m.left,
+                        "y": m.top,
+                    }
                     for m in self.monitors
                 ],
                 # A impressão do arranjo, que o toque na imagem devolve (`l`): o agente confere na

@@ -50,6 +50,34 @@ describe('parseViewerMessage', () => {
     });
   });
 
+  it('reads monitor origins (x and y) when present, including negative coordinates', () => {
+    const text =
+      '{"k":"s.mon","monitors":[' +
+      '{"id":1,"width":1920,"height":1080,"primary":true,"x":0,"y":0},' +
+      '{"id":2,"width":1280,"height":1024,"primary":false,"x":-1280,"y":-200}' +
+      ']}';
+    expect(parseViewerMessage(text)).toEqual({
+      k: 's.mon',
+      monitors: [
+        { id: 1, width: 1920, height: 1080, primary: true, x: 0, y: 0 },
+        { id: 2, width: 1280, height: 1024, primary: false, x: -1280, y: -200 },
+      ],
+      layout: null,
+    });
+  });
+
+  it('accepts left and top as fallback for x and y in monitor origins', () => {
+    const text =
+      '{"k":"s.mon","monitors":[' +
+      '{"id":1,"width":1920,"height":1080,"primary":true,"left":1920,"top":0}' +
+      ']}';
+    expect(parseViewerMessage(text)).toEqual({
+      k: 's.mon',
+      monitors: [{ id: 1, width: 1920, height: 1080, primary: true, x: 1920, y: 0 }],
+      layout: null,
+    });
+  });
+
   it('reads the layout print the tap sends back, and an older PC without it', () => {
     const monitors = '[{"id":0,"width":1920,"height":1080,"primary":true}]';
     expect(parseViewerMessage(`{"k":"s.mon","monitors":${monitors},"layout":4294967295}`)).toEqual({
@@ -91,6 +119,11 @@ describe('parseViewerMessage', () => {
     '{"k":"s.mon","monitors":[null]}',
     '{"k":"s.mon","monitors":[{"id":-1,"width":10,"height":10,"primary":true}]}',
     '{"k":"s.mon","monitors":[{"id":2147483648,"width":10,"height":10,"primary":true}]}',
+    '{"k":"s.mon","monitors":[{"id":1,"width":10,"height":10,"primary":true,"x":"a"}]}',
+    '{"k":"s.mon","monitors":[{"id":1,"width":10,"height":10,"primary":true,"y":1.5}]}',
+    '{"k":"s.mon","monitors":[{"id":1,"width":10,"height":10,"primary":true,"x":100001}]}',
+    '{"k":"s.mon","monitors":[{"id":1,"width":10,"height":10,"primary":true,"left":"b"}]}',
+    '{"k":"s.mon","monitors":[{"id":1,"width":10,"height":10,"primary":true,"top":1.5}]}',
     '{"k":"s.cur","x":"a","y":2}',
     '{"k":"s.cur","x":1}',
     '{"k":"s.state","state":"x"}',

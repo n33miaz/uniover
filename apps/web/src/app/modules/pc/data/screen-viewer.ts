@@ -4,6 +4,10 @@ export interface ScreenMonitor {
   readonly primary: boolean;
   readonly width: number;
   readonly height: number;
+  /** Coordenada X da origem no desktop virtual (pixels físicos). Opcional para manter compatibilidade. */
+  readonly x?: number;
+  /** Coordenada Y da origem no desktop virtual (pixels físicos). Opcional para manter compatibilidade. */
+  readonly y?: number;
 }
 
 export type ScreenViewState = 'ok' | 'locked' | 'elevated';
@@ -61,7 +65,41 @@ export function parseViewerMessage(text: string): ScreenViewerMessage {
         ) {
           throw new Error('monitor inválido');
         }
-        monitors.push({ id, primary, width, height });
+
+        let x: number | undefined;
+        if (entry['x'] !== undefined) {
+          if (!whole(entry['x'], -MAX_COORD, MAX_COORD)) {
+            throw new Error('monitor inválido');
+          }
+          x = entry['x'];
+        } else if (entry['left'] !== undefined) {
+          if (!whole(entry['left'], -MAX_COORD, MAX_COORD)) {
+            throw new Error('monitor inválido');
+          }
+          x = entry['left'];
+        }
+
+        let y: number | undefined;
+        if (entry['y'] !== undefined) {
+          if (!whole(entry['y'], -MAX_COORD, MAX_COORD)) {
+            throw new Error('monitor inválido');
+          }
+          y = entry['y'];
+        } else if (entry['top'] !== undefined) {
+          if (!whole(entry['top'], -MAX_COORD, MAX_COORD)) {
+            throw new Error('monitor inválido');
+          }
+          y = entry['top'];
+        }
+
+        monitors.push({
+          id,
+          primary,
+          width,
+          height,
+          ...(x !== undefined ? { x } : {}),
+          ...(y !== undefined ? { y } : {}),
+        });
       }
       const layout = data['layout'];
       if (layout !== undefined && !whole(layout, 0, 0xffff_ffff))
