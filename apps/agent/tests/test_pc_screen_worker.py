@@ -41,6 +41,7 @@ class Channel:
         self.maxRetransmits = None
         self.maxPacketLifeTime = None
         self.bufferedAmount = 0
+        self.readyState = "open"
         self.handlers: dict[str, Any] = {}
         self.sent: list[str | bytes] = []
         self.complete = asyncio.Event()
@@ -344,6 +345,77 @@ async def test_worker_reports_capture_error_diagnostic_and_stops_on_fatal_except
         await task
 
     assert {"k": "error", "code": "capture_error", "error": "RuntimeError"} in replies
+    assert measure.closed.is_set()
+
+
+async def test_worker_reports_unavailable_tray_after_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    offer = Offer("oferta", "bilhete-de-teste", 10, 60)
+    measure, channel = session("192.168.1.6")
+    replies: list[dict[str, str]] = []
+
+    async def answer(_sdp: str) -> str:
+        return "resposta-sdp"
+
+    @contextmanager
+    def unavailable_indicator() -> Iterator[None]:
+        assert replies == [{"sdp": "resposta-sdp"}]
+        raise RuntimeError("O ícone não confirmou a exibição da tela.")
+        yield
+
+    monkeypatch.setattr(measure, "answer", answer)
+    monkeypatch.setattr(measure.peer, "close", lambda: asyncio.sleep(0), raising=False)
+    channel.message(k="auth", token=offer.token)
+
+    await measure.run(offer, asyncio.Event(), replies.append, unavailable_indicator, Probes())
+
+    assert replies == [
+        {"sdp": "resposta-sdp"},
+        {
+            "k": "error",
+            "code": "tray_unavailable",
+            "error": "Não foi possível ativar o indicador da tela.",
+        },
+    ]
+    assert channel.sent == []
+
+
+async def test_worker_closes_normally_when_the_channel_starts_closing_during_a_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    offer = Offer("oferta", "bilhete-de-teste", 10, 60)
+    measure, channel = session("192.168.1.6")
+    replies: list[dict[str, str]] = []
+
+    async def answer(_sdp: str) -> str:
+        return "resposta-sdp"
+
+    send = channel.send
+
+    def send_first_chunk(payload: str | bytes) -> None:
+        assert channel.readyState == "open"
+        send(payload)
+        if isinstance(payload, bytes):
+            # O aiortc muda o estado antes de emitir o evento de fechamento.
+            channel.readyState = "closing"
+
+    async def capture(_capture: Any, _request: FrameRequest, _previous: Any) -> Capture:
+        return Capture(7, 1280, 720, b"x" * (CHUNK_BYTES + 1))
+
+    monkeypatch.setattr(measure, "answer", answer)
+    monkeypatch.setattr(measure.peer, "close", lambda: asyncio.sleep(0), raising=False)
+    monkeypatch.setattr(channel, "send", send_first_chunk)
+    monkeypatch.setattr(pc_screen_worker, "private_bytes", lambda: 0)
+    monkeypatch.setattr(f"{WORKER}.asyncio.to_thread", capture)
+    channel.message(k="auth", token=offer.token)
+    channel.message(k="s.get")
+
+    async with asyncio.timeout(1):
+        await measure.run(offer, asyncio.Event(), replies.append, nullcontext, Probes())
+
+    assert replies == [{"sdp": "resposta-sdp"}]
+    assert len([payload for payload in channel.sent if isinstance(payload, bytes)]) == 1
     assert measure.closed.is_set()
 
 

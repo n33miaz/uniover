@@ -740,15 +740,20 @@ class PcDirectService:
             lifetime = min(
                 lifetime_seconds or SCREEN_MAX_LIFETIME_SECONDS, SCREEN_MAX_LIFETIME_SECONDS
             )
+            deadline = asyncio.timeout(self._settings.accept_timeout_seconds)
             try:
-                answer = await asyncio.wait_for(
-                    peer.accept_offer(sdp, token, ttl_seconds, lifetime),
-                    self._settings.accept_timeout_seconds,
-                )
+                async with deadline:
+                    answer = await peer.accept_offer(sdp, token, ttl_seconds, lifetime)
                 if self._screen is not screen:
                     raise DirectRefused(REFUSED_CLOSED)
                 self._screen_parent = parent_id
             except (Exception, asyncio.CancelledError) as error:
+                if isinstance(error, TimeoutError) and deadline.expired():
+                    if self._screen is not screen:
+                        raise DirectRefused(REFUSED_CLOSED) from None
+                    _log.warning("tempo limite atingido ao abrir a tela do PC")
+                    if self._record is not None:
+                        self._record("pc.screen_error", "warn", "ScreenWorkerError: init_timeout")
                 self._stop_screen(session_id)
                 if isinstance(error, (DirectRefused, asyncio.CancelledError)):
                     raise
@@ -788,15 +793,17 @@ class PcDirectService:
 
     async def _watch_screen(self, screen: tuple[str, ScreenPeer]) -> None:
         session_id, peer = screen
+        reason = REASON_REQUESTED
         try:
             await peer.wait()
         except Exception as error:
             # Quem viu a falha já a registrou; a tela ainda precisa ser encerrada e avisada.
             _log.warning("tela do PC encerrada com falha (%s)", type(error).__name__)
+            reason = REASON_FAILED
         if self._screen is screen:
             self._stop_screen(session_id)
             with contextlib.suppress(Exception):
-                await self._notify_closed(session_id, REASON_REQUESTED, None)
+                await self._notify_closed(session_id, reason, None)
 
     def _stop_screen(self, session_id: str | None = None) -> None:
         screen = self._screen

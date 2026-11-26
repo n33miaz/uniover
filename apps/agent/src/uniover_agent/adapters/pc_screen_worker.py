@@ -216,6 +216,10 @@ def _remote_is_lan(peer: Any) -> bool:
 Viewing = Callable[[], AbstractContextManager[Callable[[], bool] | None]]
 
 
+class ScreenIndicatorError(RuntimeError):
+    """Falha ao ativar o indicador obrigatório de visualização."""
+
+
 @dataclass(frozen=True)
 class Probes:
     """Leituras opcionais do desktop; sem elas a sessão só envia quadros."""
@@ -313,8 +317,15 @@ class ScreenSession:
         self.token = ""
         self.ready.set()
 
+    def send(self, data: str | bytes) -> None:
+        # O estado pode mudar antes de o evento de fechamento chegar.
+        if self.channel.readyState == "open":
+            self.channel.send(data)
+        else:
+            self.closed.set()
+
     def send_json(self, data: dict[str, Any]) -> None:
-        self.channel.send(json.dumps(data))
+        self.send(json.dumps(data))
 
     async def stream(
         self,
@@ -327,7 +338,11 @@ class ScreenSession:
             await self.ready.wait()
         if self.closed.is_set():
             return
-        with viewing() as stop_requested:
+        with contextlib.ExitStack() as stack:
+            try:
+                stop_requested = stack.enter_context(viewing())
+            except Exception as exc:
+                raise ScreenIndicatorError("Não foi possível ativar o indicador da tela.") from exc
             stopper = (
                 None
                 if stop_requested is None
@@ -517,7 +532,7 @@ class ScreenSession:
                     await self.wait_buffer(4 * CHUNK_BYTES - 1)
                     if self.closed.is_set():
                         return
-                    self.channel.send(payload[offset : offset + CHUNK_BYTES])
+                    self.send(payload[offset : offset + CHUNK_BYTES])
                 await self.wait_buffer(0)
 
     async def wait_buffer(self, threshold: int) -> None:
@@ -560,6 +575,8 @@ class ScreenSession:
                             viewing,
                             probes_instance,
                         )
+                    except ScreenIndicatorError as exc:
+                        reply({"k": "error", "code": "tray_unavailable", "error": str(exc)})
                     except TimeoutError:
                         # Espera de autorização ou de pedido vencida: fim normal, sem erro.
                         raise
