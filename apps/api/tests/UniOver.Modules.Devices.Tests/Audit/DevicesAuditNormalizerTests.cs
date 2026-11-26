@@ -35,6 +35,8 @@ public class DevicesAuditNormalizerTests
     [InlineData(PairingEvents.PcClipboardRead, "pc_clipboard_read", AuditOutcome.Success)]
     [InlineData(PairingEvents.PcClipboardWrite, "pc_clipboard_write", AuditOutcome.Success)]
     [InlineData(PairingEvents.PcAppLaunch, "pc_app_launch", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcScreenOpened, "pc_screen_opened", AuditOutcome.Success)]
+    [InlineData(PairingEvents.PcScreenClosed, "pc_screen_closed", AuditOutcome.Success)]
     [InlineData(PairingEvents.PcLockFailed, "pc_lock_failed", AuditOutcome.Failure)]
     [InlineData(PairingEvents.PcSleepFailed, "pc_sleep_failed", AuditOutcome.Failure)]
     [InlineData(PairingEvents.PcShutdownFailed, "pc_shutdown_failed", AuditOutcome.Failure)]
