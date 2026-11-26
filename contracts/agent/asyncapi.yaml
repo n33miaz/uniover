@@ -255,6 +255,11 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.rtc.reconciled.v1.schema.json'
+      pcScreenGet:
+        name: pc.screen.get.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.screen.get.v1.schema.json'
   agentEvents:
     address: uniover/{agentId}/evt
     description: Agente para API. No WebSocket é o mesmo socket; no MQTT, o tópico de eventos.
@@ -376,6 +381,31 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.rtc.reconcile.v1.schema.json'
+      pcScreenMon:
+        name: pc.screen.mon.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.screen.mon.v1.schema.json'
+      pcScreenSame:
+        name: pc.screen.same.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.screen.same.v1.schema.json'
+      pcScreenCur:
+        name: pc.screen.cur.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.screen.cur.v1.schema.json'
+      pcScreenState:
+        name: pc.screen.state.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.screen.state.v1.schema.json'
+      pcScreenStat:
+        name: pc.screen.stat.v1
+        contentType: application/json
+        payload:
+          $ref: './messages/pc.screen.stat.v1.schema.json'
 operations:
   sendApiKeepalive:
     action: send
@@ -796,3 +826,45 @@ operations:
     summary: A API recebe o aviso de que o canal direto da sessão fechou, com o motivo.
     messages:
       - $ref: '#/channels/agentEvents/messages/pcRtcClosed'
+  sendPcScreenGet:
+    action: send
+    channel:
+      $ref: '#/channels/agentCommands'
+    summary: O app pede um quadro da tela do PC no canal direto WebRTC screen.
+    messages:
+      - $ref: '#/channels/agentCommands/messages/pcScreenGet'
+  receivePcScreenMon:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: O agente anuncia a lista de monitores e arranjo no canal direto WebRTC screen.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/pcScreenMon'
+  receivePcScreenSame:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: O agente avisa que o quadro da tela não mudou no canal direto WebRTC screen.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/pcScreenSame'
+  receivePcScreenCur:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: O agente envia a posição física do cursor no canal direto WebRTC screen.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/pcScreenCur'
+  receivePcScreenState:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: O agente envia o estado do desktop no canal direto WebRTC screen.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/pcScreenState'
+  receivePcScreenStat:
+    action: receive
+    channel:
+      $ref: '#/channels/agentEvents'
+    summary: O agente envia estatísticas de medição de captura no canal direto WebRTC screen.
+    messages:
+      - $ref: '#/channels/agentEvents/messages/pcScreenStat'
