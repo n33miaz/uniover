@@ -32,7 +32,7 @@ O código é **público para leitura e avaliação técnica**, com todos os dire
 | Módulo | O que faz | Quando |
 |---|---|---|
 | Conta (`Identity`) | usuário, sessões, passkey de confirmação | primeira versão |
-| Aparelhos (`Devices`) | agentes pareados, tokens e presença | primeira versão |
+| Aparelhos (`Devices`) | agentes pareados, tokens, presença, [controle e tela do PC](adr/0021-controle-e-tela-do-pc-em-devices.md) | primeira versão |
 | TV (`Tv`) | comandos e estado da TV, atalhos | primeira versão |
 | Treino (`Training`) | catálogo, fichas, sessões, séries e progresso | em seguida |
 | Saúde (`Health`) | saúde dos agentes e da API, linha do tempo | depois |
@@ -40,7 +40,6 @@ O código é **público para leitura e avaliação técnica**, com todos os dire
 | Rede (`Network`) | rede da casa | depois |
 | Backup (`Backup`) | backup de fotos (Android primeiro) | depois |
 | Avisos (`Notifications`) | Web Push e central de avisos | depois |
-| PC (`PcControl`) | controle do PC | adiado |
 
 ## Arquitetura
 
