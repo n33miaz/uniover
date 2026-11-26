@@ -42,11 +42,13 @@ class FakeAbsolute:
 
 
 class TapLab:
-    def __init__(self, *, absolute: bool = True) -> None:
+    def __init__(self, *, absolute: bool = True, block_clicks: bool = False) -> None:
         self.screen = FakeScreen()
         self.pointer = FakeAbsolute()
         self.lab = Lab(
-            screen_factory=lambda: self.screen, absolute=self.pointer if absolute else None
+            screen_factory=lambda: self.screen,
+            absolute=self.pointer if absolute else None,
+            block_clicks=block_clicks,
         )
         self.lab.service._devices = _Approvals(DeviceDecision.APPROVED)  # type: ignore[assignment]
 
@@ -57,6 +59,20 @@ class TapLab:
         peer = await self.control()
         await offer(self.lab)
         return peer
+
+    async def another_screen(self) -> None:
+        """Outra sessão de tela no mesmo canal de controle."""
+        self.screen = FakeScreen()
+        await self.lab.service.open(
+            "sessao-tela-2",
+            "OFFER-SCREEN",
+            "TOKEN-SCREEN",
+            15,
+            900,
+            scopes=["screen"],
+            parent_session_id=SESSION,
+            device_id=_DEVICE,
+        )
 
     def tap(self, action: str = "CLICK", i: str = "t1", **extra: Any) -> dict[str, Any]:
         body = {"m": 1, "u": 100, "v": 200, **SIZE, "button": "LEFT", "action": action}
@@ -197,20 +213,97 @@ async def test_closing_the_screen_ends_the_drag_for_positions(taps: TapLab) -> N
     await settle()
     await taps.lab.service.close(_SCREEN)
     # A tela abre de novo (outra sessão de tela), sem um DOWN novo.
-    taps.screen = FakeScreen()
-    await taps.lab.service.open(
-        "sessao-tela-2",
-        "OFFER-SCREEN",
-        "TOKEN-SCREEN",
-        15,
-        900,
-        scopes=["screen"],
-        parent_session_id=SESSION,
-        device_id=_DEVICE,
-    )
+    await taps.another_screen()
     peer.phone(POINTER_CHANNEL, taps.abs(1, u=60))
     await settle()
     assert taps.pointer.calls == [("tap", 1, 100, 200, "LEFT", "DOWN")]
+
+
+@pytest.mark.parametrize("reopen", [True, False])
+async def test_a_down_that_runs_after_its_screen_stopped_is_released_and_opens_no_drag(
+    reopen: bool,
+) -> None:
+    taps = TapLab(block_clicks=True)
+    try:
+        peer = await taps.with_screen()
+        # Um clique parado na faixa segura o `DOWN` do toque atrás dele.
+        click = {"button": "RIGHT", "action": "CLICK"}
+        peer.phone(INPUT_CHANNEL, taps.lab.command("pc.click.v1", click, "preso"))
+        peer.phone(INPUT_CHANNEL, taps.tap("DOWN", "d"))
+        await settle()
+        await taps.lab.service.close(_SCREEN)
+        if reopen:
+            await taps.another_screen()
+        assert taps.pointer.calls == []
+        taps.lab.click_gate.set()
+        await settle()
+        peer.phone(POINTER_CHANNEL, taps.abs(1, u=60))
+        await settle()
+        assert _ack(peer, "d")["ok"]
+        assert taps.pointer.calls == [("tap", 1, 100, 200, "LEFT", "DOWN")]
+        assert taps.lab.pc.calls == [("click", "RIGHT", "CLICK"), ("click", "LEFT", "UP")]
+    finally:
+        await taps.lab.aclose()
+
+
+async def test_a_late_down_with_its_up_already_queued_is_not_released_twice() -> None:
+    taps = TapLab(block_clicks=True)
+    try:
+        peer = await taps.with_screen()
+        click = {"button": "RIGHT", "action": "CLICK"}
+        peer.phone(INPUT_CHANNEL, taps.lab.command("pc.click.v1", click, "preso"))
+        peer.phone(INPUT_CHANNEL, taps.tap("DOWN", "d"))
+        peer.phone(INPUT_CHANNEL, taps.tap("UP", "u"))
+        await settle()
+        await taps.lab.service.close(_SCREEN)
+        taps.lab.click_gate.set()
+        await settle()
+        assert taps.pointer.calls == [
+            ("tap", 1, 100, 200, "LEFT", "DOWN"),
+            ("tap", 1, 100, 200, "LEFT", "UP"),
+        ]
+        assert taps.lab.pc.calls == [("click", "RIGHT", "CLICK")]
+    finally:
+        await taps.lab.aclose()
+
+
+@pytest.mark.parametrize("button", ["LEFT", "RIGHT"])
+async def test_a_screen_that_stops_by_itself_releases_only_the_drag_button(
+    taps: TapLab, button: str
+) -> None:
+    peer = await taps.with_screen()
+    alt = {"key": "ALT", "action": "DOWN"}
+    peer.phone(INPUT_CHANNEL, taps.lab.command("pc.key.v2", alt, "alt"))
+    peer.phone(INPUT_CHANNEL, taps.tap("DOWN", "d", body={"button": button}))
+    await settle()
+    taps.screen.stopped.set()
+    await settle()
+    assert taps.lab.closed == [(_SCREEN, "requested")]
+    # Só o botão do arrasto é solto: o Alt segurado fica, e nada de soltar tudo.
+    assert taps.lab.pc.calls == [("key", "ALT", (), 1, "DOWN"), ("click", button, "UP")]
+
+
+@pytest.mark.parametrize("actions", [(), ("CLICK",), ("DOWN", "UP")])
+async def test_a_screen_that_stops_without_a_drag_releases_nothing(
+    taps: TapLab, actions: tuple[str, ...]
+) -> None:
+    peer = await taps.with_screen()
+    for number, action in enumerate(actions):
+        peer.phone(INPUT_CHANNEL, taps.tap(action, f"t{number}"))
+        await settle()
+    taps.screen.stopped.set()
+    await settle()
+    assert taps.lab.pc.calls == []
+
+
+async def test_closing_the_control_channel_mid_drag_releases_once(taps: TapLab) -> None:
+    peer = await taps.with_screen()
+    peer.phone(INPUT_CHANNEL, taps.tap("DOWN", "d"))
+    await settle()
+    await taps.lab.service.close(SESSION)
+    await settle()
+    # O fim do canal já solta tudo: a parada da tela não manda outra soltura.
+    assert taps.lab.pc.calls == [("release_all",)]
 
 
 async def test_an_old_tap_expires_but_letting_go_always_passes(taps: TapLab) -> None:
