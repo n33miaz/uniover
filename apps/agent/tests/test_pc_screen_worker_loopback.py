@@ -267,10 +267,10 @@ async def test_screen_worker_loopback_wait_buffer_backpressure_and_event(
 ) -> None:
     """`wait_buffer` só retorna quando o canal real esvazia e dispara `bufferedamountlow`."""
     client = await client_for_loopback()
-    offer = Offer(sdp=await client.offer(), token=TEST_TOKEN, token_ttl=30, lifetime=60)
-    session = ScreenSession(offer)
-
+    session: ScreenSession | None = None
     try:
+        offer = Offer(sdp=await client.offer(), token=TEST_TOKEN, token_ttl=30, lifetime=60)
+        session = ScreenSession(offer)
         await client.accept(await asyncio.wait_for(session.answer(offer.sdp), WAIT))
         await asyncio.wait_for(client.opened.wait(), WAIT)
         assert session.channel is not None
@@ -290,7 +290,7 @@ async def test_screen_worker_loopback_wait_buffer_backpressure_and_event(
         assert await client.collect_chunks(len(payload)) == [payload]
     finally:
         try:
-            if session.peer is not None:
+            if session is not None and session.peer is not None:
                 await asyncio.wait_for(session.peer.close(), WAIT)
         finally:
             await client.close()
