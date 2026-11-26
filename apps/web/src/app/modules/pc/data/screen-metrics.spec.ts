@@ -1,21 +1,17 @@
-import { ScreenFrameBuffer, ScreenMetrics, readScreenMarker } from './screen-metrics';
+import { ScreenMetrics, readScreenMarker } from './screen-metrics';
 
 describe('Métricas da tela do PC', () => {
   const header = { bytes: 8, cpu: 19, privateMB: 64 };
 
-  it('monta a imagem em ordem e recusa pedaços fora do quadro', () => {
-    const buffer = new ScreenFrameBuffer();
-    const first = new ArrayBuffer(5);
-    const last = new ArrayBuffer(3);
-
-    expect(() => buffer.chunk(first)).toThrow();
-    expect(() => buffer.header({ ...header, bytes: 9 * 1024 ** 2 })).toThrow();
-    buffer.header(header);
-    expect(buffer.chunk(first)).toBeNull();
-    expect(() => buffer.header(header)).toThrow();
-    expect(() => buffer.chunk(first)).toThrow();
-    expect(buffer.chunk(last)).toMatchObject({ ...header, chunks: [first, last] });
-    expect(() => buffer.chunk(last)).toThrow();
+  it('começa com marcador ativo, pula zero na volta e aceita CPU ausente na amostra', () => {
+    const stats = new ScreenMetrics(0, 500);
+    expect(stats.request()).toBe(1);
+    for (let i = 0; i < 0xffff - 1; i++) stats.touch(1);
+    expect(stats.request()).toBe(0xffff);
+    stats.touch(2);
+    expect(stats.request()).toBe(1);
+    stats.frame({ ...header, cpu: null }, 1280, 1, 3);
+    expect(stats.result(3)).toMatchObject({ cpu: null, touchCount: 1 });
   });
 
   it('lê os bits do quadrado após a decodificação', () => {

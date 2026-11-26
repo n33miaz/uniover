@@ -20,12 +20,13 @@ import {
 } from '../../../core/direct/direct-channel';
 import { PcAvailability } from '../../../core/modules/pc-availability';
 import { SessionState } from '../../../core/session/session-state';
+import { ScreenMetrics, readScreenMarker } from '../data/screen-metrics';
 import {
-  ScreenFrameBuffer,
-  ScreenMetrics,
-  readScreenMarker,
-  type ScreenFrame,
-} from '../data/screen-metrics';
+  ScreenViewerFrameAssembler,
+  parseViewerMessage,
+  type ScreenFrameStats,
+  type ScreenViewerFrame,
+} from '../data/screen-viewer';
 
 const MEASUREMENT_MS = 60_000;
 const FRAME_TIMEOUT_MS = 10_000;
@@ -37,12 +38,13 @@ type Result = ReturnType<ScreenMetrics['result']>;
 interface Run {
   readonly connection: RTCPeerConnection;
   readonly channel: RTCDataChannel;
-  readonly buffer: ScreenFrameBuffer;
+  readonly assembler: ScreenViewerFrameAssembler;
   readonly parentSessionId: string;
   readonly width: number;
   readonly fps: number;
   sessionId: string | null;
   stats: ScreenMetrics | null;
+  frameStats: ScreenFrameStats | null;
   startedAt: number;
   watchdog?: ReturnType<typeof setTimeout>;
   deadline?: ReturnType<typeof setTimeout>;
@@ -210,12 +212,13 @@ export class PcScreenProbe {
       run = {
         connection,
         channel,
-        buffer: new ScreenFrameBuffer(),
+        assembler: new ScreenViewerFrameAssembler(),
         parentSessionId,
         width,
         fps,
         sessionId: null,
         stats: null,
+        frameStats: null,
         startedAt: 0,
         painting: false,
       };
@@ -288,34 +291,41 @@ export class PcScreenProbe {
 
   private receive(run: Run, data: unknown): void {
     if (typeof data === 'string') {
-      const header = JSON.parse(data);
-      if (header?.k === 's.state' && header.state === 'locked') {
+      const message = parseViewerMessage(data);
+      if (message.k === 's.state' && message.state === 'locked') {
         this.finish(LOCKED);
-      } else if (header?.k === 'ready' && run.stats === null) {
+      } else if (message.k === 's.mon' && run.stats === null) {
         run.startedAt = performance.now();
         run.stats = new ScreenMetrics(run.startedAt, STALL_MS);
         this.current.set(run.stats.result(run.startedAt));
         this.status.set('');
         run.deadline = setTimeout(() => this.finish(DONE, true), MEASUREMENT_MS);
         this.request(run, true);
-      } else if (run.stats !== null && !run.painting) {
-        run.buffer.header(header);
-      } else {
-        throw new Error('mensagem de tela fora de ordem');
+      } else if (message.k === 's.stat') {
+        if (!run.stats || run.painting || run.frameStats) {
+          throw new Error('medição de quadro fora de ordem');
+        }
+        run.frameStats = message;
       }
       return;
     }
-    if (!(data instanceof ArrayBuffer) || run.painting) throw new Error('quadro inválido');
-    const frame = run.buffer.chunk(data);
+    const stats = run.frameStats;
+    if (!(data instanceof ArrayBuffer) || run.painting || !stats) {
+      throw new Error('quadro inválido');
+    }
+    const frame = run.assembler.push(data, run.width);
     if (frame) {
+      if (stats.bytes !== frame.wireBytes) throw new Error('tamanho do quadro diverge da medição');
+      run.frameStats = null;
       run.painting = true;
-      void this.paint(run, frame).catch(() => {
+      void this.paint(run, frame, stats).catch(() => {
         if (this.run === run) this.finish(FAILED);
       });
     }
   }
 
   private request(run: Run, reset = false): void {
+    if (!run.stats) return;
     clearTimeout(run.watchdog);
     run.watchdog = setTimeout(() => this.finish(FAILED), FRAME_TIMEOUT_MS);
     run.channel.send(
@@ -323,18 +333,21 @@ export class PcScreenProbe {
         k: 's.get',
         width: run.width,
         fps: run.fps,
-        marker: run.stats?.request(),
+        marker: run.stats.request(),
         ...(reset ? { reset: true } : {}),
       }),
     );
   }
 
-  private async paint(run: Run, frame: ScreenFrame): Promise<void> {
+  private async paint(run: Run, frame: ScreenViewerFrame, stats: ScreenFrameStats): Promise<void> {
     const bitmap = await createImageBitmap(new Blob(frame.chunks, { type: 'image/jpeg' }));
     const canvas = this.surface()?.nativeElement;
     let marker: number;
     try {
       if (this.run !== run || !canvas) return;
+      if (bitmap.width !== frame.width || bitmap.height !== frame.height) {
+        throw new Error('imagem diverge do cabeçalho');
+      }
       if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
       if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
       const context = canvas.getContext('2d', { willReadFrequently: true });
@@ -356,7 +369,7 @@ export class PcScreenProbe {
       this.finish(DONE, true);
       return;
     }
-    run.stats.frame(frame, canvas.width, marker, at);
+    run.stats.frame(stats, frame.width, marker, at);
     this.current.set(run.stats.result(at));
     run.painting = false;
     this.request(run);

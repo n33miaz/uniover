@@ -12,6 +12,12 @@ export interface ScreenMonitor {
 
 export type ScreenViewState = 'ok' | 'locked' | 'elevated';
 
+export interface ScreenFrameStats {
+  readonly bytes: number;
+  readonly cpu: number | null;
+  readonly privateMB: number;
+}
+
 /** A posição do cursor, em pixels do monitor. */
 export interface ScreenCursor {
   readonly x: number;
@@ -30,7 +36,8 @@ export type ScreenViewerMessage =
     }
   | { readonly k: 's.same'; readonly crc: number }
   | { readonly k: 's.cur'; readonly cursor: ScreenCursor }
-  | { readonly k: 's.state'; readonly state: ScreenViewState };
+  | { readonly k: 's.state'; readonly state: ScreenViewState }
+  | ({ readonly k: 's.stat' } & ScreenFrameStats);
 
 const MAX_COORD = 100_000;
 const MAX_MONITORS = 16;
@@ -102,8 +109,7 @@ export function parseViewerMessage(text: string): ScreenViewerMessage {
         });
       }
       const layout = data['layout'];
-      if (layout !== undefined && !whole(layout, 0, 0xffff_ffff))
-        throw new Error('arranjo inválido');
+      if (layout != null && !whole(layout, 0, 0xffff_ffff)) throw new Error('arranjo inválido');
       return { k: 's.mon', monitors, layout: layout ?? null };
     }
     case 's.same':
@@ -121,6 +127,19 @@ export function parseViewerMessage(text: string): ScreenViewerMessage {
         throw new Error('estado de tela inválido');
       }
       return { k: 's.state', state: data['state'] };
+    case 's.stat': {
+      const { bytes, cpu, privateMB } = data;
+      if (
+        !whole(bytes, 0, Number.MAX_SAFE_INTEGER) ||
+        (cpu !== null && (typeof cpu !== 'number' || !Number.isFinite(cpu) || cpu < 0)) ||
+        typeof privateMB !== 'number' ||
+        !Number.isFinite(privateMB) ||
+        privateMB < 0
+      ) {
+        throw new Error('medição de quadro inválida');
+      }
+      return { k: 's.stat', bytes, cpu, privateMB };
+    }
     default:
       throw new Error('mensagem de tela desconhecida');
   }
@@ -131,6 +150,7 @@ export interface ScreenViewerFrame {
   readonly sequence: number;
   readonly width: number;
   readonly height: number;
+  readonly wireBytes: number;
   readonly chunks: ArrayBuffer[];
 }
 
@@ -138,7 +158,58 @@ const HEADER_BYTES = 16;
 const MAGIC = 0x554f5346; // "UOSF"
 const VERSION = 1;
 const MAX_JPEG_BYTES = 8 * 1024 ** 2;
+const CHUNK_BYTES = 16 * 1024;
+const MAX_CHUNKS = Math.ceil((HEADER_BYTES + MAX_JPEG_BYTES) / CHUNK_BYTES);
 const MAX_SIDE = 16_384;
+// 8,3 MP acomodam um monitor 8K em retrato após a redução para 1920 px de largura.
+const MAX_PIXELS = 1920 * 4320;
+
+/** Lê as dimensões do SOF sem copiar o JPEG, mesmo quando um segmento cruza mensagens. */
+function jpegDimensions(chunks: ArrayBuffer[], size: number): { width: number; height: number } {
+  const views = chunks.map((chunk) => new Uint8Array(chunk));
+  let index = 0;
+  let offset = 0;
+  let remaining = size;
+  function advance(bytes: number): void {
+    if (bytes > remaining) throw new Error('JPEG truncado');
+    remaining -= bytes;
+    offset += bytes;
+    while (index < views.length && offset >= views[index].length) {
+      offset -= views[index++].length;
+    }
+  }
+  function read(): number {
+    if (remaining === 0) throw new Error('JPEG truncado');
+    const value = views[index][offset];
+    advance(1);
+    return value;
+  }
+  const word = () => (read() << 8) | read();
+
+  if (word() !== 0xffd8) throw new Error('JPEG inválido');
+  while (remaining > 0) {
+    if (read() !== 0xff) break;
+    let marker = read();
+    while (marker === 0xff) marker = read();
+    // SOS, EOI e marcadores sem comprimento não podem anteceder o SOF do quadro.
+    if (marker < 0xc0 || (marker >= 0xd0 && marker <= 0xda)) break;
+    const length = word();
+    if (length < 2 || length - 2 > remaining) throw new Error('segmento JPEG inválido');
+    if (marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      if (length < 11) throw new Error('SOF do JPEG inválido');
+      read(); // Precisão de cada amostra.
+      const height = word();
+      const width = word();
+      const components = read();
+      if (components === 0 || length !== 8 + 3 * components) {
+        throw new Error('SOF do JPEG inválido');
+      }
+      return { width, height };
+    }
+    advance(length - 2);
+  }
+  throw new Error('JPEG sem dimensões');
+}
 
 /**
  * Monta o quadro binário: 16 bytes de cabeçalho (marca `UOSF`, versão, reservado, largura, altura, sequência, tamanho
@@ -149,7 +220,7 @@ export class ScreenViewerFrameAssembler {
   private frame: (ScreenViewerFrame & { bytes: number; received: number }) | null = null;
 
   /** Devolve o quadro quando o último pedaço chega; lança se os bytes não seguem o protocolo. */
-  push(data: ArrayBuffer): ScreenViewerFrame | null {
+  push(data: ArrayBuffer, requestedWidth: number): ScreenViewerFrame | null {
     let body = data;
     if (this.frame === null) {
       if (data.byteLength <= HEADER_BYTES) throw new Error('quadro sem imagem');
@@ -165,15 +236,29 @@ export class ScreenViewerFrameAssembler {
         width < 1 ||
         height < 1 ||
         width > MAX_SIDE ||
-        height > MAX_SIDE
+        height > MAX_SIDE ||
+        width > requestedWidth ||
+        width * height > MAX_PIXELS
       ) {
         throw new Error('cabeçalho de quadro inválido');
       }
-      this.frame = { sequence: view.getUint16(10), width, height, chunks: [], bytes, received: 0 };
+      this.frame = {
+        sequence: view.getUint16(10),
+        width,
+        height,
+        wireBytes: bytes + HEADER_BYTES,
+        chunks: [],
+        bytes,
+        received: 0,
+      };
       body = data.slice(HEADER_BYTES);
     }
     const frame = this.frame;
-    if (frame.received + body.byteLength > frame.bytes) {
+    if (
+      body.byteLength === 0 ||
+      frame.chunks.length >= MAX_CHUNKS ||
+      frame.received + body.byteLength > frame.bytes
+    ) {
       this.frame = null;
       throw new Error('pedaço de quadro inválido');
     }
@@ -181,10 +266,15 @@ export class ScreenViewerFrameAssembler {
     frame.received += body.byteLength;
     if (frame.received < frame.bytes) return null;
     this.frame = null;
+    const jpeg = jpegDimensions(frame.chunks, frame.bytes);
+    if (jpeg.width !== frame.width || jpeg.height !== frame.height) {
+      throw new Error('JPEG diverge do cabeçalho');
+    }
     return {
       sequence: frame.sequence,
       width: frame.width,
       height: frame.height,
+      wireBytes: frame.wireBytes,
       chunks: frame.chunks,
     };
   }
