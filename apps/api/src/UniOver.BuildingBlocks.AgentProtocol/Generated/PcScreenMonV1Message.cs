@@ -16,39 +16,12 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     using System.Globalization;
 
     /// <summary>
-    /// Agente para API: lista de monitores do PC anunciada no canal de dados WebRTC ('screen').
-    /// 'monitors' lista de 1 a 16 monitores com id estável na sessão, dimensões e posição física
-    /// no desktop virtual. 'layout' é a impressão do arranjo inteiro (CRC-32 dos monitores, 0 a
-    /// 4294967295) ou null para agente antigo.
+    /// PC para app: lista de monitores ('s.mon') no canal de dados WebRTC 'screen'. O objeto vai
+    /// nu, sem envelope. 'monitors' traz de 1 a 16 monitores com id estável na sessão, dimensões
+    /// e posição física no desktop virtual. 'layout' é a impressão do arranjo inteiro (CRC-32
+    /// dos monitores, 0 a 4294967295); pode ser null, e um PC anterior ao toque omite o campo.
     /// </summary>
     public partial class PcScreenMonV1Message
-    {
-        [JsonPropertyName("body")]
-        public PcScreenMonV1Body Body { get; set; }
-
-        [JsonPropertyName("correlationId")]
-        public Guid? CorrelationId { get; set; }
-
-        [JsonPropertyName("id")]
-        public Guid Id { get; set; }
-
-        [JsonPropertyName("source")]
-        public string Source { get; set; }
-
-        [JsonPropertyName("target")]
-        public string Target { get; set; }
-
-        [JsonPropertyName("ts")]
-        public DateTimeOffset Ts { get; set; }
-
-        [JsonPropertyName("type")]
-        public string Type { get; set; }
-
-        [JsonPropertyName("v")]
-        public long V { get; set; }
-    }
-
-    public partial class PcScreenMonV1Body
     {
         [JsonPropertyName("k")]
         public string K { get; set; }
@@ -57,10 +30,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         public long? Layout { get; set; }
 
         [JsonPropertyName("monitors")]
-        public PcScreenMonV1BodyMonitorsItem[] Monitors { get; set; }
+        public PcScreenMonV1MonitorsItem[] Monitors { get; set; }
     }
 
-    public partial class PcScreenMonV1BodyMonitorsItem
+    public partial class PcScreenMonV1MonitorsItem
     {
         [JsonPropertyName("height")]
         public long Height { get; set; }

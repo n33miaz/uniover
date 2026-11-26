@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/screen/messages/pc.screen.state.v1.schema.json",
+  "title": "pc.screen.state.v1",
+  "description": "PC para app: estado do desktop ('s.state') no canal de dados WebRTC 'screen'. O objeto vai nu, sem envelope. 'ok' é a área de trabalho normal; 'locked' é a estação bloqueada ou a tela de logon/UAC; 'elevated' indica janela de administrador em foco.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "k",
+    "state"
+  ],
+  "properties": {
+    "k": {
+      "const": "s.state"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "locked",
+        "elevated"
+      ]
+    }
+  }
+}

@@ -1,19 +1,9 @@
 /* GERADO por `npm --prefix contracts run generate` — não editar. */
 
 /**
- * Agente para API: posição física do cursor do mouse no desktop virtual ('s.cur'), enviada no canal WebRTC ('screen').
+ * PC para app: posição física do cursor no desktop virtual ('s.cur') no canal de dados WebRTC 'screen'. O objeto vai nu, sem envelope.
  */
 export interface PcScreenCurV1Message {
-  v: 1;
-  id: string;
-  type: 'pc.screen.cur.v1';
-  source: string;
-  target: string;
-  ts: string;
-  correlationId: string | null;
-  body: PcScreenCurV1Body;
-}
-export interface PcScreenCurV1Body {
   k: 's.cur';
   x: number;
   y: number;

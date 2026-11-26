@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/screen/messages/pc.screen.stat.v1.schema.json",
+  "title": "pc.screen.stat.v1",
+  "description": "PC para app: medições da captura ('s.stat') no canal de dados WebRTC 'screen', enviadas quando o pedido traz marca de medição. O objeto vai nu, sem envelope.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "k",
+    "bytes",
+    "cpu",
+    "privateMB"
+  ],
+  "properties": {
+    "k": {
+      "const": "s.stat"
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cpu": {
+      "oneOf": [
+        {
+          "type": "number",
+          "minimum": 0
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "privateMB": {
+      "type": "number",
+      "minimum": 0
+    }
+  }
+}

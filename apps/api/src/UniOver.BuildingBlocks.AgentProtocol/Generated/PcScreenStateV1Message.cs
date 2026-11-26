@@ -16,47 +16,20 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     using System.Globalization;
 
     /// <summary>
-    /// Agente para API: estado do desktop do PC ('s.state'), enviado no canal WebRTC ('screen').
-    /// 'ok' é área de trabalho normal; 'locked' é estação bloqueada ou tela de logon/UAC;
-    /// 'elevated' indica janela de administrador em foco.
+    /// PC para app: estado do desktop ('s.state') no canal de dados WebRTC 'screen'. O objeto
+    /// vai nu, sem envelope. 'ok' é a área de trabalho normal; 'locked' é a estação bloqueada ou
+    /// a tela de logon/UAC; 'elevated' indica janela de administrador em foco.
     /// </summary>
     public partial class PcScreenStateV1Message
-    {
-        [JsonPropertyName("body")]
-        public PcScreenStateV1Body Body { get; set; }
-
-        [JsonPropertyName("correlationId")]
-        public Guid? CorrelationId { get; set; }
-
-        [JsonPropertyName("id")]
-        public Guid Id { get; set; }
-
-        [JsonPropertyName("source")]
-        public string Source { get; set; }
-
-        [JsonPropertyName("target")]
-        public string Target { get; set; }
-
-        [JsonPropertyName("ts")]
-        public DateTimeOffset Ts { get; set; }
-
-        [JsonPropertyName("type")]
-        public string Type { get; set; }
-
-        [JsonPropertyName("v")]
-        public long V { get; set; }
-    }
-
-    public partial class PcScreenStateV1Body
     {
         [JsonPropertyName("k")]
         public string K { get; set; }
 
         [JsonPropertyName("state")]
-        public PcScreenStateV1BodyState State { get; set; }
+        public PcScreenStateV1State State { get; set; }
     }
 
-    public enum PcScreenStateV1BodyState { Elevated, Locked, Ok };
+    public enum PcScreenStateV1State { Elevated, Locked, Ok };
 
     public partial class PcScreenStateV1Message
     {
@@ -74,49 +47,49 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         {
             Converters =
             {
-                PcScreenStateV1MessagePcScreenStateV1BodyStateConverter.Singleton,
+                PcScreenStateV1MessagePcScreenStateV1StateConverter.Singleton,
                 PcScreenStateV1MessageIsoDateTimeOffsetConverter.Singleton
             },
         };
     }
 
-    internal class PcScreenStateV1MessagePcScreenStateV1BodyStateConverter : JsonConverter<PcScreenStateV1BodyState>
+    internal class PcScreenStateV1MessagePcScreenStateV1StateConverter : JsonConverter<PcScreenStateV1State>
     {
-        public override bool CanConvert(Type t) => t == typeof(PcScreenStateV1BodyState);
+        public override bool CanConvert(Type t) => t == typeof(PcScreenStateV1State);
 
-        public override PcScreenStateV1BodyState Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        public override PcScreenStateV1State Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
             var value = reader.GetString();
             switch (value)
             {
                 case "elevated":
-                    return PcScreenStateV1BodyState.Elevated;
+                    return PcScreenStateV1State.Elevated;
                 case "locked":
-                    return PcScreenStateV1BodyState.Locked;
+                    return PcScreenStateV1State.Locked;
                 case "ok":
-                    return PcScreenStateV1BodyState.Ok;
+                    return PcScreenStateV1State.Ok;
             }
-            throw new Exception("Cannot unmarshal type PcScreenStateV1BodyState");
+            throw new Exception("Cannot unmarshal type PcScreenStateV1State");
         }
 
-        public override void Write(Utf8JsonWriter writer, PcScreenStateV1BodyState value, JsonSerializerOptions options)
+        public override void Write(Utf8JsonWriter writer, PcScreenStateV1State value, JsonSerializerOptions options)
         {
             switch (value)
             {
-                case PcScreenStateV1BodyState.Elevated:
+                case PcScreenStateV1State.Elevated:
                     JsonSerializer.Serialize(writer, "elevated", options);
                     return;
-                case PcScreenStateV1BodyState.Locked:
+                case PcScreenStateV1State.Locked:
                     JsonSerializer.Serialize(writer, "locked", options);
                     return;
-                case PcScreenStateV1BodyState.Ok:
+                case PcScreenStateV1State.Ok:
                     JsonSerializer.Serialize(writer, "ok", options);
                     return;
             }
-            throw new Exception("Cannot marshal type PcScreenStateV1BodyState");
+            throw new Exception("Cannot marshal type PcScreenStateV1State");
         }
 
-        public static readonly PcScreenStateV1MessagePcScreenStateV1BodyStateConverter Singleton = new PcScreenStateV1MessagePcScreenStateV1BodyStateConverter();
+        public static readonly PcScreenStateV1MessagePcScreenStateV1StateConverter Singleton = new PcScreenStateV1MessagePcScreenStateV1StateConverter();
     }
 
     internal class PcScreenStateV1MessageIsoDateTimeOffsetConverter : JsonConverter<DateTimeOffset>

@@ -16,37 +16,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     using System.Globalization;
 
     /// <summary>
-    /// Agente para API: aviso de que o quadro atual da tela tem o mesmo CRC-32 do anterior
-    /// ('s.same'), evitando reenvio de imagem idêntica pelo canal WebRTC ('screen').
+    /// PC para app: o quadro atual tem o mesmo CRC-32 do anterior ('s.same') no canal de dados
+    /// WebRTC 'screen', e a imagem não é reenviada. O objeto vai nu, sem envelope.
     /// </summary>
     public partial class PcScreenSameV1Message
-    {
-        [JsonPropertyName("body")]
-        public PcScreenSameV1Body Body { get; set; }
-
-        [JsonPropertyName("correlationId")]
-        public Guid? CorrelationId { get; set; }
-
-        [JsonPropertyName("id")]
-        public Guid Id { get; set; }
-
-        [JsonPropertyName("source")]
-        public string Source { get; set; }
-
-        [JsonPropertyName("target")]
-        public string Target { get; set; }
-
-        [JsonPropertyName("ts")]
-        public DateTimeOffset Ts { get; set; }
-
-        [JsonPropertyName("type")]
-        public string Type { get; set; }
-
-        [JsonPropertyName("v")]
-        public long V { get; set; }
-    }
-
-    public partial class PcScreenSameV1Body
     {
         [JsonPropertyName("crc")]
         public long Crc { get; set; }
