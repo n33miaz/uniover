@@ -4,6 +4,7 @@ import type { Page } from '@playwright/test';
 export interface RtcLog {
   pointer: Record<string, unknown>[];
   input: Record<string, unknown>[];
+  screen?: Record<string, unknown>[];
   /** Quantas conexões WebRTC o app abriu. */
   connections: number;
 }
@@ -23,9 +24,15 @@ export async function installFakeRtc(
       delete w['RTCPeerConnection'];
       return;
     }
-    const log = { pointer: [] as unknown[], input: [] as unknown[], connections: 0 };
+    const log: Record<string, unknown> = {
+      pointer: [] as unknown[],
+      input: [] as unknown[],
+      screen: [] as unknown[],
+      connections: 0,
+    };
     w['__rtc'] = log;
     const connections: FakeConnection[] = [];
+    w['__rtcAutoSame'] = false;
     // A rede some: o canal cai e as tentativas seguintes (o app tenta de novo depois de um recuo) também falham.
     w['__rtcDrop'] = () => {
       w['__rtcBroken'] = true;
@@ -39,10 +46,28 @@ export async function installFakeRtc(
       input?.reply({ k: 'bye', r: reason });
     };
 
+    // Avisa quando o canal de tela da conexão WebRTC estiver aberto e pronto para receber mensagens.
+    w['__rtcScreenReady'] = () => {
+      return connections.some((c) =>
+        c.channels.some((ch) => ch.label === 'screen' && ch.readyState === 'open'),
+      );
+    };
+
+    // Dispara mensagens em canais com label 'screen'.
+    w['__rtcSendScreen'] = (data: unknown) => {
+      for (const connection of connections) {
+        for (const channel of connection.channels) {
+          if (channel.label === 'screen') {
+            channel.dispatchEvent(new MessageEvent('message', { data }));
+          }
+        }
+      }
+    };
+
     class FakeChannel extends EventTarget {
       readyState = 'connecting';
       bufferedAmount = 0;
-      constructor(readonly label: 'pointer' | 'input') {
+      constructor(readonly label: string) {
         super();
       }
       reply(message: unknown) {
@@ -52,16 +77,22 @@ export async function installFakeRtc(
           }
         }, 0);
       }
-      send(text: string) {
-        const message = JSON.parse(text) as Record<string, unknown>;
-        (log[this.label] as unknown[]).push(message);
-        if (this.label === 'input' && message['k'] === 'auth')
-          this.reply({ k: 'ready', life: 600 });
-        if (this.label === 'input' && message['k'] === 'cmd') {
-          this.reply({ k: 'ack', i: message['i'], ok: true });
-        }
-        if (this.label === 'pointer' && message['k'] === 'ping') {
-          this.reply({ k: 'pong', n: message['n'], c: true });
+      send(data: unknown) {
+        if (typeof data === 'string') {
+          const message = JSON.parse(data) as Record<string, unknown>;
+          if (!Array.isArray(log[this.label])) log[this.label] = [];
+          (log[this.label] as unknown[]).push(message);
+          if (this.label === 'input' && message['k'] === 'auth')
+            this.reply({ k: 'ready', life: 600 });
+          if (this.label === 'input' && message['k'] === 'cmd') {
+            this.reply({ k: 'ack', i: message['i'], ok: true });
+          }
+          if (this.label === 'pointer' && message['k'] === 'ping') {
+            this.reply({ k: 'pong', n: message['n'], c: true });
+          }
+          if (this.label === 'screen' && message['k'] === 's.get' && w['__rtcAutoSame']) {
+            this.reply({ k: 's.same', crc: 1 });
+          }
         }
       }
       close() {
@@ -82,10 +113,10 @@ export async function installFakeRtc(
       channels: FakeChannel[] = [];
       constructor() {
         super();
-        log.connections++;
+        (log['connections'] as number)++;
         connections.push(this);
       }
-      createDataChannel(label: 'pointer' | 'input') {
+      createDataChannel(label: string) {
         const channel = new FakeChannel(label);
         this.channels.push(channel);
         return channel;
@@ -136,4 +167,70 @@ export function rtcLog(page: Page): Promise<RtcLog | null> {
 /** O canal cai de repente (rede perdida): o estado do par vira "falhou". */
 export async function dropRtc(page: Page): Promise<void> {
   await page.evaluate(() => (window as unknown as { __rtcDrop: () => void }).__rtcDrop());
+}
+
+/** Injeta a lista de monitores no canal WebRTC de tela. */
+export async function injectRtcScreenMonitors(
+  page: Page,
+  monitors: Array<{ id: number; primary: boolean; width: number; height: number }>,
+  layout = 1,
+): Promise<void> {
+  await page.waitForFunction(() => {
+    const w = window as unknown as { __rtcScreenReady?: () => boolean };
+    return w.__rtcScreenReady?.() === true;
+  });
+  await page.evaluate(
+    ({ monitors, layout }) => {
+      const w = window as unknown as { __rtcSendScreen?: (data: unknown) => void };
+      w.__rtcSendScreen?.(JSON.stringify({ k: 's.mon', monitors, layout }));
+    },
+    { monitors, layout },
+  );
+}
+
+/** Injeta um quadro binário (UOSF v1 com JPEG válido) no canal WebRTC de tela. */
+export async function injectRtcScreenFrame(
+  page: Page,
+  width = 640,
+  height = 360,
+  sequence = 1,
+): Promise<void> {
+  await page.evaluate(
+    async ({ width, height, sequence }) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = '24px sans-serif';
+        ctx.fillText('Uniover Screen Test', 20, 40);
+      }
+      const blob = await new Promise<Blob>((resolve) =>
+        canvas.toBlob((b) => resolve(b!), 'image/jpeg', 0.8),
+      );
+      const jpegBytes = new Uint8Array(await blob.arrayBuffer());
+
+      const packet = new Uint8Array(16 + jpegBytes.length);
+      const view = new DataView(packet.buffer);
+      view.setUint32(0, 0x554f5346); // UOSF
+      view.setUint8(4, 1); // version 1
+      view.setUint8(5, 0); // flags
+      view.setUint16(6, width);
+      view.setUint16(8, height);
+      view.setUint16(10, sequence);
+      view.setUint32(12, jpegBytes.length);
+      packet.set(jpegBytes, 16);
+
+      const w = window as unknown as {
+        __rtcSendScreen?: (data: unknown) => void;
+        __rtcAutoSame?: boolean;
+      };
+      w.__rtcSendScreen?.(packet.buffer);
+      w.__rtcAutoSame = true;
+    },
+    { width, height, sequence },
+  );
 }
