@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/screen/messages/pc.screen.get.v1.schema.json",
+  "title": "pc.screen.get.v1",
+  "description": "App para PC: pedido de quadro ('s.get') no canal de dados WebRTC 'screen'. O objeto vai nu, sem envelope. Um pedido por vez: o próximo só sai depois que o anterior foi respondido. 'monitor' é o id anunciado em 's.mon' (0 a 2147483647; omitido é o monitor principal). 'width' é a largura máxima da imagem em pixels físicos (128 a 1920, padrão 1280). 'fps' é o limite de quadros por segundo (1 a 10, padrão 5). 'marker' é a marca de medição embutida nos pixels (0 a 65535, padrão 0). 'reset' (padrão false) força o envio do quadro sem comparar o CRC e zera as medições.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "k"
+  ],
+  "properties": {
+    "k": {
+      "const": "s.get"
+    },
+    "monitor": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 128,
+      "maximum": 1920,
+      "default": 1280
+    },
+    "fps": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 5
+    },
+    "marker": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535,
+      "default": 0
+    },
+    "reset": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

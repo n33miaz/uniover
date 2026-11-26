@@ -45,12 +45,6 @@ from .pc_rtc_closed_v1 import PcRtcClosedV1Message
 from .pc_rtc_offer_v1 import PcRtcOfferV1Message
 from .pc_rtc_reconcile_v1 import PcRtcReconcileV1Message
 from .pc_rtc_reconciled_v1 import PcRtcReconciledV1Message
-from .pc_screen_cur_v1 import PcScreenCurV1Message
-from .pc_screen_get_v1 import PcScreenGetV1Message
-from .pc_screen_mon_v1 import PcScreenMonV1Message
-from .pc_screen_same_v1 import PcScreenSameV1Message
-from .pc_screen_stat_v1 import PcScreenStatV1Message
-from .pc_screen_state_v1 import PcScreenStateV1Message
 from .pc_tap_v1 import PcTapV1Message
 from .pc_text_v1 import PcTextV1Message
 from .pc_text_v2 import PcTextV2Message
@@ -124,12 +118,6 @@ MESSAGE_MODELS: dict[str, type[BaseModel]] = {
     "pc.rtc.offer.v1": PcRtcOfferV1Message,
     "pc.rtc.reconcile.v1": PcRtcReconcileV1Message,
     "pc.rtc.reconciled.v1": PcRtcReconciledV1Message,
-    "pc.screen.cur.v1": PcScreenCurV1Message,
-    "pc.screen.get.v1": PcScreenGetV1Message,
-    "pc.screen.mon.v1": PcScreenMonV1Message,
-    "pc.screen.same.v1": PcScreenSameV1Message,
-    "pc.screen.stat.v1": PcScreenStatV1Message,
-    "pc.screen.state.v1": PcScreenStateV1Message,
     "pc.tap.v1": PcTapV1Message,
     "pc.text.v1": PcTextV1Message,
     "pc.text.v2": PcTextV2Message,

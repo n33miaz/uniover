@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/screen/messages/pc.screen.cur.v1.schema.json",
+  "title": "pc.screen.cur.v1",
+  "description": "PC para app: posição física do cursor no desktop virtual ('s.cur') no canal de dados WebRTC 'screen'. O objeto vai nu, sem envelope.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "k",
+    "x",
+    "y"
+  ],
+  "properties": {
+    "k": {
+      "const": "s.cur"
+    },
+    "x": {
+      "type": "integer",
+      "minimum": -100000,
+      "maximum": 100000
+    },
+    "y": {
+      "type": "integer",
+      "minimum": -100000,
+      "maximum": 100000
+    }
+  }
+}

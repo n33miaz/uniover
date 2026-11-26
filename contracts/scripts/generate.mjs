@@ -4,6 +4,8 @@
 //   (c) modelos pydantic e cópias dos esquemas (apps/agent/src/uniover_agent/contracts)
 //   (d) tipos TypeScript do HTTP               (apps/web/src/app/core/api/generated/schema.ts)
 //   (e) tipos TypeScript das mensagens         (apps/web/src/app/core/api/generated/agent)
+// Os objetos do canal de dados WebRTC `screen` (contracts/agent/screen) geram tipos em (b), (c) e (e), sem
+// envelope e fora do registro e das constantes dos `type`: não passam pelo transporte entre a API e o agente.
 // Uso: `npm --prefix contracts run generate`. O `check.mjs` reaproveita `generateAll` numa pasta temporária.
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -48,17 +50,23 @@ const snake = (s) => s.replace(/[^A-Za-z0-9]+/g, "_").toLowerCase();
 // Entrada: esquemas do agente, já "achatados" (sem $ref para outros arquivos) para os geradores
 // ---------------------------------------------------------------------------------------------------------
 
-export function loadSchemas() {
-  const envelope = readJson(join(AGENT_SCHEMAS, "envelope.schema.json"));
-  const messages = readdirSync(join(AGENT_SCHEMAS, "messages"))
+function readSchemaDir(dir) {
+  return readdirSync(dir)
     .filter((f) => f.endsWith(".schema.json"))
     .sort()
     .map((f) => {
-      const schema = readJson(join(AGENT_SCHEMAS, "messages", f));
+      const schema = readJson(join(dir, f));
       const type = f.replace(/\.schema\.json$/, "");
       return { file: f, type, schema };
     });
-  return { envelope, messages };
+}
+
+export function loadSchemas() {
+  const envelope = readJson(join(AGENT_SCHEMAS, "envelope.schema.json"));
+  const messages = readSchemaDir(join(AGENT_SCHEMAS, "messages"));
+  // Canal `screen`: o esquema descreve o objeto inteiro que trafega, sem envelope.
+  const screen = readSchemaDir(join(AGENT_SCHEMAS, "screen", "messages"));
+  return { envelope, messages, screen };
 }
 
 /** Troca `$ref` para `envelope.schema.json#/$defs/x` (ou `#/$defs/x`) pelo conteúdo, recursivamente. */
@@ -128,7 +136,7 @@ function constToType(node) {
   }
 }
 
-export function flatten({ envelope, messages }) {
+export function flatten({ envelope, messages, screen }) {
   const defs = envelope.$defs;
   const flatEnvelope = structuredClone(envelope);
   flatEnvelope.title = "Envelope";
@@ -146,7 +154,15 @@ export function flatten({ envelope, messages }) {
     stripValidationOnly(flat);
     return { type, name, schema: flat };
   });
-  return { flatEnvelope, flatMessages };
+  const flatScreen = screen.map(({ type, schema }) => {
+    const name = pascal(type);
+    const flat = structuredClone(schema);
+    flat.title = `${name}Message`;
+    nameNested(flat, name);
+    stripValidationOnly(flat);
+    return { type, name, schema: flat };
+  });
+  return { flatEnvelope, flatMessages, flatScreen };
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -164,6 +180,10 @@ function run(cmd, args, options = {}) {
 
 const QUICKTYPE = join(CONTRACTS, "node_modules", "quicktype", "dist", "index.js");
 const DATAMODEL_CODEGEN = "datamodel-code-generator==0.86.0";
+
+// Só no canal `screen`: campo opcional pode faltar, mas não aceita `null` (como no esquema). O
+// `--strict-nullable` cobre os campos com default; o `--use-missing-sentinel`, os sem default (`pydantic.MISSING`).
+const SCREEN_PY_ARGS = ["--strict-nullable", "--use-missing-sentinel", "--target-pydantic-version", "2.14"];
 
 // ---------------------------------------------------------------------------------------------------------
 // (a) OpenAPI
@@ -228,7 +248,10 @@ function generateCsharp(out, flat, messages) {
   const tmp = join(out, ".tmp-quicktype");
   mkdirSync(tmp, { recursive: true });
 
-  const types = [{ type: "envelope", name: "Envelope", schema: flat.flatEnvelope }, ...flat.flatMessages.map((m) => ({ type: m.type, name: `${m.name}Message`, schema: m.schema }))];
+  const types = [
+    { type: "envelope", name: "Envelope", schema: flat.flatEnvelope },
+    ...[...flat.flatMessages, ...flat.flatScreen].map((m) => ({ type: m.type, name: `${m.name}Message`, schema: m.schema })),
+  ];
   for (const t of types) {
     const schema = structuredClone(t.schema);
     constToType(schema);
@@ -316,6 +339,8 @@ function generatePython(out, flat, schemasMeta) {
   const items = [
     { module: "envelope", cls: "Envelope", schema: flat.flatEnvelope },
     ...flat.flatMessages.map((m) => ({ module: snake(m.type), cls: `${m.name}Message`, schema: m.schema, type: m.type })),
+    // Sem `type`: fica fora do `MESSAGE_MODELS`.
+    ...flat.flatScreen.map((m) => ({ module: snake(m.type), cls: `${m.name}Message`, schema: m.schema, extraArgs: SCREEN_PY_ARGS })),
   ];
   for (const it of items) {
     const input = join(tmp, `${it.module}.schema.json`);
@@ -341,6 +366,7 @@ function generatePython(out, flat, schemasMeta) {
       "--formatters", "builtin",
       "--custom-file-header", PY_HEADER,
       "--class-name", it.cls,
+      ...(it.extraArgs ?? []),
     ]);
     write(out, `${dir}/${it.module}.py`, wrapPythonRootModelDefaults(readFileSync(output, "utf8")));
   }
@@ -398,7 +424,10 @@ async function generateTypeScriptMessages(out, flat) {
   const dir = "apps/web/src/app/core/api/generated/agent";
   const items = [
     { file: "envelope", name: "Envelope", schema: flat.flatEnvelope },
-    ...flat.flatMessages.map((m) => ({ file: snake(m.type), name: `${m.name}Message`, schema: m.schema })),
+    // Um índice só, em ordem alfabética: os dois grupos viram tipos TypeScript do mesmo jeito.
+    ...[...flat.flatMessages, ...flat.flatScreen]
+      .sort((a, b) => (a.type < b.type ? -1 : 1))
+      .map((m) => ({ file: snake(m.type), name: `${m.name}Message`, schema: m.schema })),
   ];
   for (const it of items) {
     const ts = await compile(structuredClone(it.schema), it.name, {

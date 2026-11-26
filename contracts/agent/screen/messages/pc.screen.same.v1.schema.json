@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uniover.dev/contracts/agent/screen/messages/pc.screen.same.v1.schema.json",
+  "title": "pc.screen.same.v1",
+  "description": "PC para app: o quadro atual tem o mesmo CRC-32 do anterior ('s.same') no canal de dados WebRTC 'screen', e a imagem não é reenviada. O objeto vai nu, sem envelope.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "k",
+    "crc"
+  ],
+  "properties": {
+    "k": {
+      "const": "s.same"
+    },
+    "crc": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    }
+  }
+}

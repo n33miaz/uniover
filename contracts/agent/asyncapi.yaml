@@ -3,8 +3,10 @@ info:
   title: Contrato de mensagens do agente UniOver
   version: 1.0.0
   description: >-
-    Envelope único (envelope.schema.json) igual em qualquer transporte. Hoje o transporte é
-    WebSocket; o servidor MQTT está declarado para o futuro e ainda não é usado.
+    Envelope único (envelope.schema.json) igual em qualquer transporte entre a API e o agente.
+    Hoje o transporte é WebSocket; o servidor MQTT está declarado para o futuro e ainda não é usado.
+    A exceção é o canal de dados WebRTC `screen` (pcScreenData), direto entre o app e o PC, que leva
+    o objeto nu (screen/messages), sem envelope.
 servers:
   api-websocket:
     host: uniover.example.com
@@ -255,11 +257,6 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.rtc.reconciled.v1.schema.json'
-      pcScreenGet:
-        name: pc.screen.get.v1
-        contentType: application/json
-        payload:
-          $ref: './messages/pc.screen.get.v1.schema.json'
   agentEvents:
     address: uniover/{agentId}/evt
     description: Agente para API. No WebSocket é o mesmo socket; no MQTT, o tópico de eventos.
@@ -381,31 +378,44 @@ channels:
         contentType: application/json
         payload:
           $ref: './messages/pc.rtc.reconcile.v1.schema.json'
+  pcScreenData:
+    address: screen
+    description: >-
+      Canal de dados WebRTC de rótulo `screen` (ordenado e confiável), direto entre o app e o PC na rede local: não passa
+      pela API, pelo WebSocket do agente nem pelo MQTT. Cada mensagem descrita aqui é um texto com o objeto JSON nu,
+      identificado por `k`, sem envelope. A autenticação (`k: "auth"`) e os quadros binários (cabeçalho `UOSF`) estão no
+      README.
+    messages:
+      pcScreenGet:
+        name: pc.screen.get.v1
+        contentType: application/json
+        payload:
+          $ref: './screen/messages/pc.screen.get.v1.schema.json'
       pcScreenMon:
         name: pc.screen.mon.v1
         contentType: application/json
         payload:
-          $ref: './messages/pc.screen.mon.v1.schema.json'
+          $ref: './screen/messages/pc.screen.mon.v1.schema.json'
       pcScreenSame:
         name: pc.screen.same.v1
         contentType: application/json
         payload:
-          $ref: './messages/pc.screen.same.v1.schema.json'
+          $ref: './screen/messages/pc.screen.same.v1.schema.json'
       pcScreenCur:
         name: pc.screen.cur.v1
         contentType: application/json
         payload:
-          $ref: './messages/pc.screen.cur.v1.schema.json'
+          $ref: './screen/messages/pc.screen.cur.v1.schema.json'
       pcScreenState:
         name: pc.screen.state.v1
         contentType: application/json
         payload:
-          $ref: './messages/pc.screen.state.v1.schema.json'
+          $ref: './screen/messages/pc.screen.state.v1.schema.json'
       pcScreenStat:
         name: pc.screen.stat.v1
         contentType: application/json
         payload:
-          $ref: './messages/pc.screen.stat.v1.schema.json'
+          $ref: './screen/messages/pc.screen.stat.v1.schema.json'
 operations:
   sendApiKeepalive:
     action: send
@@ -829,42 +839,42 @@ operations:
   sendPcScreenGet:
     action: send
     channel:
-      $ref: '#/channels/agentCommands'
-    summary: O app pede um quadro da tela do PC no canal direto WebRTC screen.
+      $ref: '#/channels/pcScreenData'
+    summary: O app pede um quadro da tela do PC.
     messages:
-      - $ref: '#/channels/agentCommands/messages/pcScreenGet'
+      - $ref: '#/channels/pcScreenData/messages/pcScreenGet'
   receivePcScreenMon:
     action: receive
     channel:
-      $ref: '#/channels/agentEvents'
-    summary: O agente anuncia a lista de monitores e arranjo no canal direto WebRTC screen.
+      $ref: '#/channels/pcScreenData'
+    summary: O app recebe do PC a lista de monitores e a impressão do arranjo.
     messages:
-      - $ref: '#/channels/agentEvents/messages/pcScreenMon'
+      - $ref: '#/channels/pcScreenData/messages/pcScreenMon'
   receivePcScreenSame:
     action: receive
     channel:
-      $ref: '#/channels/agentEvents'
-    summary: O agente avisa que o quadro da tela não mudou no canal direto WebRTC screen.
+      $ref: '#/channels/pcScreenData'
+    summary: O app recebe do PC o aviso de que o quadro da tela não mudou.
     messages:
-      - $ref: '#/channels/agentEvents/messages/pcScreenSame'
+      - $ref: '#/channels/pcScreenData/messages/pcScreenSame'
   receivePcScreenCur:
     action: receive
     channel:
-      $ref: '#/channels/agentEvents'
-    summary: O agente envia a posição física do cursor no canal direto WebRTC screen.
+      $ref: '#/channels/pcScreenData'
+    summary: O app recebe do PC a posição física do cursor.
     messages:
-      - $ref: '#/channels/agentEvents/messages/pcScreenCur'
+      - $ref: '#/channels/pcScreenData/messages/pcScreenCur'
   receivePcScreenState:
     action: receive
     channel:
-      $ref: '#/channels/agentEvents'
-    summary: O agente envia o estado do desktop no canal direto WebRTC screen.
+      $ref: '#/channels/pcScreenData'
+    summary: O app recebe do PC o estado do desktop.
     messages:
-      - $ref: '#/channels/agentEvents/messages/pcScreenState'
+      - $ref: '#/channels/pcScreenData/messages/pcScreenState'
   receivePcScreenStat:
     action: receive
     channel:
-      $ref: '#/channels/agentEvents'
-    summary: O agente envia estatísticas de medição de captura no canal direto WebRTC screen.
+      $ref: '#/channels/pcScreenData'
+    summary: O app recebe do PC as medições da captura.
     messages:
-      - $ref: '#/channels/agentEvents/messages/pcScreenStat'
+      - $ref: '#/channels/pcScreenData/messages/pcScreenStat'

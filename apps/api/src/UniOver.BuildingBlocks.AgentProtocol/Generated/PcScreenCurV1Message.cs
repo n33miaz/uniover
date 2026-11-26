@@ -16,37 +16,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     using System.Globalization;
 
     /// <summary>
-    /// Agente para API: posição física do cursor do mouse no desktop virtual ('s.cur'), enviada
-    /// no canal WebRTC ('screen').
+    /// PC para app: posição física do cursor no desktop virtual ('s.cur') no canal de dados
+    /// WebRTC 'screen'. O objeto vai nu, sem envelope.
     /// </summary>
     public partial class PcScreenCurV1Message
-    {
-        [JsonPropertyName("body")]
-        public PcScreenCurV1Body Body { get; set; }
-
-        [JsonPropertyName("correlationId")]
-        public Guid? CorrelationId { get; set; }
-
-        [JsonPropertyName("id")]
-        public Guid Id { get; set; }
-
-        [JsonPropertyName("source")]
-        public string Source { get; set; }
-
-        [JsonPropertyName("target")]
-        public string Target { get; set; }
-
-        [JsonPropertyName("ts")]
-        public DateTimeOffset Ts { get; set; }
-
-        [JsonPropertyName("type")]
-        public string Type { get; set; }
-
-        [JsonPropertyName("v")]
-        public long V { get; set; }
-    }
-
-    public partial class PcScreenCurV1Body
     {
         [JsonPropertyName("k")]
         public string K { get; set; }

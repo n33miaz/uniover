@@ -118,24 +118,6 @@ public static class AgentMessageTypes
     /// <summary>Tipo de mensagem <c>pc.rtc.reconciled.v1</c>.</summary>
     public const string PcRtcReconciledV1 = "pc.rtc.reconciled.v1";
 
-    /// <summary>Tipo de mensagem <c>pc.screen.cur.v1</c>.</summary>
-    public const string PcScreenCurV1 = "pc.screen.cur.v1";
-
-    /// <summary>Tipo de mensagem <c>pc.screen.get.v1</c>.</summary>
-    public const string PcScreenGetV1 = "pc.screen.get.v1";
-
-    /// <summary>Tipo de mensagem <c>pc.screen.mon.v1</c>.</summary>
-    public const string PcScreenMonV1 = "pc.screen.mon.v1";
-
-    /// <summary>Tipo de mensagem <c>pc.screen.same.v1</c>.</summary>
-    public const string PcScreenSameV1 = "pc.screen.same.v1";
-
-    /// <summary>Tipo de mensagem <c>pc.screen.stat.v1</c>.</summary>
-    public const string PcScreenStatV1 = "pc.screen.stat.v1";
-
-    /// <summary>Tipo de mensagem <c>pc.screen.state.v1</c>.</summary>
-    public const string PcScreenStateV1 = "pc.screen.state.v1";
-
     /// <summary>Tipo de mensagem <c>pc.tap.v1</c>.</summary>
     public const string PcTapV1 = "pc.tap.v1";
 
@@ -272,12 +254,6 @@ public static class AgentMessageTypes
         PcRtcOfferV1,
         PcRtcReconcileV1,
         PcRtcReconciledV1,
-        PcScreenCurV1,
-        PcScreenGetV1,
-        PcScreenMonV1,
-        PcScreenSameV1,
-        PcScreenStatV1,
-        PcScreenStateV1,
         PcTapV1,
         PcTextV1,
         PcTextV2,

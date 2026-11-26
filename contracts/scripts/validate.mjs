@@ -1,5 +1,6 @@
 // Compila os esquemas (JSON Schema 2020-12), exige que todo exemplo válido passe
-// e todo inválido falhe, e que o AsyncAPI cite todos os tipos.
+// e todo inválido falhe, e que o AsyncAPI cite todos os tipos. Vale para as mensagens com envelope
+// (messages/) e para os objetos do canal de dados `screen` (screen/), que vão sem envelope.
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,6 +64,35 @@ for (const d of parsed.diagnostics.filter((x) => x.severity === 0)) {
   fail(`asyncapi.yaml: ${d.code} ${d.message} (${d.path.join("/")})`);
 }
 
+// Canal de dados WebRTC `screen` (screen/): o esquema vale sobre o objeto inteiro, identificado pelo campo `k`.
+const byKind = new Map();
+for (const f of list("screen/messages")) {
+  const schema = read(join(root, "screen/messages", f));
+  const kind = schema.properties?.k?.const;
+  if (!kind || byKind.has(kind)) fail(`screen: \`k\` ausente ou repetido (${f})`);
+  byKind.set(kind, { type: f.replace(/\.schema\.json$/, ""), validate: ajv.compile(schema) });
+}
+for (const f of list("screen/examples/valid")) {
+  const doc = read(join(root, "screen/examples/valid", f));
+  const entry = byKind.get(doc.k);
+  if (!entry) { fail(`screen: exemplo válido com \`k\` desconhecido (${f})`); continue; }
+  if (!entry.validate(doc)) fail(`screen: exemplo válido rejeitado (${f}): ${ajv.errorsText(entry.validate.errors)}`);
+  if (f !== `${entry.type}.json`) fail(`screen: nome do exemplo deve ser <esquema>.json (${f})`);
+}
+for (const { type } of byKind.values()) {
+  if (!list("screen/examples/valid").includes(`${type}.json`)) fail(`screen: falta exemplo válido para ${type}`);
+  if (!asyncapi.includes(`./screen/messages/${type}.schema.json`)) fail(`asyncapi.yaml não cita ${type}`);
+}
+const screenInvalid = list("screen/examples/invalid");
+if (screenInvalid.length < 4) fail("screen: são necessários ao menos 4 exemplos inválidos");
+for (const f of screenInvalid) {
+  const doc = read(join(root, "screen/examples/invalid", f));
+  const entry = byKind.get(doc.k);
+  // Sem um `k` conhecido o exemplo seria recusado pelo motivo errado.
+  if (!entry) fail(`screen: exemplo inválido com \`k\` desconhecido (${f})`);
+  else if (entry.validate(doc)) fail(`screen: exemplo inválido aceito (${f})`);
+}
+
 // Configuração do launcher da TV (tv-launcher/): um esquema só, fora do envelope do agente. Todo exemplo válido
 // passa e todo inválido falha; o APK lê os mesmos arquivos nos seus testes (apps/tv-launcher).
 const launcherRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "tv-launcher");
@@ -81,4 +111,5 @@ for (const f of launcherInvalid) {
 
 if (failures) { console.error(`${failures} problema(s)`); process.exit(1); }
 console.log(`ok: ${byType.size} esquemas, ${list("examples/valid").length} válidos, ${invalid.length} inválidos`);
+console.log(`ok: screen, ${byKind.size} esquemas, ${list("screen/examples/valid").length} válidos, ${screenInvalid.length} inválidos`);
 console.log(`ok: tv-launcher config.v1, ${launcherList("valid").length} válidos, ${launcherInvalid.length} inválidos`);
