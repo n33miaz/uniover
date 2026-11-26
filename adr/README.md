@@ -37,3 +37,4 @@ que o código é como é, sem precisar adivinhar.
 | [0018](0018-manifesto-assinado-do-agente.md) | Manifesto assinado para atualização do agente | Aceito |
 | [0019](0019-production-flow.md) | Fluxo de produção pela `develop` | Proposto |
 | [0020](0020-armazenamento-local-da-caixa-de-videos.md) | Armazenamento local da caixa de vídeos | Proposto |
+| [0021](0021-controle-e-tela-do-pc-em-devices.md) | Controle e tela do PC como fatia de Devices | Proposto |
