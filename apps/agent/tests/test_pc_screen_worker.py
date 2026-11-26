@@ -1,6 +1,7 @@
 """Cobre o caminho de captura sem abrir o desktop ou uma conexão de rede."""
 
 import asyncio
+import ctypes
 import json
 import sys
 from collections.abc import Iterator
@@ -247,8 +248,9 @@ async def test_worker_closes_when_the_screen_deadline_expires(
     monkeypatch.setattr(f"{WORKER}.asyncio.to_thread", capture_in_thread)
     monkeypatch.setattr(pc_screen_worker, "private_bytes", lambda: 0)
     channel.message(k="auth", token=offer.token)
+    replies: list[dict[str, str]] = []
     task = asyncio.create_task(
-        measure.run(offer, asyncio.Event(), lambda _reply: None, viewing, Probes())
+        measure.run(offer, asyncio.Event(), replies.append, viewing, Probes())
     )
     try:
         await viewing_started.wait()
@@ -269,9 +271,141 @@ async def test_worker_closes_when_the_screen_deadline_expires(
         assert task.done()
         await task
         assert peer_closed.is_set()
+        # Prazo vencido é fim normal: só a resposta SDP vai ao pai, sem diagnóstico de erro.
+        assert [list(reply) for reply in replies] == [["sdp"]]
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_worker_reports_sdp_syntax_error_diagnostic(monkeypatch: pytest.MonkeyPatch) -> None:
+    offer = Offer("oferta-invalida", "bilhete-de-teste", 10, 60)
+    measure, _ = session("192.168.1.6")
+    replies: list[dict[str, str]] = []
+
+    async def invalid_answer(_sdp: str) -> str:
+        raise ValueError("SDP com sintaxe inválida")
+
+    monkeypatch.setattr(measure, "answer", invalid_answer)
+    monkeypatch.setattr(measure.peer, "close", lambda: asyncio.sleep(0), raising=False)
+
+    await measure.run(offer, asyncio.Event(), replies.append, nullcontext, Probes())
+    assert replies == [
+        {"error": "Não foi possível aceitar a oferta da tela.", "code": "sdp_syntax"}
+    ]
+
+
+async def test_worker_reports_sdp_failed_diagnostic_on_generic_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    offer = Offer("oferta", "bilhete-de-teste", 10, 60)
+    measure, _ = session("192.168.1.6")
+    replies: list[dict[str, str]] = []
+
+    async def failing_answer(_sdp: str) -> str:
+        raise RuntimeError("falha genérica de conexão")
+
+    monkeypatch.setattr(measure, "answer", failing_answer)
+    monkeypatch.setattr(measure.peer, "close", lambda: asyncio.sleep(0), raising=False)
+
+    await measure.run(offer, asyncio.Event(), replies.append, nullcontext, Probes())
+    assert replies == [
+        {"error": "Não foi possível aceitar a oferta da tela.", "code": "sdp_failed"}
+    ]
+
+
+async def test_worker_reports_capture_error_diagnostic_and_stops_on_fatal_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    offer = Offer("oferta", "bilhete-de-teste", 10, 60)
+    measure, channel = session("192.168.1.6")
+    replies: list[dict[str, str]] = []
+
+    async def answer(_sdp: str) -> str:
+        return "resposta-sdp"
+
+    monkeypatch.setattr(measure, "answer", answer)
+    monkeypatch.setattr(measure.peer, "close", lambda: asyncio.sleep(0), raising=False)
+    monkeypatch.setattr(pc_screen_worker, "private_bytes", lambda: 0)
+
+    async def failing_capture(_capture: Any, _request: FrameRequest, _previous: Any) -> Capture:
+        raise RuntimeError("falha fatal no subsistema de captura")
+
+    monkeypatch.setattr(f"{WORKER}.asyncio.to_thread", failing_capture)
+    channel.message(k="auth", token=offer.token)
+
+    task = asyncio.create_task(
+        measure.run(offer, asyncio.Event(), replies.append, nullcontext, Probes())
+    )
+    await asyncio.sleep(0.01)
+    channel.message(k="s.get")
+
+    with pytest.raises(RuntimeError, match="falha fatal no subsistema de captura"):
+        await task
+
+    assert {"k": "error", "code": "capture_error", "error": "RuntimeError"} in replies
+    assert measure.closed.is_set()
+
+
+async def test_worker_main_reports_invalid_offer_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    replies: list[dict[str, str]] = []
+
+    def mock_print(payload: str, flush: bool = True) -> None:
+        replies.append(json.loads(payload))
+
+    class FakeThread:
+        def __init__(self, target: Any, args: tuple[Any, ...], daemon: bool) -> None:
+            loop, raw, _closed = args
+            loop.call_soon(raw.set_result, b"nao-e-um-json")
+
+        def start(self) -> None:
+            pass
+
+    monkeypatch.setattr(pc_screen_worker, "Thread", FakeThread)
+    monkeypatch.setattr("builtins.print", mock_print)
+
+    await pc_screen_worker.main()
+    assert replies == [{"error": "Oferta inválida.", "code": "invalid_offer"}]
+
+
+async def test_worker_main_reports_dpi_failure_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    replies: list[dict[str, str]] = []
+
+    def mock_print(payload: str, flush: bool = True) -> None:
+        replies.append(json.loads(payload))
+
+    raw_payload = json.dumps(
+        {
+            "sdp": "sdp",
+            "token": "token",
+            "tokenTtlSeconds": 10,
+            "maxLifetimeSeconds": 60,
+        }
+    ).encode("ascii")
+
+    class FakeThread:
+        def __init__(self, target: Any, args: tuple[Any, ...], daemon: bool) -> None:
+            loop, raw, _closed = args
+            loop.call_soon(raw.set_result, raw_payload)
+
+        def start(self) -> None:
+            pass
+
+    user32_mock = SimpleNamespace(
+        SetProcessDpiAwarenessContext=lambda _arg: False,
+    )
+    monkeypatch.setattr(pc_screen_worker, "Thread", FakeThread)
+    # `raising=False`: no Linux do CI o `ctypes` não tem `windll`.
+    monkeypatch.setattr(ctypes, "windll", SimpleNamespace(user32=user32_mock), raising=False)
+    monkeypatch.setattr("builtins.print", mock_print)
+
+    await pc_screen_worker.main()
+    assert replies == [
+        {
+            "error": "Não foi possível habilitar as coordenadas físicas da tela.",
+            "code": "dpi_failed",
+        }
+    ]
 
 
 async def test_pipe_ignores_bytes_after_the_offer_until_eof(

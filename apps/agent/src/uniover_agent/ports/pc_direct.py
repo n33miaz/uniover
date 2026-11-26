@@ -60,7 +60,9 @@ class ScreenPeer(Protocol):
 
     def stop(self) -> None: ...
 
-    async def wait(self) -> None: ...
+    async def wait(self) -> None:
+        """Espera a medição acabar; levanta se ela falhou sem ter sido parada."""
+        ...
 
 
 DirectPeerFactory = Callable[[PeerCallbacks], DirectPeer]
