@@ -2,19 +2,19 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
-using UniOver.BuildingBlocks.Web;
 using UniOver.BuildingBlocks.Messaging;
+using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Contracts;
-using UniOver.SharedKernel;
-using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
 using UniOver.Modules.Tv.Features.Config;
 using UniOver.Modules.Tv.Features.Selection;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
+using UniOver.SharedKernel;
 
 namespace UniOver.Modules.Tv.Features.Tvs;
 
@@ -204,7 +204,7 @@ internal sealed class ManageTvsHandler(
 
         if (agentChanged)
         {
-            watcher?.Release(tv.Id, previousSlug);
+            watcher?.Rebind(tv.Id, tv.AgentSlug);
 
             // O computador antigo para o que tinha agendado nesta TV; o novo recebe as preferências dela.
             await PublishUnboundAsync(previousSlug, cancellationToken);
@@ -272,7 +272,7 @@ internal sealed class ManageTvsHandler(
         }
 
         var rows = await db.CleanupReports.AsNoTracking().Where(r => r.TvId == id)
-            .OrderByDescending(r => r.StartedAt).Take(CleanupReportsShown).ToListAsync(cancellationToken);
+            .OrderByDescending(r => r.StartedAt).Take(_cleanupReportsShown).ToListAsync(cancellationToken);
         return new TvCleanupReportsResponse([.. rows.Select(r => new TvCleanupReportItem(
             r.Kind, r.Trigger, r.StartedAt, r.DurationMs, r.MemoryBeforeMb, r.MemoryAfterMb, r.ClosedApps,
             PackagesOf(r.AppsClosed), r.BackgroundProcesses, r.SessionOpenMs, r.Result, r.Reason))]);
@@ -314,7 +314,7 @@ internal sealed class ManageTvsHandler(
         return new TvAppsResponse([.. apps.Where(a => ConfiguredTv.CanRestrictInBackground(a.Package))]);
     }
 
-    private const int CleanupReportsShown = 10;
+    private const int _cleanupReportsShown = 10;
 
     private static string[] PackagesOf(string json)
     {

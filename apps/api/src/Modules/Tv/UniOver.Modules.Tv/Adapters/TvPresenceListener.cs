@@ -1,12 +1,12 @@
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Domain;
+using UniOver.Modules.Tv.Features.Cleanup;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
-using UniOver.Modules.Identity.Contracts;
-using UniOver.Modules.Tv.Features.Cleanup;
 
 namespace UniOver.Modules.Tv.Adapters;
 
@@ -119,12 +119,21 @@ internal sealed partial class TvPresenceListener(
         var justConnected = info.Connected && info.AgentVersion is null;
         var changed = state.NoteOnline(info.AgentId, info.Connected) || justConnected;
         var view = TvState.From(state.Last(info.AgentId), info.Connected, offlineSince: info.DisconnectedAt ?? info.LastMessageAt, reportFresh: info.Connected);
-        if (changed)
+        if (watcher is null)
         {
-            stream.PublishState(tvId, view);
+            if (changed)
+            {
+                stream.PublishState(tvId, view);
+            }
         }
-
-        watcher?.Track(tvId, agentSlug, view);
+        else if (changed)
+        {
+            watcher.Publish(tvId, agentSlug, view);
+        }
+        else
+        {
+            watcher.Track(tvId, agentSlug, view);
+        }
     }
 
     // Só o tipo do erro: a mensagem do driver do banco pode citar o servidor e a conexão.

@@ -24,6 +24,7 @@ internal sealed partial class TvLinkWatcher(
 
     private readonly object _gate = new();
     private readonly Dictionary<string, Watched> _watched = new(StringComparer.Ordinal);
+    private readonly Dictionary<Guid, string> _relinkedAgents = [];
 
     private sealed record Watched(Guid TvId, string? LinkState);
 
@@ -40,7 +41,7 @@ internal sealed partial class TvLinkWatcher(
 
         lock (_gate)
         {
-            if (_watched.TryGetValue(agentSlug, out var current) && current.TvId == tvId)
+            if (!IsCurrentAgent(tvId, agentSlug) || IsWatching(tvId, agentSlug))
             {
                 return;
             }
@@ -50,13 +51,18 @@ internal sealed partial class TvLinkWatcher(
     }
 
     /// <summary>
-    /// Publica o estado de um relato ou de uma leitura e anota o elo na mesma região crítica da vigia: a ordem de publicação
+    /// Publica o estado de um relato e anota o elo na mesma região crítica da vigia: a ordem de publicação
     /// e a linha de base concordam, e uma passada que capturou o elo antes deste relato não o sobrescreve depois.
     /// </summary>
     public void Publish(Guid tvId, string? agentSlug, TvState view)
     {
         lock (_gate)
         {
+            if (!IsCurrentAgent(tvId, agentSlug))
+            {
+                return;
+            }
+
             stream.PublishState(tvId, view);
             if (!string.IsNullOrWhiteSpace(agentSlug))
             {
@@ -65,32 +71,59 @@ internal sealed partial class TvLinkWatcher(
         }
     }
 
-    /// <summary>Para de vigiar o agente que deixou a TV (religada a outro): o elo dele não vai mais ao fluxo dela.</summary>
-    public void Release(Guid tvId, string? agentSlug)
+    /// <summary>Aplica ao fluxo a presença observada por uma leitura, se a TV ainda estiver com o mesmo agente.</summary>
+    public void ObserveRead(Guid tvId, string agentSlug, TvState view, bool online)
     {
-        if (string.IsNullOrWhiteSpace(agentSlug))
-        {
-            return;
-        }
-
         lock (_gate)
         {
-            if (_watched.TryGetValue(agentSlug, out var watched) && watched.TvId == tvId)
+            if (!IsCurrentAgent(tvId, agentSlug))
             {
-                _watched.Remove(agentSlug);
+                return;
+            }
+
+            // Se a leitura descobriu uma mudança, avisa antes que um comando a encontre já anotada.
+            var changed = state.NoteOnline(agentSlug, online);
+            if (changed)
+            {
+                stream.PublishState(tvId, view);
+            }
+
+            if (!string.IsNullOrWhiteSpace(agentSlug) && (changed || !IsWatching(tvId, agentSlug)))
+            {
+                Note(tvId, agentSlug, view);
             }
         }
     }
 
-    // Chamar com _gate. Uma TV tem um agente só: qualquer outro que a vigiava saiu dela.
+    /// <summary>Registra a troca gravada, antes mesmo de haver uma observação do computador novo.</summary>
+    public void Rebind(Guid tvId, string agentSlug)
+    {
+        lock (_gate)
+        {
+            _relinkedAgents[tvId] = agentSlug;
+            RemoveOtherAgents(tvId, agentSlug);
+        }
+    }
+
+    // Chamar com _gate. A troca gravada prevalece sobre observações que ainda carregam o vínculo anterior.
+    private bool IsCurrentAgent(Guid tvId, string? agentSlug) =>
+        !_relinkedAgents.TryGetValue(tvId, out var current) || string.Equals(current, agentSlug, StringComparison.Ordinal);
+
+    private bool IsWatching(Guid tvId, string agentSlug) =>
+        _watched.TryGetValue(agentSlug, out var current) && current.TvId == tvId;
+
     private void Note(Guid tvId, string agentSlug, TvState view)
+    {
+        RemoveOtherAgents(tvId, agentSlug);
+        _watched[agentSlug] = new Watched(tvId, view.Link?.State);
+    }
+
+    private void RemoveOtherAgents(Guid tvId, string agentSlug)
     {
         foreach (var other in _watched.Where(w => w.Value.TvId == tvId && w.Key != agentSlug).Select(w => w.Key).ToArray())
         {
             _watched.Remove(other);
         }
-
-        _watched[agentSlug] = new Watched(tvId, view.Link?.State);
     }
 
     /// <summary>Uma passada: recalcula o elo de cada TV vigiada e publica as que mudaram.</summary>
