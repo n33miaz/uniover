@@ -113,19 +113,19 @@
                 >
                   Abrir
                 </a>
+                <button
+                  type="button"
+                  class="btn-action btn-copy"
+                  (click)="copyLink(item)"
+                  [attr.aria-label]="getCopyAriaLabel(item.canonical_url)"
+                >
+                  @if (copiedId() === item.id) {
+                    <span i18n="@@videos.inbox.action.copied">Copiado!</span>
+                  } @else {
+                    <span i18n="@@videos.inbox.action.copy">Copiar link</span>
+                  }
+                </button>
               }
-              <button
-                type="button"
-                class="btn-action btn-copy"
-                (click)="copyLink(item)"
-                [attr.aria-label]="getCopyAriaLabel(item.canonical_url)"
-              >
-                @if (copiedId() === item.id) {
-                  <span i18n="@@videos.inbox.action.copied">Copiado!</span>
-                } @else {
-                  <span i18n="@@videos.inbox.action.copy">Copiar link</span>
-                }
-              </button>
               <button
                 type="button"
                 class="btn-action btn-delete"

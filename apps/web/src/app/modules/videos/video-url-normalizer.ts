@@ -183,13 +183,14 @@ const HTTP_PROTOCOLS = new Set(['http:', 'https:']);
 const EXPLICIT_SCHEME = /^\s*[a-z][a-z0-9+.-]*:(?!\d)/i;
 
 /**
- * Indica se o valor é uma URL absoluta com protocolo estritamente http: ou https:.
+ * Indica se o valor é uma URL HTTP(S) absoluta sem credenciais.
  * Única regra usada para decidir o que pode ser salvo ou virar link clicável.
  */
 export function isHttpUrl(value: string | null | undefined): value is string {
-  if (typeof value !== 'string') return false;
+  if (typeof value !== 'string' || !/^https?:\/\//i.test(value)) return false;
   try {
-    return HTTP_PROTOCOLS.has(new URL(value).protocol);
+    const url = new URL(value);
+    return HTTP_PROTOCOLS.has(url.protocol) && !url.username && !url.password;
   } catch {
     return false;
   }

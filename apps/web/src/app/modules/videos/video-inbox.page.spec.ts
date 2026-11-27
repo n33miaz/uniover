@@ -6,7 +6,7 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { IDBFactory as FakeIDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionState } from '../../core/session/session-state';
-import { clearPendingShare, stashPendingShare } from './pending-share-storage';
+import { clearPendingShare, peekPendingShare, stashPendingShare } from './pending-share-storage';
 import { VIDEO_INBOX_DB_FACTORY, VideoInboxDb } from './video-inbox-db';
 import { platformLabel, type VideoInboxItem } from './video-inbox.model';
 import { VideoInboxPage } from './video-inbox.page';
@@ -113,8 +113,8 @@ describe('VideoInboxPage', () => {
   });
 
   it('clears the previous account links and feedback on silent token replacement', async () => {
-    stashPendingShare({ url: 'https://youtu.be/previous' });
-    const { harness, el } = await open();
+    const share = stashPendingShare({ url: 'https://youtu.be/previous' })!;
+    const { harness, el } = await open(`/videos?share=${share}`);
     expect(el.querySelector('.item-url')?.textContent).toContain('previous');
     expect(el.querySelector('.notice')).not.toBeNull();
 
@@ -176,18 +176,27 @@ describe('VideoInboxPage', () => {
     }
   });
 
-  it('processes pending share automatically when page initializes', async () => {
-    stashPendingShare({
+  it('processes the pending share named by the route when page initializes', async () => {
+    const share = stashPendingShare({
       url: 'https://www.instagram.com/reel/C3abc123/',
       text: 'Reel pendente',
-    });
+    })!;
 
-    const { el } = await open();
+    const { el } = await open(`/videos?share=${share}`);
     expect(el.querySelector('.notice')?.textContent?.trim()).toBe('Link salvo com sucesso!');
 
     const items = await inboxService.list();
     expect(items).toHaveLength(1);
     expect(items[0].canonical_url).toBe('https://www.instagram.com/reel/C3abc123/');
+  });
+
+  it('leaves a pending share of another intent untouched', async () => {
+    const share = stashPendingShare({ url: 'https://youtu.be/other-intent' })!;
+
+    const { el } = await open('/videos?share=different-intent');
+    expect(el.querySelector('.notice')).toBeNull();
+    expect(await inboxService.list()).toEqual([]);
+    expect(peekPendingShare(share)?.url).toBe('https://youtu.be/other-intent');
   });
 
   it('processes query parameters passed directly to /videos', async () => {
@@ -293,9 +302,14 @@ describe('VideoInboxPage', () => {
     expect(copyBtn.textContent?.trim()).toBe('Copiado!');
   });
 
-  describe('unsafe protocol items in the DOM', () => {
+  describe('unsafe legacy items in the DOM', () => {
+    // Registros gravados antes da validação atual: só podem existir direto no IndexedDB.
     async function addItemWithUrl(url: string): Promise<HTMLElement> {
-      await inboxService.add({
+      const preDb = new VideoInboxDb('inbox-page-test-inbox-page-account', {
+        indexedDB: fakeIdb,
+        IDBKeyRange: FakeIDBKeyRange,
+      });
+      await preDb.items.put({
         id: 'unsafe-item',
         canonical_url: url,
         platform: 'other',
@@ -304,9 +318,19 @@ describe('VideoInboxPage', () => {
         captured_via: 'share_target',
         status: 'link_only',
       });
+      preDb.close();
       const { el } = await open();
       return el;
     }
+
+    it('does not render a link or copy action for a legacy item with credentials', async () => {
+      const el = await addItemWithUrl('https://user:password@youtu.be/abc');
+      expect(el.querySelector('.item-url-row a')).toBeNull();
+      expect(el.querySelector('.btn-open')).toBeNull();
+      expect(el.querySelector('.btn-copy')).toBeNull();
+      expect(el.querySelector('.item-url-row .item-url--unsafe')).not.toBeNull();
+      expect(el.querySelector('.btn-delete')).not.toBeNull();
+    });
 
     it('does not render a clickable anchor for items with javascript: protocol', async () => {
       const el = await addItemWithUrl('javascript:alert(1)');

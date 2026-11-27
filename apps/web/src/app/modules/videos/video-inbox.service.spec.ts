@@ -119,11 +119,11 @@ describe('VideoInboxService', () => {
 
   it('keeps a pending share for retry and uses its capture time', async () => {
     const timestamp = Date.UTC(2026, 10, 21);
-    stashPendingShare({ text: '', title: 'https://example.org/video', timestamp });
+    const id = stashPendingShare({ text: '', title: 'https://example.org/video', timestamp })!;
     fakeSession.accountId = () => null;
-    await expect(service.processPendingShare()).rejects.toThrow();
+    await expect(service.processPendingShare(id)).rejects.toThrow();
     fakeSession.accountId = () => 'test-account-1';
-    await Promise.all([service.processPendingShare(), service.processPendingShare()]);
+    await Promise.all([service.processPendingShare(id), service.processPendingShare(id)]);
     expect(await service.list()).toMatchObject([
       {
         raw_text: 'https://example.org/video',
@@ -135,12 +135,12 @@ describe('VideoInboxService', () => {
   });
 
   it('processes pending share and clears it from storage', async () => {
-    stashPendingShare({
+    const id = stashPendingShare({
       url: 'https://www.instagram.com/reel/C3abc123/?igsh=123',
       text: 'Reel compartilhado enquanto anonimo',
-    });
+    })!;
 
-    const processed = await service.processPendingShare();
+    const processed = await service.processPendingShare(id);
     expect(processed).not.toBeNull();
     expect(processed?.canonical_url).toBe('https://www.instagram.com/reel/C3abc123/');
     expect(processed?.platform).toBe('instagram');
@@ -148,25 +148,74 @@ describe('VideoInboxService', () => {
     const list = await service.list();
     expect(list).toHaveLength(1);
 
-    const secondCall = await service.processPendingShare();
+    const secondCall = await service.processPendingShare(id);
     expect(secondCall).toBeNull();
   });
 
   it('keeps a share written by another tab while capturing the current share', async () => {
-    stashPendingShare({ url: 'https://example.org/first' });
-    const capturing = service.processPendingShare();
+    const id = stashPendingShare({ url: 'https://example.org/first' })!;
+    const capturing = service.processPendingShare(id);
     const other = { id: 'other-tab', timestamp: 1, url: 'https://example.org/second' };
     localStorage.setItem(PENDING_SHARE_STORAGE_KEY, JSON.stringify(other));
 
     expect((await capturing)?.canonical_url).toBe('https://example.org/first');
-    expect(await service.processPendingShare()).toMatchObject({
+    expect(await service.processPendingShare(other.id)).toMatchObject({
       id: other.id,
       canonical_url: other.url,
     });
-    expect(await service.processPendingShare()).toBeNull();
+    expect(await service.processPendingShare(other.id)).toBeNull();
   });
 
+  it('only processes the pending share of the requested intent', async () => {
+    const id = stashPendingShare({ url: 'https://youtu.be/pending' })!;
+
+    expect(await service.processPendingShare('another-intent')).toBeNull();
+    expect(await service.list()).toEqual([]);
+
+    expect(await service.processPendingShare(id)).toMatchObject({ id });
+    expect(await service.list()).toHaveLength(1);
+  });
+
+  it.each([
+    ['without id', { timestamp: 1, url: 'https://youtu.be/legacy' }],
+    ['with credentials', { id: 'legacy', timestamp: 1, url: 'https://user:pw@youtu.be/legacy' }],
+    ['with an invalid date', { id: 'legacy', timestamp: 'ontem', url: 'https://youtu.be/legacy' }],
+  ])('discards a legacy pending record %s instead of saving it', async (_, record) => {
+    sessionStorage.setItem(PENDING_SHARE_STORAGE_KEY, JSON.stringify(record));
+
+    expect(await service.processPendingShare('legacy')).toBeNull();
+    expect(await service.list()).toEqual([]);
+    expect(sessionStorage.getItem(PENDING_SHARE_STORAGE_KEY)).toBeNull();
+  });
+
+  it.each(['https://user:password@youtu.be/abc', 'javascript:alert(1)'])(
+    'refuses to write %s directly to permanent storage',
+    async (canonical_url) => {
+      await expect(
+        service.add({
+          id: 'direct',
+          canonical_url,
+          platform: 'youtube',
+          captured_at: new Date().toISOString(),
+          raw_text: canonical_url,
+          captured_via: 'manual',
+          status: 'link_only',
+        }),
+      ).rejects.toThrow();
+      expect(await service.list()).toEqual([]);
+    },
+  );
+
   describe('unsafe protocol rejection in captureShare', () => {
+    it.each([
+      { url: 'https://user:password@youtu.be/abc' },
+      { text: 'Veja https://:password@example.org/video' },
+      { url: 'https://example.org/video', title: 'Fonte https://user@example.org/private' },
+    ])('rejects credentials before normalizing or storing shared fields', async (payload) => {
+      expect(await service.captureShare(payload)).toBeNull();
+      expect(await service.list()).toEqual([]);
+    });
+
     it('returns null and does not save when url field has javascript: scheme', async () => {
       const result = await service.captureShare({ url: 'javascript:alert(1)' });
       expect(result).toBeNull();

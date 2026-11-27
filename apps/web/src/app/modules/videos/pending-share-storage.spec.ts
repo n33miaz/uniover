@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearPendingShare,
+  INTERRUPTED_SHARE_STORAGE_KEY,
+  interruptedShareId,
+  markInterruptedShare,
   peekPendingShare,
   PENDING_SHARE_STORAGE_KEY,
   stashPendingShare,
 } from './pending-share-storage';
+import { MAX_SHARE_PARAM_LENGTH } from './share-input-limits';
 
 describe('pending-share-storage', () => {
   beforeEach(() => {
@@ -47,6 +51,107 @@ describe('pending-share-storage', () => {
 
     expect(sessionStorage.length).toBe(1);
     expect(localStorage.length).toBe(0);
+  });
+
+  it('rejects a credential-bearing URL before writing to any temporary store', () => {
+    stashPendingShare({ url: 'https://user:password@youtu.be/abc' });
+    expect(sessionStorage.length).toBe(0);
+    expect(localStorage.length).toBe(0);
+    expect(peekPendingShare()).toBeNull();
+  });
+
+  it.each([
+    { url: 'javascript:alert(1)' },
+    { text: 'sem link nenhum' },
+    { url: 'https://youtu.be/abc', title: 'Fonte https://user@example.org/privado' },
+  ])('stores nothing and returns no id for an unacceptable share', (payload) => {
+    expect(stashPendingShare(payload)).toBeNull();
+    expect(sessionStorage.length + localStorage.length).toBe(0);
+  });
+
+  it('isolates the pending share by the id returned when stashing', () => {
+    const id = stashPendingShare({ url: 'https://youtu.be/abc' });
+    expect(id).toBeTypeOf('string');
+    expect(peekPendingShare(id!)?.url).toBe('https://youtu.be/abc');
+    expect(peekPendingShare('another-intent')).toBeNull();
+
+    clearPendingShare('another-intent');
+    expect(peekPendingShare(id!)).not.toBeNull();
+  });
+
+  it('finds the requested share in localStorage when another tab owns sessionStorage', () => {
+    const id = stashPendingShare({ url: 'https://youtu.be/session' })!;
+    const local = { id: 'local', timestamp: 1, url: 'https://youtu.be/local' };
+    localStorage.setItem(PENDING_SHARE_STORAGE_KEY, JSON.stringify(local));
+
+    expect(peekPendingShare('local')?.url).toBe('https://youtu.be/local');
+    expect(peekPendingShare(id)?.url).toBe('https://youtu.be/session');
+  });
+
+  it.each([
+    ['unreadable JSON', '{not json'],
+    ['without id', JSON.stringify({ timestamp: 1, url: 'https://youtu.be/abc' })],
+    ['without timestamp', JSON.stringify({ id: 'old', url: 'https://youtu.be/abc' })],
+    [
+      'with credentials',
+      JSON.stringify({ id: 'old', timestamp: 1, url: 'https://u:p@youtu.be/abc' }),
+    ],
+    [
+      'with an unsafe scheme',
+      JSON.stringify({ id: 'old', timestamp: 1, url: 'javascript:alert(1)' }),
+    ],
+    [
+      'with non-text fields',
+      JSON.stringify({ id: 'old', timestamp: 1, url: ['https://youtu.be/abc'] }),
+    ],
+  ])('drops a legacy stored record %s on read', (_, raw) => {
+    sessionStorage.setItem(PENDING_SHARE_STORAGE_KEY, raw);
+    localStorage.setItem(PENDING_SHARE_STORAGE_KEY, raw);
+
+    expect(peekPendingShare('old')).toBeNull();
+    expect(peekPendingShare()).toBeNull();
+    expect(sessionStorage.getItem(PENDING_SHARE_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(PENDING_SHARE_STORAGE_KEY)).toBeNull();
+  });
+
+  it('clamps oversized fields of a legacy stored record', () => {
+    const huge = 'https://youtu.be/abc ' + 'x'.repeat(MAX_SHARE_PARAM_LENGTH * 2);
+    sessionStorage.setItem(
+      PENDING_SHARE_STORAGE_KEY,
+      JSON.stringify({ id: 'old', timestamp: 1, text: huge }),
+    );
+    expect(peekPendingShare('old')?.text).toHaveLength(MAX_SHARE_PARAM_LENGTH);
+  });
+
+  it('offers an interrupted share only to the account that was interrupted', () => {
+    const id = stashPendingShare({ url: 'https://youtu.be/abc' })!;
+    markInterruptedShare(id, 'account-a');
+
+    expect(interruptedShareId('account-a')).toBe(id);
+    expect(interruptedShareId('account-b')).toBeNull();
+    expect(localStorage.length).toBe(0);
+
+    clearPendingShare('another-intent');
+    expect(interruptedShareId('account-a')).toBe(id);
+    clearPendingShare(id);
+    expect(interruptedShareId('account-a')).toBeNull();
+    expect(sessionStorage.length).toBe(0);
+  });
+
+  it('does not mark an intent without a pending record', () => {
+    markInterruptedShare('unknown-intent', 'account-a');
+
+    expect(interruptedShareId('account-a')).toBeNull();
+    expect(sessionStorage.length).toBe(0);
+  });
+
+  it('reads the interrupted share left in sessionStorage by an earlier load of the tab', () => {
+    sessionStorage.setItem(
+      INTERRUPTED_SHARE_STORAGE_KEY,
+      JSON.stringify({ id: 'before-reload', accountId: null }),
+    );
+
+    expect(interruptedShareId('account-a')).toBe('before-reload');
   });
 
   it('clears pending share explicitly', () => {
