@@ -10,12 +10,12 @@ const EMBEDDING_SCHEME =
   /(?:^|[^a-z0-9+.-])(?:blob|data|file|filesystem|javascript|vbscript|view-source):$/i;
 
 export function extractVideoUrl(payload: RawSharePayload | null | undefined): string | null {
+  let firstUrl: string | null = null;
   for (const field of [payload?.url, payload?.text, payload?.title]) {
     if (typeof field !== 'string') continue;
     const clamped = clampShareParam(field)!;
     for (const match of clamped.matchAll(LINK)) {
       // `blob:https://...`, `view-source:https://...` etc. não são links de vídeo navegáveis.
-      if (EMBEDDING_SCHEME.test(clamped.slice(0, match.index))) continue;
       let candidate = match[0];
       let extraClosing =
         (candidate.match(/\)/g)?.length ?? 0) - (candidate.match(/\(/g)?.length ?? 0);
@@ -33,12 +33,15 @@ export function extractVideoUrl(payload: RawSharePayload | null | undefined): st
         const parsed = new URL(
           /^https?:\/\//i.test(candidate) ? candidate : 'https://' + candidate,
         );
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue;
-        return parsed.href;
+        // O texto e o título também são armazenados, inclusive quando outro campo contém o link.
+        if (parsed.username || parsed.password) return null;
+        if (!firstUrl && !EMBEDDING_SCHEME.test(clamped.slice(0, match.index))) {
+          firstUrl = parsed.href;
+        }
       } catch {
         // Um primeiro candidato malformado não invalida o restante do compartilhamento.
       }
     }
   }
-  return null;
+  return firstUrl;
 }

@@ -7,8 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { VIDEOS_ROUTES } from './videos.routes';
 import { authGuard } from '../../core/auth/auth.guard';
 import { AuthService } from '../../core/auth/auth.service';
+import { safeNextUrl } from '../../core/auth/next-url';
 import { SessionState } from '../../core/session/session-state';
-import { clearPendingShare, peekPendingShare, stashPendingShare } from './pending-share-storage';
+import {
+  PENDING_SHARE_STORAGE_KEY,
+  clearPendingShare,
+  peekPendingShare,
+  stashPendingShare,
+} from './pending-share-storage';
 import { MAX_SHARE_PARAM_LENGTH } from './share-input-limits';
 import { ShareTargetPage } from './share-target.page';
 import { VIDEO_INBOX_DB_FACTORY, VideoInboxDb } from './video-inbox-db';
@@ -21,7 +27,10 @@ describe('ShareTargetPage', () => {
   let authStatus: 'anonymous' | 'authenticated' | 'pending';
   let accountRole: 'owner' | 'guest' | null;
   let accountPermissions: readonly string[] | null;
+  let currentAccountId: string | null;
   let fakeIdb: IDBFactory;
+
+  let harness: RouterTestingHarness;
 
   async function open(url: string): Promise<void> {
     TestBed.configureTestingModule({
@@ -40,8 +49,11 @@ describe('ShareTargetPage', () => {
             return {
               init: async () => undefined,
               status: () => authStatus,
+              // Mesmo filtro de `?next=` usado pelo login real.
               loginUrlTree: (next: string) =>
-                router.createUrlTree(['/entrar'], { queryParams: { next } }),
+                router.createUrlTree(['/entrar'], {
+                  queryParams: { next: safeNextUrl(next, 'http://localhost') },
+                }),
             };
           },
         },
@@ -50,7 +62,7 @@ describe('ShareTargetPage', () => {
           useValue: {
             role: () => accountRole,
             knownPermissions: () => accountPermissions,
-            accountId: () => 'test-account',
+            accountId: () => currentAccountId,
           },
         },
         {
@@ -64,7 +76,7 @@ describe('ShareTargetPage', () => {
       ],
     });
 
-    const harness = await RouterTestingHarness.create();
+    harness = await RouterTestingHarness.create();
     await harness.navigateByUrl(url);
     await vi.waitFor(() => {
       harness.detectChanges();
@@ -78,6 +90,7 @@ describe('ShareTargetPage', () => {
     authStatus = 'authenticated';
     accountRole = 'owner';
     accountPermissions = null;
+    currentAccountId = 'test-account';
     clearPendingShare();
   });
 
@@ -98,9 +111,10 @@ describe('ShareTargetPage', () => {
     expect(pending?.title).toBe('Musica');
 
     const router = TestBed.inject(Router);
-    expect(router.url).toBe('/entrar?next=%2Fvideos');
+    const next = router.parseUrl(router.url).queryParams['next'];
+    expect(next).toBe(`/videos?share=${pending!.id}`);
     authStatus = 'authenticated';
-    await router.navigateByUrl('/videos');
+    await router.navigateByUrl(next);
     const service = TestBed.inject(VideoInboxService);
     await vi.waitFor(async () => expect(await service.list()).toHaveLength(1));
     expect((await service.list())[0].canonical_url).toBe(
@@ -128,7 +142,7 @@ describe('ShareTargetPage', () => {
     expect(items[0].captured_via).toBe('share_target');
   });
 
-  it('processes any previously pending share on authenticated entry', async () => {
+  it('does not consume an unrelated pending share on empty share-target entry', async () => {
     stashPendingShare({
       url: 'https://x.com/uniover/status/1234567890',
       text: 'Texto pendente',
@@ -144,9 +158,18 @@ describe('ShareTargetPage', () => {
 
     const inboxService = TestBed.inject(VideoInboxService);
     const items = await inboxService.list();
-    expect(items).toHaveLength(1);
-    expect(items[0].canonical_url).toBe('https://x.com/uniover/status/1234567890');
+    expect(items).toHaveLength(0);
+    expect(peekPendingShare()?.url).toBe('https://x.com/uniover/status/1234567890');
+  });
+
+  it('does not stash a share whose url carries credentials', async () => {
+    authStatus = 'anonymous';
+    await open('/videos/compartilhar?url=https%3A%2F%2Fuser%3Asecret%40youtu.be%2Fabc');
     expect(peekPendingShare()).toBeNull();
+    expect(sessionStorage.length).toBe(0);
+    expect(localStorage.length).toBe(0);
+    const router = TestBed.inject(Router);
+    expect(router.parseUrl(router.url).queryParams['next']).toBe('/videos');
   });
 
   it('preserves the share until account permissions are known', async () => {
@@ -155,22 +178,74 @@ describe('ShareTargetPage', () => {
 
     const router = TestBed.inject(Router);
     expect(router.url).toBe('/');
-    expect(peekPendingShare()?.url).toBe('https://youtu.be/abc');
+    const pending = peekPendingShare();
+    expect(pending?.url).toBe('https://youtu.be/abc');
 
     accountRole = 'guest';
     accountPermissions = ['module:videos'];
-    await router.navigateByUrl('/videos');
+    await router.navigateByUrl(`/videos?share=${pending!.id}`);
     const service = TestBed.inject(VideoInboxService);
     await vi.waitFor(async () => expect(await service.list()).toHaveLength(1));
     expect(peekPendingShare()).toBeNull();
+  });
+
+  it.each([
+    ['permissions', 'test-account'],
+    ['account', null],
+  ])(
+    'saves a share interrupted by unknown %s on a later plain inbox visit',
+    async (_, initialAccountId) => {
+      accountRole = null;
+      currentAccountId = initialAccountId;
+      await open('/videos/compartilhar?url=https%3A%2F%2Fyoutu.be%2Fabc');
+      const router = TestBed.inject(Router);
+      expect(router.url).toBe('/');
+
+      accountRole = 'owner';
+      currentAccountId = 'test-account';
+      await router.navigateByUrl('/videos');
+      const service = TestBed.inject(VideoInboxService);
+      await vi.waitFor(async () => expect(await service.list()).toHaveLength(1));
+      await vi.waitFor(() => expect(sessionStorage.length).toBe(0));
+      expect(peekPendingShare()).toBeNull();
+    },
+  );
+
+  it('does not hand an interrupted share to another account', async () => {
+    accountRole = null;
+    await open('/videos/compartilhar?url=https%3A%2F%2Fyoutu.be%2Fabc');
+
+    accountRole = 'owner';
+    currentAccountId = 'other-account';
+    await harness.navigateByUrl('/videos');
+    // A lista vazia só aparece depois que a página terminou de processar a entrada.
+    await vi.waitFor(() => {
+      harness.detectChanges();
+      expect(harness.fixture.nativeElement.querySelector('.empty-state')).not.toBeNull();
+    });
+    const service = TestBed.inject(VideoInboxService);
+    expect(await service.list()).toEqual([]);
+    expect(peekPendingShare()?.url).toBe('https://youtu.be/abc');
+  });
+
+  it('resumes the interrupted share instead of the one written by another tab', async () => {
+    accountRole = null;
+    await open('/videos/compartilhar?url=https%3A%2F%2Fyoutu.be%2Fmine');
+    const other = { id: 'other-tab', timestamp: 1, url: 'https://youtu.be/other' };
+    localStorage.setItem(PENDING_SHARE_STORAGE_KEY, JSON.stringify(other));
+
+    accountRole = 'owner';
+    await TestBed.inject(Router).navigateByUrl('/videos');
+    const service = TestBed.inject(VideoInboxService);
+    await vi.waitFor(async () => expect(await service.list()).toHaveLength(1));
+    expect((await service.list())[0].raw_text).toBe('https://youtu.be/mine');
+    expect(peekPendingShare(other.id)).not.toBeNull();
   });
 
   it('blocks guest without module:videos permission and redirects to home', async () => {
     authStatus = 'authenticated';
     accountRole = 'guest';
     accountPermissions = ['module:tv'];
-
-    stashPendingShare({ url: 'https://youtube.com/watch?v=123' });
 
     await open('/videos/compartilhar?url=https%3A%2F%2Fyoutube.com%2Fwatch%3Fv%3D123');
 

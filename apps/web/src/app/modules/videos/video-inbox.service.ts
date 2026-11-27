@@ -3,6 +3,7 @@ import { SessionState } from '../../core/session/session-state';
 import { VIDEO_INBOX_DB_FACTORY, VideoInboxDb } from './video-inbox-db';
 import type { RawSharePayload, VideoInboxItem } from './video-inbox.model';
 import { extractVideoUrl } from './video-url-extractor';
+import { clampShareParam, clampSharePayload } from './share-input-limits';
 import { isHttpUrl, normalizeVideoUrl } from './video-url-normalizer';
 import { clearPendingShare, peekPendingShare } from './pending-share-storage';
 
@@ -37,8 +38,16 @@ export class VideoInboxService {
    * Salva diretamente um item capturado no banco local.
    */
   async add(item: VideoInboxItem): Promise<void> {
+    const raw_text = clampShareParam(item.raw_text) ?? '';
+    const title = clampShareParam(item.title);
+    if (
+      !isHttpUrl(item.canonical_url) ||
+      !extractVideoUrl({ url: item.canonical_url, text: raw_text, title })
+    ) {
+      throw new Error('URL de vídeo inválida.');
+    }
     const db = this.db();
-    await db.items.put(item);
+    await db.items.put({ ...item, raw_text, title });
   }
 
   /**
@@ -57,6 +66,7 @@ export class VideoInboxService {
     via: VideoInboxItem['captured_via'] = 'share_target',
     id: string = crypto.randomUUID(),
   ): Promise<VideoInboxItem | null> {
+    payload = clampSharePayload(payload);
     const extractedUrl = extractVideoUrl(payload);
     if (!extractedUrl) return null;
 
@@ -84,8 +94,8 @@ export class VideoInboxService {
   /**
    * Processa o compartilhamento pendente (caso exista) e salva na caixa do usuário atual.
    */
-  async processPendingShare(): Promise<VideoInboxItem | null> {
-    const pending = peekPendingShare();
+  async processPendingShare(id: string): Promise<VideoInboxItem | null> {
+    const pending = peekPendingShare(id);
     if (!pending) return null;
     const item = await this.captureShare(pending, 'share_target', pending.id);
     clearPendingShare(pending.id);

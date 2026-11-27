@@ -10,6 +10,7 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { SessionState } from '../../core/session/session-state';
+import { clearPendingShare, interruptedShareId } from './pending-share-storage';
 import { VideoInboxService } from './video-inbox.service';
 import { isHttpUrl } from './video-url-normalizer';
 import {
@@ -79,25 +80,34 @@ export class VideoInboxPage implements OnInit {
   }
 
   private async processIncomingOrPending(accountId: string): Promise<void> {
-    // 1. Processa compartilhamento pendente (ex: vindo antes do login)
-    const pendingItem = await this.inboxService.processPendingShare();
-    if (this.activeAccountId() !== accountId) return;
-    if (pendingItem) {
-      this.showFeedback($localize`:@@videos.inbox.feedback.saved:Link salvo com sucesso!`);
-    }
-
-    // 2. Se a rota atual tiver parâmetros de compartilhamento diretos
     const query = this.route.snapshot.queryParamMap;
+    const share = query.get('share');
     const url = query.get('url');
     const text = query.get('text');
     const title = query.get('title');
 
+    // Sem `share` na URL, retoma o compartilhamento que o guard desviou nesta aba.
+    const interrupted = share ? null : interruptedShareId(accountId);
+    if (interrupted) {
+      const resumed = await this.inboxService.processPendingShare(interrupted);
+      if (this.activeAccountId() !== accountId) return;
+      if (resumed) {
+        this.showFeedback($localize`:@@videos.inbox.feedback.saved:Link salvo com sucesso!`);
+      } else {
+        // O registro já não existe: descarta também a marca que apontava para ele.
+        clearPendingShare(interrupted);
+      }
+    }
+
     if (
+      share ||
       (url && url.trim().length > 0) ||
       (text && text.trim().length > 0) ||
       (title && title.trim().length > 0)
     ) {
-      const captured = await this.inboxService.captureShare({ url, text, title });
+      const captured = share
+        ? await this.inboxService.processPendingShare(share)
+        : await this.inboxService.captureShare({ url, text, title });
       if (this.activeAccountId() !== accountId) return;
       if (captured) {
         this.showFeedback($localize`:@@videos.inbox.feedback.saved:Link salvo com sucesso!`);
@@ -178,7 +188,7 @@ export class VideoInboxPage implements OnInit {
 
   protected async copyLink(item: VideoInboxItem): Promise<void> {
     const accountId = this.activeAccountId();
-    if (!accountId) return;
+    if (!accountId || !isHttpUrl(item.canonical_url)) return;
     try {
       await navigator.clipboard.writeText(item.canonical_url);
       if (this.activeAccountId() !== accountId) return;
