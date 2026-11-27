@@ -85,6 +85,65 @@ def test_a_real_child_process_runs_through_the_helper() -> None:
     assert done.stdout.strip() == "ok"
 
 
+@pytest.mark.parametrize(
+    "text_options",
+    [
+        {"encoding": "utf-8"},
+        # O mesmo que o `text=True` sob `PYTHONUTF8=1` do supervisor, sem depender deste ambiente.
+        {"text": True, "encoding": "utf-8"},
+    ],
+)
+def test_a_byte_outside_utf8_does_not_lose_the_child_output(text_options: dict[str, Any]) -> None:
+    # 0xa2 é o "ó" da página de códigos do console, com que ferramentas do Windows escrevem.
+    child = (
+        "import sys;"
+        r"sys.stdout.buffer.write(b'ac\xc3\xa3o n\xa2s\n');"
+        r"sys.stderr.buffer.write(b'erro \xa2\n')"
+    )
+    done = run_hidden([sys.executable, "-c", child], capture_output=True, **text_options)
+    assert done.stdout == "acão n\ufffds\n"
+    assert done.stderr == "erro \ufffd\n"
+
+
+@pytest.mark.parametrize(
+    "text_options",
+    [{"text": True}, {"universal_newlines": True}, {"encoding": "utf-8"}],
+)
+def test_run_hidden_makes_every_text_mode_tolerant_and_keeps_the_caller_choices(
+    monkeypatch: pytest.MonkeyPatch, text_options: dict[str, Any]
+) -> None:
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(subprocess, "run", lambda args, **kwargs: seen.update(kwargs))
+    run_hidden(["x"], **text_options)
+    assert seen == {**text_options, "errors": "replace", "check": False, "creationflags": NO_WINDOW}
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {"text": False},
+        {"encoding": None},
+        {"errors": "strict"},
+        {"text": True, "errors": "ignore"},
+        {"encoding": "utf-8", "errors": "strict"},
+    ],
+)
+def test_run_hidden_leaves_bytes_mode_and_explicit_errors_alone(
+    monkeypatch: pytest.MonkeyPatch, options: dict[str, Any]
+) -> None:
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(subprocess, "run", lambda args, **kwargs: seen.update(kwargs))
+    run_hidden(["x"], **options)
+    assert seen == {**options, "check": False, "creationflags": NO_WINDOW}
+
+
+def test_a_capture_without_text_mode_still_returns_the_raw_bytes() -> None:
+    child = r"import sys; sys.stdout.buffer.write(b'\xa2')"
+    done = run_hidden([sys.executable, "-c", child], capture_output=True)
+    assert done.stdout == b"\xa2"
+
+
 def test_only_the_helper_creates_processes() -> None:
     """Todo `subprocess` do agente passa pelo ajudante: nenhum módulo chama o sistema direto."""
     direct = re.compile(
