@@ -15,24 +15,34 @@ from pydantic import (
     StrictBool,
     StrictInt,
 )
+from pydantic import BeforeValidator
+
+
+def _screen_integral(value: object) -> object:
+    if type(value) is float and value.is_integer():
+        return int(value)
+    return value
+
+
+_ScreenInt = Annotated[StrictInt, BeforeValidator(_screen_integral)]
 
 
 class PcScreenMonV1MonitorsItem(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
-    id: Annotated[StrictInt, Field(ge=0, le=2147483647)]
+    id: Annotated[_ScreenInt, Field(ge=0, le=2147483647)]
     primary: StrictBool
-    width: Annotated[StrictInt, Field(ge=1, le=100000)]
-    height: Annotated[StrictInt, Field(ge=1, le=100000)]
-    x: Annotated[StrictInt | MISSING, Field(ge=-100000, le=100000)] = MISSING
-    y: Annotated[StrictInt | MISSING, Field(ge=-100000, le=100000)] = MISSING
-    left: Annotated[StrictInt | MISSING, Field(ge=-100000, le=100000)] = MISSING
-    top: Annotated[StrictInt | MISSING, Field(ge=-100000, le=100000)] = MISSING
+    width: Annotated[_ScreenInt, Field(ge=1, le=100000)]
+    height: Annotated[_ScreenInt, Field(ge=1, le=100000)]
+    x: Annotated[_ScreenInt | MISSING, Field(ge=-100000, le=100000)] = MISSING
+    y: Annotated[_ScreenInt | MISSING, Field(ge=-100000, le=100000)] = MISSING
+    left: Annotated[_ScreenInt | MISSING, Field(ge=-100000, le=100000)] = MISSING
+    top: Annotated[_ScreenInt | MISSING, Field(ge=-100000, le=100000)] = MISSING
 
 
-class Layout(RootModel[StrictInt]):
-    root: Annotated[StrictInt, Field(ge=0, le=4294967295)]
+class Layout(RootModel[_ScreenInt]):
+    root: Annotated[_ScreenInt, Field(ge=0, le=4294967295)]
 
 
 class PcScreenMonV1Message(BaseModel):

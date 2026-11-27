@@ -103,6 +103,65 @@ def test_scalar_values_are_not_coerced(document: dict[str, Any]) -> None:
         model_of(document)
 
 
+MONITOR_INTEGRAL = {"id": 0.0, "primary": True, "width": 1920.0, "height": 1080.0, "x": -5.0}
+
+
+@pytest.mark.parametrize(
+    ("document", "path", "expected"),
+    [
+        ({"k": "s.same", "crc": 42.0}, ("crc",), 42),
+        ({"k": "s.stat", "bytes": 0.0, "cpu": None, "privateMB": 1.5}, ("bytes",), 0),
+        ({"k": "s.cur", "x": -0.0, "y": 1e2}, ("y",), 100),
+        ({"k": "s.get", "width": 1280.0}, ("width",), 1280),
+        ({"k": "s.get", "monitor": 0.0}, ("monitor",), 0),
+        ({"k": "s.mon", "monitors": [MONITOR_INTEGRAL]}, ("monitors", 0, "x"), -5),
+        ({"k": "s.mon", "monitors": [MONITOR_INTEGRAL]}, ("monitors", 0, "width"), 1920),
+        ({"k": "s.mon", "monitors": [MONITOR], "layout": 42.0}, ("layout",), 42),
+    ],
+)
+def test_integral_number_is_an_integer_like_in_the_schema(
+    document: dict[str, Any], path: tuple[str | int, ...], expected: int
+) -> None:
+    assert schema_accepts(document)
+    for model in (
+        model_of(document),
+        MESSAGES[document["k"]][1].model_validate_json(json.dumps(document)),
+    ):
+        value: Any = model.model_dump()
+        for key in path:
+            value = value[key]
+        assert value == expected
+        assert type(value) is int
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"k": "s.same", "crc": 42.5},
+        {"k": "s.same", "crc": True},
+        {"k": "s.stat", "bytes": 0.5, "cpu": None, "privateMB": 1.5},
+        {"k": "s.stat", "bytes": False, "cpu": None, "privateMB": 1.5},
+        {"k": "s.cur", "x": 0, "y": "1"},
+        {"k": "s.get", "width": 1280.5},
+        {"k": "s.get", "width": 1921.0},
+        {"k": "s.get", "monitor": True},
+        {"k": "s.mon", "monitors": [{**MONITOR, "x": 0.25}]},
+        {"k": "s.mon", "monitors": [{**MONITOR, "id": False}]},
+        {"k": "s.mon", "monitors": [MONITOR], "layout": 4294967296.0},
+        {"k": "s.mon", "monitors": [MONITOR], "layout": 1.5},
+    ],
+)
+def test_fraction_bool_text_and_out_of_range_integral_are_refused(
+    document: dict[str, Any],
+) -> None:
+    assert not schema_accepts(document)
+    model = MESSAGES[document["k"]][1]
+    with pytest.raises(ValidationError):
+        model.model_validate(document)
+    with pytest.raises(ValidationError):
+        model.model_validate_json(json.dumps(document))
+
+
 def test_an_enveloped_object_is_not_a_channel_message() -> None:
     enveloped = {"v": 1, "type": "pc.screen.get.v1", "body": {"k": "s.get"}}
     for name, model in MESSAGES.values():

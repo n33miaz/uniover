@@ -186,7 +186,8 @@ const DATAMODEL_CODEGEN = "datamodel-code-generator==0.86.0";
 
 // Só no canal `screen`: campo opcional pode faltar, mas não aceita `null` (como no esquema). O
 // `--strict-nullable` cobre os campos com default; o `--use-missing-sentinel`, os sem default (`pydantic.MISSING`).
-// `--strict-types` recusa coerções como texto para número e inteiro para booleano.
+// `--strict-types` recusa coerções como texto para número e inteiro para booleano. O `StrictInt` ainda
+// recusaria o 42.0, que o `"type": "integer"` do esquema aceita: o `integralScreenInts` cuida disso.
 const SCREEN_PY_ARGS = [
   "--strict-nullable", "--use-missing-sentinel", "--target-pydantic-version", "2.14",
   "--strict-types", "int", "float", "bool",
@@ -358,6 +359,30 @@ function pythonArgs(className) {
   ];
 }
 
+// No JSON Schema, `integer` é qualquer número sem parte fracionária (42.0 inclusive). O `StrictInt` só recusa
+// texto, booleano e fração depois que o número integral com ".0" vira int.
+const SCREEN_INTEGRAL_INT = `from pydantic import BeforeValidator
+
+
+def _screen_integral(value: object) -> object:
+    if type(value) is float and value.is_integer():
+        return int(value)
+    return value
+
+
+_ScreenInt = Annotated[StrictInt, BeforeValidator(_screen_integral)]
+
+
+`;
+
+/** Troca o `StrictInt` dos campos pelo `_ScreenInt` (o import do pydantic continua como veio). */
+function integralScreenInts(code) {
+  const firstClass = code.search(/^class /m);
+  if (firstClass < 0 || !/\bStrictInt\b/.test(code.slice(firstClass))) return code;
+  const body = code.slice(firstClass).replace(/\bStrictInt\b/g, "_ScreenInt");
+  return `${code.slice(0, firstClass).trimEnd()}\n${SCREEN_INTEGRAL_INT}${body}`;
+}
+
 export function* generateScreenPython(flatScreen = flattenScreen(readSchemaDir(join(AGENT_SCHEMAS, "screen", "messages")))) {
   for (const { type, name, schema } of flatScreen) {
     const input = structuredClone(schema);
@@ -366,7 +391,10 @@ export function* generateScreenPython(flatScreen = flattenScreen(readSchemaDir(j
       input: JSON.stringify(input),
       env: { ...process.env, PYTHONIOENCODING: "utf-8" },
     });
-    yield [`${GENERATED_PY_DIR}/${snake(type)}.py`, withFinalNewline(lf(wrapPythonRootModelDefaults(code)))];
+    yield [
+      `${GENERATED_PY_DIR}/${snake(type)}.py`,
+      withFinalNewline(integralScreenInts(lf(wrapPythonRootModelDefaults(code)))),
+    ];
   }
 }
 
