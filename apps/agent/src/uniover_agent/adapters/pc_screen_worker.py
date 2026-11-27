@@ -24,7 +24,11 @@ from PIL import Image, ImageDraw, ImageGrab
 from uniover_agent.adapters.pc_direct_aiortc import _load, prepare_offer
 from uniover_agent.adapters.pc_direct_network import is_lan_address
 from uniover_agent.adapters.pc_screen_monitors import Monitor, list_monitors
-from uniover_agent.adapters.pc_screen_presence import screen_indicator
+from uniover_agent.adapters.pc_screen_presence import (
+    TRAY_UNAVAILABLE,
+    screen_indicator,
+    tray_alive,
+)
 from uniover_agent.adapters.pc_screen_probes import STATE_LOCKED, STATE_OK, read_cursor, read_state
 from uniover_agent.adapters.pc_windows import USER_DESKTOP
 from uniover_agent.core.pc.absolute import layout_print
@@ -212,7 +216,8 @@ def _remote_is_lan(peer: Any) -> bool:
         return False
 
 
-# A sinalização à bandeja: entrega a consulta "o dono mandou parar?" (`None` se não há como pedir).
+# A sinalização à bandeja: entrega a consulta "a visualização tem de parar?" (o dono mandou ou o
+# ícone sumiu; `None` se não há o que consultar).
 Viewing = Callable[[], AbstractContextManager[Callable[[], bool] | None]]
 
 
@@ -356,7 +361,8 @@ class ScreenSession:
                     await asyncio.gather(stopper, return_exceptions=True)
 
     async def watch_stop(self, requested: Callable[[], bool]) -> None:
-        """O dono mandou parar pela bandeja: a sessão acaba, e só uma oferta nova abre outra."""
+        """O dono mandou parar pela bandeja, ou ela sumiu: a sessão acaba, e só uma oferta nova abre
+        outra."""
         while not self.closed.is_set():
             if requested():
                 self.closed.set()
@@ -655,6 +661,10 @@ async def main() -> None:
             offer = Offer.parse(raw.result())
         except ValueError, RecursionError:
             reply({"error": "Oferta inválida.", "code": "invalid_offer"})
+            return
+        # Antes de responder o SDP: a recusa chega ao app como erro, não como um canal que cai.
+        if not tray_alive():
+            reply({"error": "O ícone do UniOver não está aberto.", "code": TRAY_UNAVAILABLE})
             return
         user = ctypes.windll.user32
         user.SetProcessDpiAwarenessContext.argtypes = (ctypes.c_void_p,)

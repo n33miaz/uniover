@@ -467,6 +467,7 @@ async def test_worker_main_reports_dpi_failure_code(monkeypatch: pytest.MonkeyPa
         SetProcessDpiAwarenessContext=lambda _arg: False,
     )
     monkeypatch.setattr(pc_screen_worker, "Thread", FakeThread)
+    monkeypatch.setattr(pc_screen_worker, "tray_alive", lambda: True)
     # `raising=False`: no Linux do CI o `ctypes` não tem `windll`.
     monkeypatch.setattr(ctypes, "windll", SimpleNamespace(user32=user32_mock), raising=False)
     monkeypatch.setattr("builtins.print", mock_print)

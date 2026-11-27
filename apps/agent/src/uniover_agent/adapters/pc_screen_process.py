@@ -8,7 +8,9 @@ import sys
 from collections.abc import Callable
 
 from uniover_agent.adapters.pc_screen_job import ScreenJob
+from uniover_agent.adapters.pc_screen_presence import TRAY_UNAVAILABLE
 from uniover_agent.adapters.process import exec_hidden
+from uniover_agent.ports.pc_direct import DirectUnavailable
 
 _log = logging.getLogger(__name__)
 
@@ -131,11 +133,13 @@ class ScreenProcess:
                 self._record_error(err)
                 raise err
 
+            if answer.get("code") == TRAY_UNAVAILABLE:
+                _log.warning("tela recusada: o ícone do UniOver não está aberto neste PC")
+                raise DirectUnavailable("ícone da bandeja fechado")
             if "error" in answer:
                 error_msg = str(answer.get("error", "Erro do worker de tela."))
                 error_code = str(answer.get("code", "worker_error"))
-                error_cls = self._error_class_for_code(error_code)
-                err = error_cls(error_msg, code=error_code)
+                err = self._error_class_for_code(error_code)(error_msg, code=error_code)
                 self._record_error(err)
                 raise err
 

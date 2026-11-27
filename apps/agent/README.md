@@ -486,9 +486,9 @@ mídia, zoom, volume e o canal direto dividiam o laço com a TV, a rede, o diagn
   `device_pending` (403 `pc-device-pending`) até o dono responder. Permitiu: fica guardado por aparelho em
   `runtime\pc-devices.json` (só um resumo do identificador) e não pergunta de novo. Recusou: `device_denied` (403
   `pc-device-denied`) por uma hora, depois pergunta de novo. A oferta do canal direto também passa por isso. **Por que não pela
-  bandeja:** o ícone é outro processo (o PowerShell da bandeja só lê o estado e devolve ações de menu); uma pergunta de sim ou não
-  ali pediria um protocolo de ida e volta por arquivos e, se a bandeja não estivesse viva, o aparelho ficaria pendente para
-  sempre. O agente roda na sessão do usuário (é por isso que o `SendInput` funciona), então ele mesmo mostra a janela.
+  bandeja:** o agente roda na sessão do usuário (é por isso que o `SendInput` funciona) e mostra a janela de aprovação
+  mesmo com o ícone fechado. A bandeja principal recebe o estado do ícone e informa ao agente as ações do menu e
+  qual visualização está sinalizando.
   Convidados continuam sem `module:pc` por padrão (o modelo "só TV" do convite não o inclui).
   **Falha fechado:** com a aprovação ligada, comando sem `deviceId` só passa se a API RESPONDEU à consulta de `features` e NÃO
   lista `pc.device.v1` (uma API anterior: decisão registrada no log). Com isso desconhecido (partida, consulta que falhou, o
@@ -640,6 +640,20 @@ agente para manter o controle disponível. Para interromper o início do agente,
   visualização num objeto nomeado do Windows e espera um evento com esse nome: o pedido de parar encerra a sessão da
   tela, sem tocar no controle do PC, e um pedido atrasado não acha evento nenhum, então nunca derruba a seguinte. A tela
   só abre de novo com um pedido novo do aparelho. Nenhuma janela abre.
+- **Sem ícone, sem tela.** A bandeja grava o relógio do Windows num objeto nomeado. Na bandeja principal, o carimbo
+  usa a hora em que o agente recebeu a confirmação do estado esperado. A interface confirma a cada 350 ms enquanto
+  responde e o Windows reconhece o ícone, inclusive na área de ícones ocultos. Na bandeja reserva, o carimbo é renovado
+  após uma atualização aceita pelo Windows, normalmente a cada 2 s. O carimbo vale por até 10 s. Se faltar na
+  checagem inicial, a oferta é recusada
+  com `rtc_unavailable` antes da resposta SDP e o agente registra o motivo. Depois do SDP e da autenticação, cada
+  visualização espera até 9 s pela confirmação do próprio indicador antes de transmitir quadros. Se a confirmação
+  faltar nessa etapa, o canal da tela fecha e o app exibe uma falha genérica. O controle do PC continua.
+  Durante a visualização, o **Sair**, a perda do carimbo ou seu vencimento encerram a tela na consulta seguinte
+  (a cada 0,2 s). O objeto some junto com o processo. Se o Windows perder o registro do ícone, a bandeja principal
+  tenta registrá-lo novamente e retoma a confirmação assim que ele volta. Se a bandeja principal cair, a tela volta a
+  abrir quando a bandeja reserva assume. Quem fechou o ícone, ou desabilitou a entrada de inicialização, precisa abrir
+  o atalho **UniOver** do menu Iniciar antes de ver a tela. Na bandeja reserva, o Windows pode aceitar a atualização do
+  ícone mesmo quando o menu **Parar de mostrar a tela** deixa de responder.
 - **Balão do Windows sozinho só em dois casos:** falha de atualização, uma vez por resultado
   (`runtime\tray-notified.json`), e quando um aparelho começa a ver a tela (uma sessão que volta em até 30 s é a mesma
   visualização). Atualizar, conectar, reiniciar e o resto não abrem balão.
@@ -660,7 +674,8 @@ agente para manter o controle disponível. Para interromper o início do agente,
   A chave não é documentada pela Microsoft e o Windows pode ignorar a mudança até o próximo registro do ícone; se a
   linha não aparecer em 2 minutos, tenta de novo na próxima abertura do ícone.
 
-O ensaio de atualização não mexe nesse registro. Se a bandeja não estiver disponível, o agente continua normalmente; um ícone que cai logo ao abrir é reaberto com espera
+O ensaio de atualização não mexe nesse registro. Se a bandeja não estiver disponível, o agente continua normalmente
+(só a tela do PC fica recusada); um ícone que cai logo ao abrir é reaberto com espera
 crescente (15 s até 30 min) e a queda vira diagnóstico. A pasta `%LOCALAPPDATA%\UniOver` fica organizada em `app`,
 `runtime`, `config`, `logs` e `web`, com um `LEIA-ME.txt`. Instalações antigas são migradas preservando
 `agent_id`, configuração e os tokens do Cofre do Windows.

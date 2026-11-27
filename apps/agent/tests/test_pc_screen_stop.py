@@ -3,7 +3,6 @@ que ele nomeia."""
 
 import asyncio
 import sys
-import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -11,7 +10,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from uniover_agent.adapters import pc_screen_presence
 from uniover_agent.adapters.pc_screen_presence import (
     request_screen_stop,
     screen_indicator,
@@ -30,14 +28,6 @@ from .test_pc_screen_worker import Channel, session
 
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="objetos nomeados do Windows")
 _OFFER = Offer("oferta", "bilhete-de-teste", 10, 60)
-
-
-@pytest.fixture
-def private_names(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Nomes só deste teste: um agente instalado no PC não é visto nem parado."""
-    unique = uuid.uuid4().hex
-    monkeypatch.setattr(pc_screen_presence, "_VIEWING_NAME", rf"Local\UniOverTest.{unique}")
-    monkeypatch.setattr(pc_screen_presence, "_STOP_PREFIX", rf"Local\UniOverTest.{unique}.Stop.")
 
 
 def run_session(
@@ -119,7 +109,7 @@ async def test_no_further_piece_of_a_frame_leaves_after_the_session_closes() -> 
 
 
 @windows_only
-@pytest.mark.usefixtures("private_names")
+@pytest.mark.usefixtures("live_tray")
 def test_the_viewing_is_published_only_while_the_indicator_is_up() -> None:
     assert viewing_session() is None
     with screen_indicator() as stop_requested:
@@ -133,7 +123,7 @@ def test_the_viewing_is_published_only_while_the_indicator_is_up() -> None:
 
 
 @windows_only
-@pytest.mark.usefixtures("private_names")
+@pytest.mark.usefixtures("live_tray")
 def test_an_old_request_does_not_touch_the_next_viewing() -> None:
     with screen_indicator():
         old = viewing_session()
@@ -149,7 +139,7 @@ def test_an_old_request_does_not_touch_the_next_viewing() -> None:
 
 
 @windows_only
-@pytest.mark.usefixtures("private_names")
+@pytest.mark.usefixtures("live_tray")
 @pytest.mark.parametrize("value", ["", "a" * 31, "A" * 32, "a" * 31 + "\\", "a" * 32 + " x"])
 def test_only_a_well_formed_identifier_is_ever_requested(value: str) -> None:
     with screen_indicator() as stop_requested:
@@ -158,7 +148,7 @@ def test_only_a_well_formed_identifier_is_ever_requested(value: str) -> None:
 
 
 @windows_only
-@pytest.mark.usefixtures("private_names")
+@pytest.mark.usefixtures("live_tray")
 async def test_the_tray_request_stops_the_screen_it_names_and_not_the_next(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
