@@ -220,13 +220,13 @@ h1 {
     font-size: 1.35rem;
   }
 }
-/* O estado do elo: uma linha curta, na largura toda da tela, encostada no cabeçalho. */
+/* Dos 6 px de vão da coluna, ficam 2 px de cada lado da linha para preservar a altura do palco. */
 .link-state {
   flex: none;
-  margin: -4px 0 0;
+  margin: -4px 0;
   color: var(--a-ink2);
   font-size: 0.8rem;
-  line-height: 1.25;
+  line-height: 1rem;
   text-align: center;
 }
 
