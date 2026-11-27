@@ -11,8 +11,8 @@ namespace UniOver.Modules.Tv.Tests.Adapters;
 
 public class TvLinkWatcherTests
 {
-    private const string Agent = "pc-casa";
-    private static readonly Guid TvId = Guid.NewGuid();
+    private const string _agent = "pc-casa";
+    private static readonly Guid _tvId = Guid.NewGuid();
 
     private sealed class Presence : ITvAgentPresence
     {
@@ -20,18 +20,25 @@ public class TvLinkWatcherTests
 
         public Func<string, bool>? FailOnCheck { get; set; }
 
+        public Action<string>? OnIsOnline { get; set; }
+
+        public string? StaleAgent { get; set; }
+
         public string CheckFailureMessage { get; set; } = "Erro de presença";
 
-        public bool IsOnline(string agentId) =>
-            FailOnCheck?.Invoke(agentId) == true
+        public bool IsOnline(string agentId)
+        {
+            OnIsOnline?.Invoke(agentId);
+            return FailOnCheck?.Invoke(agentId) == true
                 ? throw new InvalidOperationException(CheckFailureMessage)
                 : true;
+        }
 
         public DateTimeOffset? OfflineSince(string agentId) => null;
 
         public bool IsOfflineBeyondReconnectGrace(string agentId) => false;
 
-        public bool HasRecentReport(string agentId, TimeSpan within) => Fresh;
+        public bool HasRecentReport(string agentId, TimeSpan within) => Fresh && agentId != StaleAgent;
     }
 
     private sealed class Stream : ITvStreamPublisher
@@ -76,11 +83,11 @@ public class TvLinkWatcherTests
         ILogger<TvLinkWatcher>? logger = null)
     {
         var store = new InMemoryTvStateStore();
-        store.Apply(Agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
+        store.Apply(_agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
         var presence = new Presence();
         var stream = new Stream();
         var watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()), logger ?? NullLogger<TvLinkWatcher>.Instance);
-        watcher.Track(TvId, Agent, TvState.From(store.Last(Agent), agentOnline: true));
+        watcher.Track(_tvId, _agent, TvState.From(store.Last(_agent), agentOnline: true));
         return (watcher, presence, stream);
     }
 
@@ -96,7 +103,7 @@ public class TvLinkWatcherTests
         watcher.Check();
 
         var (tvId, state) = stream.Published.Should().ContainSingle().Subject;
-        tvId.Should().Be(TvId);
+        tvId.Should().Be(_tvId);
         state.Link!.State.Should().Be(TvLinkText.PcOffline);
     }
 
@@ -143,7 +150,7 @@ public class TvLinkWatcherTests
     {
         var (watcher, presence, stream) = Rig();
 
-        watcher.Release(TvId, Agent);
+        watcher.Rebind(_tvId, "pc-novo");
         presence.Fresh = false;
         watcher.Check();
 
@@ -154,7 +161,7 @@ public class TvLinkWatcherTests
     public void WhenAnotherAgentReportsForTheTv_TheOldOneStopsBeingWatched()
     {
         var (watcher, presence, stream) = Rig();
-        watcher.Track(TvId, "pc-novo", TvState.From(null, agentOnline: true));
+        watcher.Track(_tvId, "pc-novo", TvState.From(null, agentOnline: true));
 
         presence.Fresh = false;
         watcher.Check();
@@ -164,11 +171,11 @@ public class TvLinkWatcherTests
     }
 
     [Fact]
-    public void ReleasingAnAgentNowBoundToAnotherTv_KeepsItWatched()
+    public void RelinkingAnotherTv_KeepsTheCurrentTvWatched()
     {
         var (watcher, presence, stream) = Rig();
 
-        watcher.Release(Guid.NewGuid(), Agent);
+        watcher.Rebind(Guid.NewGuid(), "pc-novo");
         presence.Fresh = false;
         watcher.Check();
 
@@ -179,20 +186,20 @@ public class TvLinkWatcherTests
     public async Task ACheckRacingAReport_NeverPublishesItsOlderViewAfterTheReport()
     {
         var store = new InMemoryTvStateStore();
-        store.Apply(Agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
+        store.Apply(_agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
         var presence = new Presence();
         TvLinkWatcher? watcher = null;
         var stream = new Stream();
-        var ready = TvState.From(store.Last(Agent), agentOnline: true);
+        var ready = TvState.From(store.Last(_agent), agentOnline: true);
         stream.OnPublish = () =>
         {
             // Um relato chega justo enquanto a passada publica: precisa esperar a passada, e vencer depois.
-            stream.Pending = Task.Run(() => watcher!.Publish(TvId, Agent, ready));
+            stream.Pending = Task.Run(() => watcher!.Publish(_tvId, _agent, ready));
             Thread.Sleep(100);
             stream.OnPublish = null;
         };
         watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()), NullLogger<TvLinkWatcher>.Instance);
-        watcher.Track(TvId, Agent, ready);
+        watcher.Track(_tvId, _agent, ready);
 
         presence.Fresh = false;
         watcher.Check();
@@ -208,13 +215,13 @@ public class TvLinkWatcherTests
     {
         var (watcher, presence, stream) = Rig();
         presence.Fresh = false;
-        var read = TvState.From(new InMemoryTvStateStore().Last(Agent), agentOnline: true, reportFresh: false);
+        var read = TvState.From(new InMemoryTvStateStore().Last(_agent), agentOnline: true, reportFresh: false);
 
-        watcher.Track(TvId, Agent, read);
+        watcher.Track(_tvId, _agent, read);
         watcher.Check();
 
         var (tvId, state) = stream.Published.Should().ContainSingle().Subject;
-        tvId.Should().Be(TvId);
+        tvId.Should().Be(_tvId);
         state.Link!.State.Should().Be(TvLinkText.PcOffline);
     }
 
@@ -228,7 +235,7 @@ public class TvLinkWatcherTests
         var handler = new UniOver.Modules.Tv.Features.Config.BindAgentHandler(
             null!, null!, null!, null!, store, presence, stream, null!, TimeProvider.System, watcher: watcher);
 
-        handler.AnnounceNewAgent(TvId, Agent);
+        handler.AnnounceNewAgent(_tvId, _agent);
         stream.Published.Should().ContainSingle();
 
         presence.Fresh = false;
@@ -244,13 +251,13 @@ public class TvLinkWatcherTests
         var stream = new Stream();
         var presence = new Presence { Fresh = false };
         var store = new InMemoryTvStateStore();
-        store.Apply(Agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
+        store.Apply(_agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
         var watcher = new TvLinkWatcher(store, presence, stream, Options.Create(new TvModuleOptions()), NullLogger<TvLinkWatcher>.Instance);
         var handler = new UniOver.Modules.Tv.Features.Config.BindAgentHandler(
             null!, null!, null!, null!, store, presence, stream, null!, TimeProvider.System, watcher: watcher,
             options: Options.Create(new TvModuleOptions()));
 
-        handler.AnnounceNewAgent(TvId, Agent);
+        handler.AnnounceNewAgent(_tvId, _agent);
         watcher.Check();
 
         stream.Published.Should().ContainSingle().Which.State.Link!.State.Should().Be(TvLinkText.PcOffline);
@@ -276,13 +283,13 @@ public class TvLinkWatcherTests
     public void ALinkChangePublishedByARead_BecomesTheBaseline_SoTheNextPassDoesNotRepeatIt()
     {
         var store = new InMemoryTvStateStore();
-        store.Apply(Agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
+        store.Apply(_agent, new TvStateSnapshot(TvStateText.PowerOn, 10, null, TvStateText.ConnectionHot, DateTimeOffset.UtcNow));
         var presence = new Presence();
         var stream = new Stream();
         var options = Options.Create(new TvModuleOptions());
         var watcher = new TvLinkWatcher(store, presence, stream, options, NullLogger<TvLinkWatcher>.Instance);
-        watcher.Track(TvId, Agent, TvState.From(store.Last(Agent), agentOnline: true));
-        var target = new UniOver.Modules.Tv.Features.Selection.TvTarget(TvId, Agent, "TV", true);
+        watcher.Track(_tvId, _agent, TvState.From(store.Last(_agent), agentOnline: true));
+        var target = new UniOver.Modules.Tv.Features.Selection.TvTarget(_tvId, _agent, "TV", true);
         var provider = new TvStateProvider(new Selection(target), store, presence, options, watcher);
 
         presence.Fresh = false;
@@ -290,6 +297,63 @@ public class TvLinkWatcherTests
         watcher.Check();
 
         stream.Published.Should().ContainSingle("a leitura já publicou o elo e a passada não repete");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AReadPausedAcrossRelinking_KeepsTheNewAgentWatched(bool oldPresenceAlreadyKnown)
+    {
+        const string newAgent = "pc-novo";
+        var store = new InMemoryTvStateStore();
+        var presence = new Presence();
+        var stream = new Stream();
+        var options = Options.Create(new TvModuleOptions());
+        var watcher = new TvLinkWatcher(store, presence, stream, options, NullLogger<TvLinkWatcher>.Instance);
+        var target = new UniOver.Modules.Tv.Features.Selection.TvTarget(_tvId, _agent, "TV", true);
+        var provider = new TvStateProvider(new Selection(target), store, presence, options, watcher);
+        var handler = new UniOver.Modules.Tv.Features.Config.BindAgentHandler(
+            null!, null!, null!, null!, store, presence, stream, null!, TimeProvider.System, watcher: watcher, options: options);
+        watcher.Track(_tvId, _agent, TvState.From(null, agentOnline: true));
+        if (oldPresenceAlreadyKnown)
+        {
+            store.NoteOnline(_agent, true);
+        }
+
+        var readStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var resumeRead = new ManualResetEventSlim();
+        var timeout = TimeSpan.FromSeconds(10);
+        var cancellationToken = TestContext.Current.CancellationToken;
+        presence.OnIsOnline = agentId =>
+        {
+            if (agentId == _agent)
+            {
+                readStarted.SetResult();
+                if (!resumeRead.Wait(timeout, cancellationToken))
+                {
+                    throw new TimeoutException("A leitura antiga não foi liberada.");
+                }
+            }
+        };
+
+        var oldRead = Task.Run(() => provider.Current(target), cancellationToken);
+        try
+        {
+            await readStarted.Task.WaitAsync(timeout, cancellationToken);
+            handler.AnnounceNewAgent(_tvId, newAgent);
+        }
+        finally
+        {
+            resumeRead.Set();
+            await oldRead.WaitAsync(timeout, cancellationToken);
+        }
+
+        presence.OnIsOnline = null;
+        presence.StaleAgent = newAgent;
+        watcher.Check();
+
+        stream.Published.Select(update => (update.TvId, update.State.Link!.State))
+            .Should().Equal((_tvId, TvLinkText.TvUnresponsive), (_tvId, TvLinkText.PcOffline));
     }
 
     [Fact]

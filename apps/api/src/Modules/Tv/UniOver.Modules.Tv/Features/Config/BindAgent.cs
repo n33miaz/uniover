@@ -3,17 +3,17 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using UniOver.BuildingBlocks.Web;
 using UniOver.BuildingBlocks.Messaging;
+using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
+using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Contracts;
-using UniOver.SharedKernel;
-using UniOver.Modules.Identity.Contracts;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
+using UniOver.SharedKernel;
 
 namespace UniOver.Modules.Tv.Features.Config;
 
@@ -164,7 +164,6 @@ internal sealed class BindAgentHandler(
         agents.Set(binding);
         if (changed)
         {
-            watcher?.Release(tv.Id, previousSlug);
             AnnounceNewAgent(tv.Id, binding.AgentSlug!);
             await PublishCleanupAsync(previousSlug, tv.AgentSlug, cancellationToken);
         }
@@ -207,6 +206,7 @@ internal sealed class BindAgentHandler(
     /// </summary>
     internal void AnnounceNewAgent(Guid tvId, string agentSlug)
     {
+        watcher?.Rebind(tvId, agentSlug);
         stream.AdoptUnidentifiedStream(tvId);
         var online = presence.IsOnline(agentSlug);
         state.NoteOnline(agentSlug, online);

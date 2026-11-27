@@ -28,16 +28,7 @@ internal sealed class TvStateProvider(
         var view = TvState.From(state.Last(agentId), online, !string.IsNullOrWhiteSpace(agentId), presence.OfflineSince(agentId),
             presence.HasRecentReport(agentId, options.Value.LinkStale));
 
-        // Quem lê descobre a mudança antes de qualquer comando: avisa a tela agora, para o aviso não se perder
-        // (um comando que falhar depois já a encontraria anotada e não avisaria de novo).
-        if (state.NoteOnline(agentId, online))
-        {
-            // Pela vigia: publicação e linha de base na mesma região crítica, para a próxima passada comparar com o que o fluxo mostra.
-            watcher.Publish(target.Id, agentId, view);
-        }
-
-        // O elo também muda só com o tempo: a vigia passa a conhecer esta TV e o elo que a tela acabou de ver.
-        watcher.Track(target.Id, agentId, view);
+        watcher.ObserveRead(target.Id, agentId, view, online);
 
         return view;
     }
