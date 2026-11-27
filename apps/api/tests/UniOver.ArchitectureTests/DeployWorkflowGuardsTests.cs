@@ -68,7 +68,7 @@ public partial class DeployWorkflowTests
         notify.Should().NotContain("uses:", "só o gh que já vem no runner: nenhuma ação de terceiros no job que escreve em issues");
         notify.Should().NotContain("secrets.", "o token do próprio workflow basta");
         notify.Should().NotContain("persist-credentials").And.NotContain("checkout");
-        foreach (var job in new[] { "version", "migrate", "deploy", "dast", "release", "launcher" })
+        foreach (var job in new[] { "version", "migrate", "deploy", "dast", "release", "sign_agent_manifest", "publish", "launcher", "web-assets" })
         {
             Regex.IsMatch(notify, @"needs: \[[^\]]*\b" + job + @"\b", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Should().BeTrue($"o aviso precisa esperar o job {job}");
         }
@@ -146,6 +146,7 @@ public partial class DeployWorkflowTests
 
         Job("release").Should().Contain("contents: write");
         Job("sign_agent_manifest").Should().Contain("contents: write");
+        Job("publish").Should().Contain("contents: write");
         Job("web-assets").Should().Contain("contents: write");
         text[..text.IndexOf("\njobs:\n", StringComparison.Ordinal)].Should().Contain("contents: read").And.NotContain("write");
     }
@@ -167,7 +168,6 @@ public partial class DeployWorkflowTests
             "gh release upload \"$tag\" launcher-assets/uniover-launcher.apk launcher-assets/uniover-launcher.apk.sha256 --clobber",
             "gh release download \"$tag\"",
             "sha256sum uniover-launcher.apk | cmp - uniover-launcher.apk.sha256",
-            "gh release edit \"$tag\" --draft=false",
         ];
         var previous = -1;
         foreach (var command in commands)
@@ -176,6 +176,58 @@ public partial class DeployWorkflowTests
             position.Should().BeGreaterThan(previous, $"o comando {command} precisa ocorrer nesta ordem");
             previous = position;
         }
+
+        release.Should().NotContain("--draft=false", "quem publica é o job publish, depois do manifesto");
+    }
+
+    [Fact]
+    public void TheRelease_IsPublishedOnlyAfterTheManifestIsAttachedToTheDraft()
+    {
+        var sign = Job("sign_agent_manifest");
+        var publish = Job("publish");
+
+        sign.Should().Contain("needs: release").And.NotContain("--draft=false");
+        string[] steps =
+        [
+            "release-publish.sh inspect agent-manifest",
+            "sign_agent_manifest.py activation",
+            "\"$DRAFT\" != \"true\"",
+            "gh release upload \"$tag\" agent-manifest/uniover-agent-manifest.json --clobber",
+            "if: steps.release.outputs.draft == 'false'",
+            "sign_agent_manifest.py verify",
+        ];
+        var previous = -1;
+        foreach (var step in steps)
+        {
+            var position = sign.IndexOf(step, StringComparison.Ordinal);
+            position.Should().BeGreaterThan(previous, $"o passo {step} precisa ocorrer nesta ordem");
+            previous = position;
+        }
+
+        publish.Should().Contain("needs: [release, sign_agent_manifest]")
+            .And.Contain("if: needs.release.result == 'success' && needs.sign_agent_manifest.result == 'success'")
+            .And.Contain("SIGNED: ${{ needs.sign_agent_manifest.outputs.signed }}")
+            .And.Contain("release-publish.sh publish")
+            .And.NotContain("secrets.")
+            .And.NotContain("always()")
+            .And.NotContain("continue-on-error");
+        Regex.Matches(Workflow(), @"release-publish\.sh publish", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)).Should().ContainSingle();
+        Job("web-assets").Should().Contain("needs: publish").And.Contain("needs.publish.result == 'success'");
+    }
+
+    [Fact]
+    public void TheFailureNotice_CountsEachPublishingJobAsItsOwnItem()
+    {
+        var notify = Job("notify");
+        var start = notify.IndexOf("for pair in ", StringComparison.Ordinal);
+        start.Should().BeGreaterThan(0);
+        var line = notify[start..notify.IndexOf("; do", start, StringComparison.Ordinal)]["for pair in ".Length..];
+
+        // Cada item é "job:$RESULTADO" entre aspas, separado por espaço: dois itens colados viram um só no shell.
+        string[] jobs = ["version", "migrate", "deploy", "dast", "release", "sign-agent-manifest", "publish", "launcher", "web-assets"];
+        var expected = jobs.Select(job => $"\"{job}:${job.Replace('-', '_').ToUpperInvariant()}_RESULT\"");
+        line.Split(' ').Should().Equal(expected);
+        notify.Should().Contain($"[ \"$succeeded\" -eq {jobs.Length} ]", "a issue só fecha com todos os jobs da lista em sucesso");
     }
 
     [Fact]

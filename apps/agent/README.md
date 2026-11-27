@@ -1227,9 +1227,11 @@ poderia simplesmente omitir o manifesto.
 1. **Sem chave embutida (estado atual).** A lista está vazia: o agente não consulta o manifesto, segue com o zip e a
    árvore do commit conferida (falha da árvore recusa) e registra uma vez por execução que a assinatura ainda não está
    ativa. No `deploy.yml`, sem o segredo `AGENT_SIGNING_KEY` o job `sign-agent-manifest` apenas emite `::warning::` e a
-   publicação segue; com o segredo, ele assina e anexa `uniover-agent-manifest.json` ao Release. Se o commit publicado
-   já embute chave e o segredo falta, o job **falha**: versão com chave não sai sem manifesto. Para chegar ao passo 2:
-   o dono gera o par, cadastra a privada como segredo e a pública entra no código, numa versão publicada.
+   publicação segue; com o segredo, ele assina e anexa `uniover-agent-manifest.json` ao Release ainda em rascunho, que
+   o job `publish` só torna público depois disso. Se o commit publicado já embute chave e o segredo falta, o job
+   **falha** e o Release fica em rascunho: versão com chave não sai sem manifesto. Numa reexecução sobre um Release já
+   público nada é substituído: o manifesto publicado é só conferido. Para chegar ao passo 2: o dono gera o par,
+   cadastra a privada como segredo e a pública entra no código, numa versão publicada.
 2. **Com chave embutida (a partir dessa versão).** Manifesto válido para o commit é obrigatório: sem ele, com assinatura
    que nenhuma chave da lista confere, ou com hash do zip diferente, nada é baixado nem instalado e a instalação em uso
    fica como está. O `deploy.yml` passa a falhar se a chave do segredo não estiver na lista.

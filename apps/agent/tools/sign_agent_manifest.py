@@ -166,8 +166,42 @@ def activation() -> int:
     return 0
 
 
+def verify(args: argparse.Namespace) -> int:
+    """Confere o manifesto de um Release já público, sem a chave privada e sem alterar nada.
+
+    Com chave embutida, o manifesto precisa passar pela mesma leitura que o agente faz. Sem chave
+    embutida o agente o ignora: a falta só avisa, e um manifesto presente precisa ser do commit.
+    """
+    from uniover_agent.adapters.self_update import UpdateRejected, read_manifest  # noqa: PLC0415
+
+    keyed = bool(embedded_keys())
+    path = Path(args.manifest)
+    if not path.is_file():
+        if keyed:
+            print(
+                "::error::o Release já é público sem o manifesto assinado, que o agente deste"
+                " commit exige. Nada é substituído.",
+                file=sys.stderr,
+            )
+            return 1
+        print("::warning::o Release já é público sem manifesto assinado.", file=sys.stderr)
+        return 0
+    try:
+        if keyed:
+            read_manifest(path.read_bytes(), args.commit)
+        else:
+            document = json.loads(path.read_bytes())
+            if not isinstance(document, dict) or document.get("commit") != args.commit:
+                raise UpdateRejected("o manifesto assinado não é do commit esperado")
+    except (UpdateRejected, ValueError) as exc:
+        print(f"::error::manifesto do Release público recusado: {exc}", file=sys.stderr)
+        return 1
+    print("Manifesto do Release público conferido.")
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
-    """Declara os dois comandos locais, mantendo o segredo fora da linha de comando."""
+    """Declara os comandos locais, mantendo o segredo fora da linha de comando."""
     result = argparse.ArgumentParser(description=__doc__)
     commands = result.add_subparsers(dest="command", required=True)
     commands.add_parser("generate-key", help="gera um par Ed25519 para o segredo e a lista pública")
@@ -175,6 +209,9 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "activation", help="decide se a publicação assina, pula ou falha (sign/skip)"
     )
+    verify_parser = commands.add_parser("verify", help="confere o manifesto de um Release público")
+    verify_parser.add_argument("--commit", required=True)
+    verify_parser.add_argument("--manifest", required=True)
     sign_parser = commands.add_parser("sign", help="assina um manifesto de Release")
     sign_parser.add_argument("--version", required=True)
     sign_parser.add_argument("--commit", required=True)
@@ -194,6 +231,8 @@ def main() -> int:
         return public_key()
     if args.command == "activation":
         return activation()
+    if args.command == "verify":
+        return verify(args)
     return sign(args)
 
 

@@ -8,7 +8,8 @@ name: CI
 #   e2e      fumaça: um projeto (iphone-12) e só as telas críticas de .github/scripts/e2e-smoke.json
 #   agent    ruff, tipos (como no Windows), fronteiras do núcleo e o pytest sem cobertura (sem os módulos só do Windows)
 #   contracts  esquemas e exemplos (a regeneração dos tipos é do contracts-sync.yml)
-#   deploy-gate  casos do gate do Deploy (.github/scripts/release-gate.sh): só `chore: release x.y.z` publica
+#   deploy-gate  casos do gate do Deploy (.github/scripts/release-gate.sh): só `chore: release x.y.z` publica; e da
+#                publicação do Release (.github/scripts/release-publish.sh): rascunho incompleto não vira público
 # Nenhum check daqui é exigência de merge: virar exigência (ci-ok) é decisão do dono, nas regras de branch do GitHub.
 on:
   pull_request:
@@ -97,6 +98,8 @@ jobs:
           sparse-checkout: .github/scripts
       - name: Testar o gate do Deploy
         run: bash .github/scripts/release-gate.test.sh
+      - name: Testar a publicação do Release
+        run: bash .github/scripts/release-publish.test.sh
 
   # Só o que não precisa de Docker: compila a solução inteira com avisos como erro e roda todos os projetos de teste
   # menos o de integração (Postgres em container, ~4 a 6 min por parte), que fica na rodada noturna.
