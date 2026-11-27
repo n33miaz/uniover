@@ -1,5 +1,55 @@
 import type { ScreenFrameStats } from './screen-viewer';
 
+/** O agente que anuncia `ready` envia o tamanho no JSON e o JPEG básico em mensagens binárias. */
+export class LegacyScreenFrameAssembler {
+  private jpeg: Uint8Array<ArrayBuffer> | null = null;
+  private received = 0;
+
+  push(data: ArrayBuffer, requestedWidth: number, bytes: number) {
+    if (bytes > 8 * 1024 ** 2 || !data.byteLength || this.received + data.byteLength > bytes) {
+      throw new Error('pedaço de JPEG inválido');
+    }
+    this.jpeg ??= new Uint8Array(bytes);
+    this.jpeg.set(new Uint8Array(data), this.received);
+    this.received += data.byteLength;
+    if (this.received < bytes) return null;
+
+    const jpeg = this.jpeg;
+    this.jpeg = null;
+    this.received = 0;
+    const { width, height } = legacyJpegDimensions(new DataView(jpeg.buffer));
+    if (
+      !width ||
+      !height ||
+      width > requestedWidth ||
+      height > 16_384 ||
+      width * height > 1920 * 4320
+    ) {
+      throw new Error('dimensões de JPEG inválidas');
+    }
+    return { width, height, wireBytes: bytes, chunks: [jpeg.buffer] };
+  }
+}
+
+// O JPEG básico do agente antigo traz as dimensões no SOF0. Limita a imagem antes da decodificação.
+function legacyJpegDimensions(jpeg: DataView) {
+  if (jpeg.getUint16(0) !== 0xffd8) throw new Error('JPEG inválido');
+  let offset = 2;
+  while (offset + 4 <= jpeg.byteLength) {
+    const marker = jpeg.getUint16(offset);
+    const length = jpeg.getUint16(offset + 2);
+    if (length < 2 || offset + 2 + length > jpeg.byteLength) break;
+    if (marker === 0xffc0) {
+      if (length < 11 || length !== 8 + 3 * jpeg.getUint8(offset + 9)) break;
+      return { width: jpeg.getUint16(offset + 7), height: jpeg.getUint16(offset + 5) };
+    }
+    // A captura antiga do Pillow escreve APP0 (JFIF) e as tabelas de quantização antes do SOF0.
+    if (marker !== 0xffe0 && marker !== 0xffdb) break;
+    offset += 2 + length;
+  }
+  throw new Error('JPEG sem dimensões');
+}
+
 /** Lê o marcador desenhado antes da codificação JPEG. Cada bit ocupa 8 × 8 pixels. */
 export function readScreenMarker(readRed: (x: number, y: number) => number): number {
   let marker = 0;

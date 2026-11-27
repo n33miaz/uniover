@@ -20,7 +20,11 @@ import {
 } from '../../../core/direct/direct-channel';
 import { PcAvailability } from '../../../core/modules/pc-availability';
 import { SessionState } from '../../../core/session/session-state';
-import { ScreenMetrics, readScreenMarker } from '../data/screen-metrics';
+import {
+  LegacyScreenFrameAssembler,
+  ScreenMetrics,
+  readScreenMarker,
+} from '../data/screen-metrics';
 import {
   ScreenViewerFrameAssembler,
   parseViewerMessage,
@@ -38,7 +42,7 @@ type Result = ReturnType<ScreenMetrics['result']>;
 interface Run {
   readonly connection: RTCPeerConnection;
   readonly channel: RTCDataChannel;
-  readonly assembler: ScreenViewerFrameAssembler;
+  assembler: ScreenViewerFrameAssembler | LegacyScreenFrameAssembler;
   readonly parentSessionId: string;
   readonly width: number;
   readonly fps: number;
@@ -49,6 +53,29 @@ interface Run {
   watchdog?: ReturnType<typeof setTimeout>;
   deadline?: ReturnType<typeof setTimeout>;
   painting: boolean;
+}
+
+function parseProbeMessage(run: Run, text: string) {
+  const legacy = run.assembler instanceof LegacyScreenFrameAssembler;
+  if (run.stats && !legacy) return parseViewerMessage(text);
+
+  const data = JSON.parse(text) as Record<string, unknown> | null;
+  const kind = data?.['k'];
+  if (!run.stats && kind === 'ready') return { k: 'ready' } as const;
+  if (!run.stats && kind === 's.mon' && data && !('monitors' in data)) {
+    // Antes do seletor, o agente anunciava só as dimensões do monitor principal.
+    return parseViewerMessage(
+      JSON.stringify({
+        k: 's.mon',
+        monitors: [{ id: 0, primary: true, width: data['width'], height: data['height'] }],
+      }),
+    );
+  }
+  if (legacy && data && kind === undefined) {
+    return parseViewerMessage(JSON.stringify({ ...data, k: 's.stat' }));
+  }
+  if (legacy && kind !== 's.state') throw new Error('mensagem incompatível com a sessão');
+  return parseViewerMessage(text);
 }
 
 const STOPPED = $localize`:@@pc.screenProbe.stopped:Medição interrompida.`;
@@ -291,10 +318,11 @@ export class PcScreenProbe {
 
   private receive(run: Run, data: unknown): void {
     if (typeof data === 'string') {
-      const message = parseViewerMessage(data);
+      const message = parseProbeMessage(run, data);
       if (message.k === 's.state' && message.state === 'locked') {
         this.finish(LOCKED);
-      } else if (message.k === 's.mon' && run.stats === null) {
+      } else if ((message.k === 's.mon' || message.k === 'ready') && run.stats === null) {
+        if (message.k === 'ready') run.assembler = new LegacyScreenFrameAssembler();
         run.startedAt = performance.now();
         run.stats = new ScreenMetrics(run.startedAt, STALL_MS);
         this.current.set(run.stats.result(run.startedAt));
@@ -313,7 +341,7 @@ export class PcScreenProbe {
     if (!(data instanceof ArrayBuffer) || run.painting || !stats) {
       throw new Error('quadro inválido');
     }
-    const frame = run.assembler.push(data, run.width);
+    const frame = run.assembler.push(data, run.width, stats.bytes);
     if (frame) {
       if (stats.bytes !== frame.wireBytes) throw new Error('tamanho do quadro diverge da medição');
       run.frameStats = null;
@@ -339,7 +367,11 @@ export class PcScreenProbe {
     );
   }
 
-  private async paint(run: Run, frame: ScreenViewerFrame, stats: ScreenFrameStats): Promise<void> {
+  private async paint(
+    run: Run,
+    frame: Pick<ScreenViewerFrame, 'chunks' | 'width' | 'height'>,
+    stats: ScreenFrameStats,
+  ): Promise<void> {
     const bitmap = await createImageBitmap(new Blob(frame.chunks, { type: 'image/jpeg' }));
     const canvas = this.surface()?.nativeElement;
     let marker: number;
