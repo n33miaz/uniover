@@ -39,6 +39,24 @@ internal static class TvRowLock
             .ToListAsync(cancellationToken)).Count > 0;
 
     /// <summary>
+    /// Depois do commit da troca, relê o vínculo e o aplica em memória sob o bloqueio da linha. A troca pode ter sido
+    /// superada desde o commit, e nenhuma outra pode confirmar entre esta leitura e a atualização em memória.
+    /// </summary>
+    public static async Task ApplyToCurrentBindingAsync(TvDbContext db, Guid tvId, Action<ConfiguredTv> apply)
+    {
+        // A troca já está gravada: o cancelamento da requisição não pode deixar a vigia com o vínculo anterior.
+        await using var transaction = await db.Database.BeginTransactionAsync(CancellationToken.None);
+        var current = await db.Tvs.FromSqlInterpolated($"""SELECT * FROM "tv"."tvs" WHERE id = {tvId} FOR UPDATE""")
+            .AsNoTracking().SingleOrDefaultAsync(CancellationToken.None);
+        if (current is not null)
+        {
+            apply(current);
+        }
+
+        await transaction.CommitAsync(CancellationToken.None);
+    }
+
+    /// <summary>
     /// Roda <paramref name="write"/> numa transação com a TV bloqueada e confirma. Devolve <c>false</c>, sem gravar nada, se a
     /// TV já foi removida. Sem linha de TV (<c>Guid.Empty</c>, instalação antiga) não há remoção possível: grava direto.
     /// Nunca segure isto durante uma espera por agente: a remoção e os ajustes da TV esperariam o prazo inteiro.
