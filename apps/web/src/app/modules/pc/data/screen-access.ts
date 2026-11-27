@@ -17,12 +17,15 @@ export class PcScreenAccess {
   private readonly availability = inject(PcAvailability);
   private readonly session = inject(SessionState);
 
-  readonly allowed = computed(
+  readonly accountCanView = computed(
     () =>
-      this.availability.capabilities().includes(PC_SCREEN_CAPABILITY) &&
       this.session.isAuthenticated() &&
       this.session.role() === 'owner' &&
       userCan(this.session.user(), PC_SCREEN_PERMISSION),
+  );
+
+  readonly allowed = computed(
+    () => this.accountCanView() && this.availability.capabilities().includes(PC_SCREEN_CAPABILITY),
   );
 
   /** O PC também entende o toque na imagem (`pc.abs.v1`): sem isso a tela só se vê. */

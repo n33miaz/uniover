@@ -1,15 +1,11 @@
 import AxeBuilder from '@axe-core/playwright';
 import { Page } from '@playwright/test';
-import { IdentityMock, mockIdentityApi } from '../auth/identity-mock';
+import { GUEST, IdentityMock, mockIdentityApi } from '../auth/identity-mock';
 import { expect, expectNoHorizontalScroll, test } from '../fixtures';
 import { settle } from '../screens/screen-helpers';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
 import { PcMock, mockPcApi } from './pc-mock';
-import {
-  injectRtcScreenFrame,
-  injectRtcScreenMonitors,
-  installFakeRtc,
-} from './rtc-fake';
+import { injectRtcScreenFrame, injectRtcScreenMonitors, installFakeRtc } from './rtc-fake';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -21,6 +17,8 @@ const TWO_MONITORS = [
   { id: 1, primary: true, width: 1920, height: 1080 },
   { id: 2, primary: false, width: 1280, height: 1024 },
 ];
+
+const tabs = (page: Page) => page.getByRole('navigation', { name: 'Abas do módulo' });
 
 test.beforeEach(async ({ context, page }) => {
   identity = await mockIdentityApi(context);
@@ -62,6 +60,102 @@ async function openPcScreen(page: Page): Promise<void> {
 }
 
 test.describe('tela do PC (/pc/tela)', () => {
+  test('abre na primeira aba para o dono e mantém as demais telas acessíveis', async ({ page }) => {
+    await page.goto('/pc', { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/\/pc\/tela$/);
+    await expect(tabs(page).getByRole('link')).toHaveText([
+      'Tela',
+      'Mouse',
+      'Atalhos',
+      'Mídia',
+      'Mais',
+    ]);
+    await expect(tabs(page).locator('[aria-current="page"]')).toHaveText('Tela');
+    await expect(page.getByRole('button', { name: 'Ver a tela' })).toBeVisible();
+
+    await tabs(page).getByRole('link', { name: 'Mouse' }).click();
+    await expect(page).toHaveURL(/\/pc\/mouse$/);
+    await expect(page.locator('app-pc-mouse-page')).toBeVisible();
+    await expect(tabs(page).locator('[aria-current="page"]')).toHaveText('Mouse');
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/pc\/tela$/);
+    await expect(tabs(page).locator('[aria-current="page"]')).toHaveText('Tela');
+
+    const directLinks = [
+      ['/pc/mouse', 'Mouse'],
+      ['/pc/atalhos', 'Atalhos'],
+      ['/pc/midia', 'Mídia'],
+      ['/pc/mais', 'Mais'],
+      ['/pc/energia', 'Mais'],
+      ['/pc/area-de-transferencia', 'Mais'],
+      ['/pc/controles', 'Mais'],
+    ];
+    for (const [path, tab] of directLinks) {
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await expect(page).toHaveURL((url) => url.pathname === path);
+      await expect(tabs(page).locator('[aria-current="page"]')).toHaveText(tab);
+    }
+
+    await page.goto('/pc/teclado', { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/\/pc\/?\?teclado=1$/);
+    await expect(page.locator('app-pc-mouse-page')).toBeVisible();
+    await expect(page.locator('app-tab-bar [aria-current="page"]')).toHaveText('Mouse');
+  });
+
+  test('mantém o Mouse como entrada para quem tem acesso ao PC sem acesso à tela', async ({
+    page,
+  }) => {
+    identity.role = 'guest';
+    identity.guests.push({
+      ...GUEST,
+      id: '00000000-0000-4000-8000-000000000051',
+      createdAt: '2026-10-19T15:00:00Z',
+      disabledAt: null,
+      permissions: ['module:pc'],
+    });
+
+    for (const path of ['/pc', '/pc/tela']) {
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await expect(page).toHaveURL(/\/pc\/?$/);
+      await expect(page.locator('app-pc-mouse-page')).toBeVisible();
+      await expect(tabs(page).getByRole('link')).toHaveText(['Mouse', 'Atalhos', 'Mídia', 'Mais']);
+      await expect(tabs(page).locator('[aria-current="page"]')).toHaveAttribute(
+        'href',
+        /^\/pc\/?$/,
+      );
+    }
+    expect(pc.sent('/rtc/offer').some((body) => body['parentSessionId'])).toBe(false);
+  });
+
+  test('mantém o Mouse como entrada quando o PC não oferece visualização', async ({ page }) => {
+    pc.status = { ...pc.status, capabilities: ['pc.rtc.v1'] };
+    await page.goto('/pc', { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/\/pc\/?$/);
+    await expect(page.locator('app-pc-mouse-page')).toBeVisible();
+    await expect(tabs(page).getByRole('link')).toHaveText(['Mouse', 'Atalhos', 'Mídia', 'Mais']);
+  });
+
+  test('exibe a imagem sem os controles de toque quando o PC só oferece visualização', async ({
+    page,
+  }) => {
+    pc.status = { ...pc.status, capabilities: ['pc.rtc.v1', 'pc.screen.v1'] };
+    await openPcScreen(page);
+    await expect(tabs(page).locator('[aria-current="page"]')).toHaveText('Tela');
+    await expect(page.getByRole('group', { name: 'Toque na tela' })).toHaveCount(0);
+  });
+
+  test('a aba Tela continua aguardando o canal direto quando o dispositivo não foi aprovado', async ({
+    page,
+  }) => {
+    pc.rtcOfferFailure = { status: 403, kind: 'device-pending' };
+    await page.goto('/pc');
+    await expect(page).toHaveURL(/\/pc\/tela$/);
+    await expect.poll(() => pc.sent('/rtc/offer').length).toBeGreaterThan(0);
+    await expect(page.getByRole('button', { name: 'Ver a tela' })).toBeDisabled();
+    expect(pc.sent('/rtc/offer').some((body) => body['parentSessionId'])).toBe(false);
+  });
+
   test('abre a rota, injeta dois monitores e um quadro e exibe os controles', async ({ page }) => {
     await openPcScreen(page);
 

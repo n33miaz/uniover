@@ -9,7 +9,7 @@ import { PcAvailability } from '../../core/modules/pc-availability';
 import { PcScreenAccess } from './data/screen-access';
 import { screenGuard } from './pc.routes';
 
-function setup(opts: { loaded: boolean; allowedAfterRead: boolean }) {
+function setup(opts: { loaded: boolean; allowedAfterRead: boolean; accountCanView?: boolean }) {
   let status: object | null = opts.loaded ? {} : null;
   let allowed = opts.loaded && opts.allowedAfterRead;
   let finish!: (ok: boolean) => void;
@@ -28,7 +28,10 @@ function setup(opts: { loaded: boolean; allowedAfterRead: boolean }) {
   TestBed.configureTestingModule({
     providers: [
       { provide: PcAvailability, useValue: { status: () => status, refresh } },
-      { provide: PcScreenAccess, useValue: { allowed: () => allowed } },
+      {
+        provide: PcScreenAccess,
+        useValue: { allowed: () => allowed, accountCanView: () => opts.accountCanView ?? true },
+      },
     ],
   });
   const run = () =>
@@ -71,6 +74,17 @@ describe('screenGuard', () => {
   it('does not read again when the capabilities are already known', async () => {
     const { refresh, run } = setup({ loaded: true, allowedAfterRead: true });
     expect(await run()).toBe(true);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('redirects an account without screen access without waiting for capabilities', async () => {
+    const { refresh, run } = setup({
+      loaded: false,
+      allowedAfterRead: false,
+      accountCanView: false,
+    });
+    const result = await run();
+    expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe('/pc');
     expect(refresh).not.toHaveBeenCalled();
   });
 });

@@ -25,6 +25,7 @@ export const PAGE_ROUTES: readonly string[] = [
   '/tv/apps',
   '/tv/teclado',
   '/pc',
+  '/pc/mouse',
   '/pc/teclado',
   '/pc/atalhos',
   '/pc/midia',
