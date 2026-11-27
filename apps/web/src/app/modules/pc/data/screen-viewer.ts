@@ -164,6 +164,11 @@ const MAX_SIDE = 16_384;
 // 8,3 MP acomodam um monitor 8K em retrato após a redução para 1920 px de largura.
 const MAX_PIXELS = 1920 * 4320;
 
+export interface ScreenFrameLimits {
+  readonly width: number;
+  readonly height: number;
+}
+
 /** Lê as dimensões do SOF sem copiar o JPEG, mesmo quando um segmento cruza mensagens. */
 function jpegDimensions(chunks: ArrayBuffer[], size: number): { width: number; height: number } {
   const views = chunks.map((chunk) => new Uint8Array(chunk));
@@ -220,7 +225,7 @@ export class ScreenViewerFrameAssembler {
   private frame: (ScreenViewerFrame & { bytes: number; received: number }) | null = null;
 
   /** Devolve o quadro quando o último pedaço chega; lança se os bytes não seguem o protocolo. */
-  push(data: ArrayBuffer, requestedWidth: number): ScreenViewerFrame | null {
+  push(data: ArrayBuffer, limits: ScreenFrameLimits | number): ScreenViewerFrame | null {
     let body = data;
     if (this.frame === null) {
       if (data.byteLength <= HEADER_BYTES) throw new Error('quadro sem imagem');
@@ -228,6 +233,8 @@ export class ScreenViewerFrameAssembler {
       const bytes = view.getUint32(12);
       const width = view.getUint16(6);
       const height = view.getUint16(8);
+      const maxWidth = typeof limits === 'number' ? limits : limits.width;
+      const maxHeight = typeof limits === 'number' ? MAX_SIDE : limits.height;
       if (
         view.getUint32(0) !== MAGIC ||
         view.getUint8(4) !== VERSION ||
@@ -237,7 +244,8 @@ export class ScreenViewerFrameAssembler {
         height < 1 ||
         width > MAX_SIDE ||
         height > MAX_SIDE ||
-        width > requestedWidth ||
+        width > maxWidth ||
+        height > maxHeight ||
         width * height > MAX_PIXELS
       ) {
         throw new Error('cabeçalho de quadro inválido');
