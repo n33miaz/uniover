@@ -97,7 +97,10 @@ export class AppShell {
     { requireSync: true },
   );
 
-  protected readonly tabs = computed(() => this.data().tabs ?? []);
+  protected readonly tabs = computed(() => {
+    const data = this.data();
+    return data.dynamicTabs?.() ?? data.tabs ?? [];
+  });
 
   /** A seta: para o destino da rota (dentro de Ajustes, a lista) ou, no resto, o Início. */
   protected readonly lead = computed<ShellBack>(() => this.data().back ?? HOME_BACK);

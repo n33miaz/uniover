@@ -1,3 +1,4 @@
+import type { Signal } from '@angular/core';
 import { ActivatedRouteSnapshot } from '@angular/router';
 import { TabItem } from '../../shared/ui/tab-bar/tab-bar';
 
@@ -15,6 +16,8 @@ export interface ShellBack {
 export interface ShellRouteData {
   readonly title?: string;
   readonly tabs?: readonly TabItem[];
+  /** Abas que acompanham permissões ou capacidades que podem mudar com a rota aberta. */
+  readonly dynamicTabs?: Signal<readonly TabItem[]>;
   /** Identidade visual opcional da casca; não altera rotas nem conteúdo. */
   readonly shellStyle?: 'training';
   readonly back?: ShellBack;

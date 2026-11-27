@@ -13,6 +13,7 @@ export interface TabItem {
     | 'exercises'
     | 'progress'
     | 'body'
+    | 'screen'
     | 'mouse'
     | 'shortcuts'
     | 'media'
@@ -27,6 +28,8 @@ export interface TabItem {
    * caminho mas pertence à aba (as rotinas, dentro de Exercícios).
    */
   readonly also?: readonly string[];
+  /** Outros caminhos exatos que marcam esta aba, sem incluir as telas filhas. */
+  readonly exactAlso?: readonly string[];
 }
 
 /** Caminho sem consulta, sem fragmento e sem a barra do fim (a raiz continua `/`). */
@@ -78,6 +81,9 @@ function isWithin(path: string, base: string): boolean {
                       @case ('progress') {
                         <path [attr.d]="'M4 19.5h16M5.5 16l4-4 3 2.5 6-7'" />
                         <path [attr.d]="'M15 7.5h3.5V11'" />
+                      }
+                      @case ('screen') {
+                        <path [attr.d]="'M3.5 5h17v11h-17zM9 20h6M12 16v4'" />
                       }
                       @case ('mouse') {
                         <rect x="6.5" y="3.5" width="11" height="17" rx="5.5" />
@@ -242,6 +248,7 @@ export class TabBar {
   protected isActive(tab: TabItem): boolean {
     const path = pathOf(this.url());
     if (tab.nested ? isWithin(path, tab.link) : path === pathOf(tab.link)) return true;
+    if (tab.exactAlso?.some((base) => path === pathOf(base))) return true;
     return (tab.also ?? []).some((base) => isWithin(path, pathOf(base)));
   }
 }

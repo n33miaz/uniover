@@ -1,4 +1,4 @@
-import { inject } from '@angular/core';
+import { computed, inject } from '@angular/core';
 import { Router, type CanActivateFn, type Routes } from '@angular/router';
 import type { ShellBack } from '../../core/layout/route-data';
 import type { TabItem } from '../../shared/ui/tab-bar/tab-bar';
@@ -6,17 +6,28 @@ import { PcAvailability } from '../../core/modules/pc-availability';
 import { PcScreenAccess } from './data/screen-access';
 import { PcPage } from './pc-page';
 
-// As abas do módulo ficam aqui; a barra de baixo as lê pelo `data.tabs` da rota (o título do cabeçalho vem da rota `pc`).
+const SCREEN_TAB: TabItem = {
+  link: '/pc/tela',
+  label: $localize`:@@pc.tab.screen:Tela`,
+  icon: 'screen',
+};
+const MOUSE_TAB: TabItem = {
+  link: '/pc/mouse',
+  label: $localize`:@@pc.tab.mouse:Mouse`,
+  icon: 'mouse',
+  exactAlso: ['/pc'],
+};
+const DEFAULT_MOUSE_TAB: TabItem = { ...MOUSE_TAB, link: '/pc', exactAlso: ['/pc/mouse'] };
+
 // A Energia e a área de transferência moram dentro de "Mais": a aba segue marcada nelas.
-const TABS: readonly TabItem[] = [
-  { link: '/pc', label: $localize`:@@pc.tab.mouse:Mouse`, icon: 'mouse' },
+const OTHER_TABS: readonly TabItem[] = [
   { link: '/pc/atalhos', label: $localize`:@@pc.tab.shortcuts:Atalhos`, icon: 'shortcuts' },
   { link: '/pc/midia', label: $localize`:@@pc.tab.media:Mídia`, icon: 'media' },
   {
     link: '/pc/mais',
     label: $localize`:@@pc.tab.more:Mais`,
     icon: 'more',
-    also: ['/pc/energia', '/pc/controles', '/pc/area-de-transferencia', '/pc/tela'],
+    also: ['/pc/energia', '/pc/controles', '/pc/area-de-transferencia'],
   },
 ];
 
@@ -37,12 +48,27 @@ export const REMOTE_BACK: ShellBack = {
  * A tela do PC fica atrás do `pc_screen` e do `pc:screen`: sem eles a rota volta ao mouse. Num endereço aberto direto
  * (recarga ou link) o PC ainda não declarou as capacidades; a decisão espera a primeira leitura.
  */
-export const screenGuard: CanActivateFn = async () => {
+async function canViewScreen(): Promise<boolean> {
   const availability = inject(PcAvailability);
   const access = inject(PcScreenAccess);
-  const router = inject(Router);
+  if (!access.accountCanView()) return false;
   if (availability.status() === null) await availability.refresh();
-  return access.allowed() || router.createUrlTree(['/pc']);
+  return access.allowed();
+}
+
+export const screenGuard: CanActivateFn = async () => {
+  const router = inject(Router);
+  return (await canViewScreen()) || router.createUrlTree(['/pc']);
+};
+
+const pcEntryGuard: CanActivateFn = async (route) => {
+  if (route.queryParamMap.has('teclado')) return true;
+  const router = inject(Router);
+  if (!(await canViewScreen())) return true;
+  return router.createUrlTree(['/pc/tela'], {
+    queryParams: route.queryParams,
+    fragment: route.fragment ?? undefined,
+  });
 };
 
 /**
@@ -53,11 +79,26 @@ export const PC_ROUTES: Routes = [
   {
     path: '',
     component: PcPage,
-    data: { tabs: TABS },
+    resolve: {
+      dynamicTabs: () => {
+        const access = inject(PcScreenAccess);
+        return computed<readonly TabItem[]>(() =>
+          access.allowed()
+            ? [SCREEN_TAB, MOUSE_TAB, ...OTHER_TABS]
+            : [DEFAULT_MOUSE_TAB, ...OTHER_TABS],
+        );
+      },
+    },
     children: [
       {
         path: '',
         pathMatch: 'full',
+        canActivate: [pcEntryGuard],
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
+        loadComponent: () => import('./pages/mouse.page').then((m) => m.MousePage),
+      },
+      {
+        path: 'mouse',
         loadComponent: () => import('./pages/mouse.page').then((m) => m.MousePage),
       },
       {
@@ -79,7 +120,6 @@ export const PC_ROUTES: Routes = [
       {
         path: 'tela',
         canActivate: [screenGuard],
-        data: { back: REMOTES_LIST_BACK },
         loadComponent: () => import('./pages/screen.page').then((m) => m.ScreenPage),
       },
       {
