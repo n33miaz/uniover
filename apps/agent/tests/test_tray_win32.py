@@ -131,7 +131,12 @@ def test_the_icon_id_sent_to_the_shell_is_fixed_and_the_structure_is_complete(
     from pystray._util import win32  # type: ignore[import-untyped]  # noqa: PLC0415
 
     sent: list[tuple[int, object]] = []
-    monkeypatch.setattr(win32, "Shell_NotifyIcon", lambda code, data: sent.append((code, data)))
+
+    def notify(code: int, data: object) -> bool:
+        sent.append((code, data))
+        return True
+
+    monkeypatch.setattr(win32, "Shell_NotifyIcon", notify)
     from uniover_agent.adapters.tray import SharpIcon  # noqa: PLC0415
 
     first = SharpIcon("um", Image.new("RGBA", (16, 16)))

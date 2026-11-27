@@ -1,6 +1,7 @@
 param([Parameter(Mandatory = $true)][string]$StatePath, [switch]$Probe, [int]$ProbeHoldSeconds = 0, [int]$ParentPid = 0)
 
-# Processo visual da bandeja. Recebe estado por arquivo atomico e devolve somente nomes de acoes no stdout.
+# Processo visual da bandeja. Recebe estado por arquivo atomico e devolve no stdout somente nomes de acoes e a
+# confirmacao do estado aplicado no icone.
 # O processo Python continua dono do comportamento e volta ao pystray se este host nao abrir.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -21,6 +22,25 @@ public static class UniOverTrayNative {
     }
     [DllImport("shell32.dll", ExactSpelling=true)]
     public static extern int Shell_NotifyIconGetRect(ref Identifier id, out Rect rect);
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] private struct NotifyIconData {
+        public uint Size; public IntPtr Window; public uint Id, Flags, CallbackMessage; public IntPtr Icon;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst=128)] public string Tip;
+        public uint State, StateMask;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst=256)] public string Info;
+        public uint Timeout;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst=64)] public string InfoTitle;
+        public uint InfoFlags; public Guid Guid; public IntPtr BalloonIcon;
+    }
+    private const uint NimModify = 1;
+    private static readonly uint NotifyIconDataSize = (uint)Marshal.SizeOf(typeof(NotifyIconData));
+    [DllImport("shell32.dll", ExactSpelling=true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool Shell_NotifyIconW(uint message, ref NotifyIconData data);
+    public static bool IsIconRegistered(IntPtr window, uint id) {
+        // Sem flags, o Windows localiza o icone sem alterar sua aparencia nem depender da area de icones ocultos.
+        var data = new NotifyIconData { Size = NotifyIconDataSize, Window = window, Id = id };
+        return Shell_NotifyIconW(NimModify, ref data);
+    }
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr context);
 }
@@ -324,6 +344,7 @@ $lastState = ''
 $script:stateCode = ''
 $script:viewing = ''
 $script:menuViewing = ''
+$script:lastError = ''
 $lastTheme = ''
 $lastDpi = 0
 $timer = New-Object System.Windows.Forms.Timer
@@ -341,42 +362,63 @@ $timer.add_Tick({
         if ($theme -ne $lastTheme) { Apply-Theme; $script:lastTheme = $theme }
         Apply-Dpi
         $raw = Read-StateText $StatePath
-        if ($raw -eq $lastState) { return }
-        $script:lastState = $raw
-        $view = $raw | ConvertFrom-Json
-        if ($view.exit) { $context.ExitThread(); return }
-        $script:stateCode = [string]$view.code
-        $stateLabel.Text = [string]$view.status
-        $stateLabel.AccessibleName = 'Estado do agente: ' + [string]$view.status
-        $hintLines = @($view.hint | Where-Object { $_ })
-        $hintLabel.Text = $hintLines -join "`r`n"
-        $hintLabel.AccessibleName = $hintLines -join ' '
-        $hintLabel.Available = ($hintLines.Count -gt 0)
-        $script:viewing = [string]$view.viewing
-        # Menu ja aberto quando a visualizacao comecou: o item que surge agora vale para ela.
-        if (-not $script:menuViewing) { $script:menuViewing = $script:viewing }
-        if ($null -ne $script:stopItem) { $script:stopItem.Available = [bool]$script:viewing }
-        Apply-Theme
-        $title = [string]$view.title
-        $icon.Text = $title.Substring(0, [Math]::Min(63, $title.Length))
-        if ([string]$view.icon -ne [string]$script:currentIcon) {
-            $replacement = New-Object System.Drawing.Icon([string]$view.icon)
-            $oldIcon = $icon.Icon
-            $icon.Icon = $replacement
-            $oldIcon.Dispose()
-            $script:currentIcon = [string]$view.icon
+        if ($raw -ne $script:lastState) {
+            # So volta a valer depois de aplicado por inteiro: uma falha no meio nao e confirmada.
+            $script:lastState = ''
+            $view = $raw | ConvertFrom-Json
+            if ($view.exit) { $context.ExitThread(); return }
+            $script:stateCode = [string]$view.code
+            $stateLabel.Text = [string]$view.status
+            $stateLabel.AccessibleName = 'Estado do agente: ' + [string]$view.status
+            $hintLines = @($view.hint | Where-Object { $_ })
+            $hintLabel.Text = $hintLines -join "`r`n"
+            $hintLabel.AccessibleName = $hintLines -join ' '
+            $hintLabel.Available = ($hintLines.Count -gt 0)
+            $script:viewing = [string]$view.viewing
+            # Menu ja aberto quando a visualizacao comecou: o item que surge agora vale para ela.
+            if (-not $script:menuViewing) { $script:menuViewing = $script:viewing }
+            if ($null -ne $script:stopItem) { $script:stopItem.Available = [bool]$script:viewing }
+            Apply-Theme
+            $title = [string]$view.title
+            $icon.Text = $title.Substring(0, [Math]::Min(63, $title.Length))
+            if ([string]$view.icon -ne [string]$script:currentIcon) {
+                $replacement = New-Object System.Drawing.Icon([string]$view.icon)
+                $oldIcon = $icon.Icon
+                $icon.Icon = $replacement
+                $oldIcon.Dispose()
+                $script:currentIcon = [string]$view.icon
+            }
+            if ($view.balloon -and $view.balloon.message) {
+                $icon.BalloonTipTitle = [string]$view.balloon.title
+                $icon.BalloonTipText = [string]$view.balloon.message
+                $icon.ShowBalloonTip(5000)
+            }
+            $script:lastState = $raw
         }
-        if ($view.balloon -and $view.balloon.message) {
-            $icon.BalloonTipTitle = [string]$view.balloon.title
-            $icon.BalloonTipText = [string]$view.balloon.message
-            $icon.ShowBalloonTip(5000)
+        if (-not [UniOverTrayNative]::IsIconRegistered($windowHandle, $iconId)) {
+            # Forca um novo registro se a bandeja perdeu o icone. O proximo tique confere o resultado.
+            $icon.Visible = $false
+            $icon.Visible = $true
+            return
         }
-    } catch { [Console]::Error.WriteLine($_.Exception.Message) }
+        # A thread da interface confirma somente enquanto o Windows reconhece o icone.
+        [Console]::Out.WriteLine('APPLIED ' + $script:viewing)
+        [Console]::Out.Flush()
+        $script:lastError = ''
+    } catch {
+        # A falha repetida e tentada de novo a cada volta: vai ao registro uma vez so.
+        if ($_.Exception.Message -ne $script:lastError) {
+            $script:lastError = $_.Exception.Message
+            [Console]::Error.WriteLine($script:lastError)
+        }
+    }
 })
 
 try {
     Apply-Dpi
-    if ($null -eq (Get-IconRect)) { throw 'o Windows nao registrou o icone da bandeja' }
+    if (-not [UniOverTrayNative]::IsIconRegistered($windowHandle, $iconId)) {
+        throw 'o Windows nao registrou o icone da bandeja'
+    }
     $timer.Start()
     [Console]::Out.WriteLine('READY')
     if ($Probe) {

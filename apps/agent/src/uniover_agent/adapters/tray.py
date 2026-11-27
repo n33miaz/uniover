@@ -10,8 +10,8 @@ sair nítido e estável:
 - O identificador do ícone no Windows (`hID`) passa a ser fixo. Com o `id()` do objeto, cada
   execução parecia um ícone novo e o Windows esquecia onde a pessoa o tinha colocado.
 
-Ambos mexem em métodos internos do pystray (`_assert_icon_handle`, `_message`); um teste falha se
-eles sumirem, e o ícone cai no desenho antigo, só menos nítido, em vez de quebrar.
+O adaptador usa métodos internos do pystray para carregar o ícone e verificar o retorno do Windows
+ao adicioná-lo ou atualizá-lo.
 """
 
 import ctypes
@@ -29,7 +29,14 @@ import pystray  # type: ignore[import-untyped]
 
 from uniover_agent.adapters.diagnostics_file import open_diagnostics
 from uniover_agent.adapters.installation import installation_base
-from uniover_agent.adapters.pc_screen_presence import request_screen_stop
+from uniover_agent.adapters.pc_screen_presence import (
+    TrayBeat,
+    acknowledge_viewing,
+    close_tray_handle,
+    create_tray_wake_event,
+    request_screen_stop,
+    wait_tray_wake,
+)
 from uniover_agent.adapters.system_clock import SystemClock
 from uniover_agent.adapters.tray_assets import assets_dir, frame
 from uniover_agent.adapters.tray_controller import (
@@ -61,6 +68,10 @@ REFRESH_SECONDS: Final = 2.0
 DEFAULT_SITE: Final = "https://uniover.onrender.com"
 
 
+class _ShellNotifyError(OSError):
+    pass
+
+
 class SharpIcon(pystray.Icon):  # type: ignore[misc]
     """`pystray.Icon` que carrega o `.ico` no tamanho exato e usa um `hID` fixo."""
 
@@ -77,10 +88,17 @@ class SharpIcon(pystray.Icon):  # type: ignore[misc]
                 return
         super()._assert_icon_handle()
 
+    def _update_icon(self) -> None:
+        # O pystray chama este método antes de NIM_ADD. Nessa hora só há um ícone para carregar.
+        if self.visible:
+            super()._update_icon()
+        else:
+            self._assert_icon_handle()
+
     def _message(self, code: int, flags: int, **kwargs: Any) -> None:
         from pystray._util import win32  # type: ignore[import-untyped]  # noqa: PLC0415 - só no Windows
 
-        win32.Shell_NotifyIcon(
+        applied = win32.Shell_NotifyIcon(
             code,
             win32.NOTIFYICONDATAW(
                 cbSize=ctypes.sizeof(win32.NOTIFYICONDATAW),
@@ -89,6 +107,20 @@ class SharpIcon(pystray.Icon):  # type: ignore[misc]
                 uFlags=flags,
                 **kwargs,
             ),
+        )
+        if not applied and code in (win32.NIM_ADD, win32.NIM_MODIFY):
+            raise _ShellNotifyError(f"O Windows recusou a atualização do ícone ({code}).")
+
+    def confirm_visible(self) -> None:
+        """Confirma o ícone atual com o Windows, mesmo quando o estado não mudou."""
+        from pystray._util import win32  # noqa: PLC0415 - só no Windows
+
+        self._assert_icon_handle()
+        self._message(
+            win32.NIM_MODIFY,
+            win32.NIF_ICON | win32.NIF_TIP,
+            hIcon=self._icon_handle,
+            szTip=self.title,
         )
 
 
@@ -131,7 +163,17 @@ def run_tray() -> int:
         return 1
 
 
-def _run(base: Path, recorder: _Recorder) -> int:  # noqa: PLR0915 - integra dois hosts de bandeja
+def _run(base: Path, recorder: _Recorder) -> int:
+    indicator = TrayBeat()
+    try:
+        return _show(base, recorder, indicator)
+    finally:
+        indicator.withdraw()
+
+
+def _show(  # noqa: PLR0915 - integra dois hosts de bandeja
+    base: Path, recorder: _Recorder, indicator: TrayBeat
+) -> int:
     settings = Settings()
     assets = assets_dir()
     holder: dict[str, Any] = {}
@@ -148,6 +190,8 @@ def _run(base: Path, recorder: _Recorder) -> int:  # noqa: PLR0915 - integra doi
         return True
 
     def stop() -> None:
+        # Antes de fechar: o "Sair" encerra a tela já, sem esperar o processo do ícone acabar.
+        indicator.withdraw()
         callback = holder.get("stop")
         if callback is not None:
             callback()
@@ -178,6 +222,7 @@ def _run(base: Path, recorder: _Recorder) -> int:  # noqa: PLR0915 - integra doi
                 lambda callback: holder.__setitem__("stop", callback),
                 lambda callback: holder.__setitem__("native_notify", callback),
                 recorder,
+                indicator,
             ):
                 return 0
         except Exception as exc:
@@ -226,8 +271,9 @@ def _run(base: Path, recorder: _Recorder) -> int:  # noqa: PLR0915 - integra doi
         current = small_icon_size(getattr(icon, "_hwnd", None))
         path = assets / view.icon_file
         if path != icon.ico_file or current != icon.icon_size:
+            image = frame(path, current)
             icon.ico_file, icon.icon_size = path, current
-            icon.icon = frame(path, current)
+            icon.icon = image
         icon.title = view.title
         if view.hint != hint["text"] or view.screen_session != screen["session"]:
             hint["text"] = view.hint
@@ -235,13 +281,31 @@ def _run(base: Path, recorder: _Recorder) -> int:  # noqa: PLR0915 - integra doi
             icon.update_menu()
 
     def refresh_loop() -> None:
-        while True:
-            try:
-                apply(controller.refresh())
-            except Exception as exc:
-                _log.warning("a bandeja não conseguiu atualizar o ícone", exc_info=True)
-                recorder("tray.refresh_failed", "error", describe_exception(exc))
-            time.sleep(REFRESH_SECONDS)
+        wake = create_tray_wake_event()
+        try:
+            while True:
+                try:
+                    icon.visible = True
+                    view = controller.refresh()
+                    apply(view)
+                    if icon.visible:
+                        icon.confirm_visible()
+                        indicator.beat()
+                        if view.screen_session:
+                            acknowledge_viewing(view.screen_session)
+                except Exception as exc:
+                    indicator.suspend()
+                    if isinstance(exc, _ShellNotifyError):
+                        # Permite tentar NIM_ADD de novo se o Explorer perdeu o ícone.
+                        icon.visible = False
+                    _log.warning("a bandeja não conseguiu atualizar o ícone", exc_info=True)
+                    recorder("tray.refresh_failed", "error", describe_exception(exc))
+                if wake:
+                    wait_tray_wake(wake, REFRESH_SECONDS)
+                else:
+                    time.sleep(REFRESH_SECONDS)
+        finally:
+            close_tray_handle(wake)
 
     def promote() -> None:
         # O ensaio de atualização roda um ícone de verdade numa instalação isolada: nunca mexe no
@@ -257,7 +321,6 @@ def _run(base: Path, recorder: _Recorder) -> int:  # noqa: PLR0915 - integra doi
             recorder("tray.promote_failed", "error", describe_exception(exc))
 
     def setup(_: pystray.Icon) -> None:
-        icon.visible = True
         threading.Thread(target=refresh_loop, daemon=True).start()
         threading.Thread(target=promote, daemon=True).start()
 

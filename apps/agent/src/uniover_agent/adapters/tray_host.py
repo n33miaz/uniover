@@ -1,8 +1,9 @@
 """Host visual Windows da bandeja; o controlador Python continua dono das acoes.
 
 O PowerShell do sistema cria o icone e o menu WinForms no mesmo processo STA. Estado sem
-segredos atravessa um arquivo atomico; somente nomes de acoes voltam pelo stdout. Se o host
-nao iniciar ou cair, o chamador usa o menu nativo pystray.
+segredos atravessa um arquivo atomico; pelo stdout voltam somente nomes de acoes e a confirmacao
+do estado aplicado no icone (`APPLIED`, com a visualizacao mostrada). Se o host nao iniciar ou
+cair, o chamador usa o menu nativo pystray.
 """
 
 import json
@@ -16,6 +17,15 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from uniover_agent.adapters import pc_screen_presence
+from uniover_agent.adapters.pc_screen_presence import (
+    TrayBeat,
+    acknowledge_viewing,
+    close_tray_handle,
+    create_tray_wake_event,
+    wait_tray_wake,
+    wake_tray,
+)
 from uniover_agent.adapters.process import popen_hidden
 from uniover_agent.adapters.tray_controller import TrayController, promote_in_background
 from uniover_agent.adapters.tray_registry import FilePromotionMarker, WindowsNotifyIconSettings
@@ -30,9 +40,8 @@ _log = logging.getLogger(__name__)
 _HINT_WIDTH = 46
 _READY_TIMEOUT = 8.0
 _REFRESH_SECONDS = 2.0
-# Esperas entre as tentativas de trocar o arquivo de estado (o total fica abaixo de 1 s).
-# Até uns 3 s no total: um antivírus ou o host que acabou de abrir o arquivo podem segurá-lo
-# por mais que um instante.
+# Até 3,15 s entre as tentativas de trocar o arquivo de estado, que pode estar aberto no host
+# ou preso por um antivírus. Esse total entra no prazo de confirmação da visualização.
 _REPLACE_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8, 1.6)
 # ERROR_SHARING_VIOLATION e ERROR_LOCK_VIOLATION: o arquivo está aberto por outro processo.
 _SHARING_ERRORS = frozenset({32, 33})
@@ -88,7 +97,8 @@ def _write_state(  # noqa: PLR0913 - estado, destino e opções da gravação
     balloon: dict[str, str] | None = None,
     exit_host: bool = False,
     record: Record | None = None,
-) -> None:
+) -> bool:
+    """Grava o estado que o host mostra; `False` se não deu (o host segue com o anterior)."""
     data = {
         "icon": str(assets / view.icon_file),
         "title": view.title,
@@ -119,6 +129,8 @@ def _write_state(  # noqa: PLR0913 - estado, destino e opções da gravação
         except OSError:
             pass
         _warn_state_not_written(exc, record)
+        return False
+    return True
 
 
 def _replace_with_retry(temporary: Path, path: Path) -> None:
@@ -150,6 +162,25 @@ def _warn_state_not_written(exc: OSError, record: Record | None) -> None:
             record("tray.state_write_failed", "warn", type(exc).__name__)
 
 
+def _confirm_applied(
+    applied: tuple[str, int], awaited: str | None, indicator: TrayBeat | None
+) -> None:
+    """Renova a prova de vida só quando o host diz que aplicou no ícone o estado esperado.
+
+    `awaited` é a visualização do último estado gravado (vazia sem ninguém vendo); `None` quando a
+    gravação falhou e nenhuma confirmação vale."""
+    viewing, received_tick = applied
+    if (
+        indicator is None
+        or viewing != awaited
+        or not pc_screen_presence.fresh_tray_tick(received_tick)
+    ):
+        return
+    indicator.beat(received_tick)
+    if awaited:
+        acknowledge_viewing(awaited)
+
+
 def run_host(  # noqa: PLR0912, PLR0913, PLR0917, PLR0915 - integra processo e comandos
     base: Path,
     assets: Path,
@@ -158,16 +189,21 @@ def run_host(  # noqa: PLR0912, PLR0913, PLR0917, PLR0915 - integra processo e c
     set_stop: Callable[[Callable[[], None]], None],
     set_notify: Callable[[Callable[[str, str], bool] | None], None],
     record: Record,
+    indicator: TrayBeat | None = None,
 ) -> bool:
-    """Retorna True apos Sair; False quando o host falha e o pystray deve assumir."""
+    """Retorna True apos Sair; False quando o host falha e o pystray deve assumir.
+
+    `indicator` recebe a prova de vida enquanto o host confirma que aplica o estado no ícone."""
     script = host_script()
     if not script.is_file():
         return False
     runtime = base / "runtime"
     runtime.mkdir(parents=True, exist_ok=True)
     state = runtime / "tray-host-state.json"
-    _write_state(state, first, assets, record=record)
+    written = _write_state(state, first, assets, record=record)
     events: queue.Queue[str] = queue.Queue()
+    applied_lock = threading.Lock()
+    latest_applied: tuple[str, int] | None = None
     pending: queue.Queue[dict[str, str]] = queue.Queue()
     stopping = threading.Event()
     executable = (
@@ -217,9 +253,23 @@ def run_host(  # noqa: PLR0912, PLR0913, PLR0917, PLR0915 - integra processo e c
             return False
 
         def read_actions() -> None:
-            for line in stdout:
-                events.put(line.strip())
-            events.put("EXIT")
+            nonlocal latest_applied
+            try:
+                for line in stdout:
+                    command = line.strip()
+                    kind, _, viewing = command.partition(" ")
+                    if kind != "APPLIED":
+                        events.put(command)
+                        continue
+                    received_tick = pc_screen_presence.tray_tick()
+                    # Um só aviso na fila aponta para a confirmação mais recente. As ações de
+                    # menu continuam na fila, na ordem em que chegaram.
+                    with applied_lock:
+                        if latest_applied is None:
+                            events.put("APPLIED")
+                        latest_applied = viewing, received_tick
+            finally:
+                events.put("EXIT")
 
         threading.Thread(target=read_actions, name="tray-host-actions", daemon=True).start()
         try:
@@ -250,18 +300,43 @@ def run_host(  # noqa: PLR0912, PLR0913, PLR0917, PLR0915 - integra processo e c
             name="tray-host-promotion",
             daemon=True,
         ).start()
+
+        def watch_wake() -> None:
+            wake = create_tray_wake_event()
+            if not wake:
+                return
+            try:
+                while not stopping.is_set():
+                    if wait_tray_wake(wake, 0.5) and not stopping.is_set():
+                        events.put("WAKE")
+            finally:
+                close_tray_handle(wake)
+
+        threading.Thread(target=watch_wake, name="tray-host-wake", daemon=True).start()
         view = first
+        # `READY` não conta como prova de vida: ela espera a primeira confirmação do estado.
+        awaited = (first.screen_session or "") if written else None
+        next_refresh = time.monotonic() + _REFRESH_SECONDS
         try:
             while not stopping.is_set():
                 try:
-                    line = events.get(timeout=_REFRESH_SECONDS)
+                    line = events.get(timeout=max(0.0, next_refresh - time.monotonic()))
                 except queue.Empty:
                     line = ""
                 if line == "EXIT" or process.poll() is not None:
                     stopping.set()
                     record("tray.host_failed", "warn", "host visual fechou; menu nativo restaurado")
                     return False
-                if line.startswith("ACTION "):
+                if line == "APPLIED":
+                    with applied_lock:
+                        applied, latest_applied = latest_applied, None
+                    if applied is not None:
+                        _confirm_applied(applied, awaited, indicator)
+                    # As confirmações chegam sem parar: não regravam o estado antes da hora, nem
+                    # adiam a próxima atualização.
+                    if time.monotonic() < next_refresh:
+                        continue
+                elif line.startswith("ACTION "):
                     # "Parar de mostrar a tela" traz junto a visualização que o menu mostrava.
                     action, _, session = line[7:].partition(" ")
                     if any(
@@ -271,12 +346,15 @@ def run_host(  # noqa: PLR0912, PLR0913, PLR0917, PLR0915 - integra processo e c
                 if stopping.is_set():
                     break
                 try:
+                    awaited = None
                     view = controller.refresh()
                     balloon = None if pending.empty() else pending.get_nowait()
-                    _write_state(state, view, assets, balloon=balloon, record=record)
+                    if _write_state(state, view, assets, balloon=balloon, record=record):
+                        awaited = view.screen_session or ""
                 except Exception as exc:
                     _log.warning("nao consegui atualizar o painel da bandeja", exc_info=True)
                     record("tray.refresh_failed", "error", type(exc).__name__)
+                next_refresh = time.monotonic() + _REFRESH_SECONDS
             _write_state(state, view, assets, exit_host=True, record=record)
             try:
                 process.wait(timeout=3)
@@ -284,7 +362,11 @@ def run_host(  # noqa: PLR0912, PLR0913, PLR0917, PLR0915 - integra processo e c
                 process.terminate()
             return True
         finally:
+            # Antes de esperar o processo: daqui em diante não há ícone garantido.
+            if indicator is not None:
+                indicator.suspend()
             stopping.set()
+            wake_tray()
             set_notify(None)
             stdout.close()
             if process.poll() is None:

@@ -3,16 +3,60 @@
 import faulthandler
 import sys
 import threading
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from uniover_agent.adapters import crash_trace, local_networks, startup_trace
+from uniover_agent.adapters import crash_trace, local_networks, pc_screen_presence, startup_trace
 from uniover_agent.adapters import wol as _wol
 
 # O envio real do pacote mágico (os testes trocam `wol._send`; o do próprio WOL o usa de volta).
 REAL_WOL_SEND = _wol._send
+
+
+@pytest.fixture
+def private_screen_names(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Nomes só deste teste para os objetos da tela e da bandeja: um agente instalado no PC não é
+    visto, parado nem tomado por bandeja viva. Devolve o nome do da bandeja."""
+    unique = rf"Local\UniOverTest.{uuid.uuid4().hex}"
+    monkeypatch.setattr(pc_screen_presence, "_VIEWING_NAME", unique)
+    monkeypatch.setattr(pc_screen_presence, "_STOP_PREFIX", f"{unique}.Stop.")
+    monkeypatch.setattr(pc_screen_presence, "_ACK_PREFIX", f"{unique}.Ack.")
+    monkeypatch.setattr(pc_screen_presence, "_TRAY_NAME", f"{unique}.Tray")
+    monkeypatch.setattr(pc_screen_presence, "_TRAY_WAKE_NAME", f"{unique}.Wake")
+    return f"{unique}.Tray"
+
+
+@pytest.fixture
+def live_tray(private_screen_names: str) -> Iterator[pc_screen_presence.TrayBeat]:
+    """Uma bandeja viva (um carimbo recém-gravado, que vale por `TRAY_STALE_SECONDS`)."""
+    tray = pc_screen_presence.TrayBeat()
+    tray.beat()
+    stopped = threading.Event()
+
+    def auto_ack() -> None:
+        wake = pc_screen_presence.create_tray_wake_event()
+        try:
+            while not stopped.is_set():
+                v = pc_screen_presence.viewing_session()
+                if v and pc_screen_presence.tray_alive():
+                    pc_screen_presence.acknowledge_viewing(v)
+                if not pc_screen_presence.wait_tray_wake(wake, 0.02):
+                    stopped.wait(0.01)
+        finally:
+            pc_screen_presence.close_tray_handle(wake)
+
+    thread = threading.Thread(target=auto_ack, daemon=True)
+    thread.start()
+    try:
+        yield tray
+    finally:
+        stopped.set()
+        pc_screen_presence.wake_tray()
+        thread.join(timeout=1)
+        tray.withdraw()
 
 
 @pytest.fixture(autouse=True)

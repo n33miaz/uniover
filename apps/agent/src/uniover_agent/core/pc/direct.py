@@ -757,7 +757,10 @@ class PcDirectService:
                 self._stop_screen(session_id)
                 if isinstance(error, (DirectRefused, asyncio.CancelledError)):
                     raise
-                raise DirectRefused(REFUSED_FAILED) from None
+                unavailable = isinstance(error, DirectUnavailable)
+                raise DirectRefused(
+                    REFUSED_UNAVAILABLE if unavailable else REFUSED_FAILED
+                ) from None
             self._spawn(self._watch_screen(screen))
             return answer
 
