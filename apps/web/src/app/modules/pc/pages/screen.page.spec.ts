@@ -58,7 +58,18 @@ const TWO_MONITORS = {
 };
 
 /** Um quadro com cabeçalho `UOSF` e SOF de 640 × 360 para o decodificador simulado. */
-function jpegFrame(sequence: number, jpegWidth = 640): ArrayBuffer {
+function jpegFrame(
+  sequence: number,
+  {
+    width = 640,
+    height = 360,
+    jpegWidth = width,
+  }: {
+    width?: number;
+    height?: number;
+    jpegWidth?: number;
+  } = {},
+): ArrayBuffer {
   const jpeg = [
     0xff,
     0xd8,
@@ -67,8 +78,8 @@ function jpegFrame(sequence: number, jpegWidth = 640): ArrayBuffer {
     0,
     11,
     8,
-    1,
-    104,
+    height >> 8,
+    height & 0xff,
     jpegWidth >> 8,
     jpegWidth & 0xff,
     1,
@@ -82,8 +93,8 @@ function jpegFrame(sequence: number, jpegWidth = 640): ArrayBuffer {
   const view = new DataView(bytes.buffer);
   view.setUint32(0, 0x554f5346);
   view.setUint8(4, 1);
-  view.setUint16(6, 640);
-  view.setUint16(8, 360);
+  view.setUint16(6, width);
+  view.setUint16(8, height);
   view.setUint16(10, sequence);
   view.setUint32(12, jpeg.length);
   bytes.set(jpeg, 16);
@@ -116,6 +127,7 @@ function setup() {
     endGesture: vi.fn(),
   };
   const peer = new FakeConnection();
+  const createPeer = vi.fn(() => peer);
   const signaling = {
     offer: vi.fn(async () => ({
       sessionId: 'sessao-tela',
@@ -130,7 +142,7 @@ function setup() {
       { provide: DirectChannel, useValue: direct },
       { provide: PcStore, useValue: store },
       { provide: DirectSignaling, useValue: signaling },
-      { provide: PC_RTC_FACTORY, useValue: () => peer },
+      { provide: PC_RTC_FACTORY, useValue: createPeer },
       { provide: PcScreenAccess, useValue: { allowed, touch: touchOn } },
     ],
   });
@@ -138,20 +150,21 @@ function setup() {
   fixture.detectChanges();
   const root: HTMLElement = fixture.nativeElement;
   const action = () => root.querySelector<HTMLButtonElement>('button.action')!;
-  const requests = () =>
-    peer.channel.send.mock.calls
+  const requests = (connection = peer) =>
+    connection.channel.send.mock.calls
       .map(([text]) => JSON.parse(text) as Record<string, unknown>)
       .filter((message) => message['k'] === 's.get');
-  async function open() {
+  async function open(announcement = MONITOR) {
     action().click();
     await flush();
-    peer.channel.receive(JSON.stringify(MONITOR));
+    peer.channel.receive(JSON.stringify(announcement));
     fixture.detectChanges();
   }
   return {
     fixture,
     root,
     peer,
+    createPeer,
     signaling,
     allowed,
     parent,
@@ -250,20 +263,60 @@ describe('Tela do PC (página)', () => {
     expect(requests()).toHaveLength(2);
   });
 
-  it('keeps the pending request when the monitor size changes and asks with the new size after the frame', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const { peer, requests, open } = setup();
-    await open();
-    peer.channel.receive(
-      JSON.stringify({ k: 's.mon', monitors: [{ id: 7, width: 320, height: 600, primary: true }] }),
-    );
-    vi.advanceTimersByTime(2_000);
-    expect(requests().map((r) => r['width'])).toEqual([1280]);
+  it.each([
+    { width: 1080, height: 1920, frameWidth: 1080, frameHeight: 1920 },
+    { width: 1920, height: 1200, frameWidth: 1280, frameHeight: 800 },
+    { width: 320, height: 600, frameWidth: 320, frameHeight: 600 },
+  ])(
+    'draws the pending frame after the monitor changes to $width × $height',
+    async ({ width, height, frameWidth, frameHeight }) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const bitmap = { width: frameWidth, height: frameHeight, close: vi.fn() };
+      vi.mocked(createImageBitmap).mockResolvedValue(bitmap as ImageBitmap);
+      const { peer, requests, open } = setup();
+      await open();
+      peer.channel.receive(
+        JSON.stringify({
+          ...MONITOR,
+          layout: LAYOUT + 1,
+          monitors: [{ ...MONITOR.monitors[0], width, height }],
+        }),
+      );
+      vi.advanceTimersByTime(2_000);
+      expect(requests().map((r) => r['width'])).toEqual([1280]);
 
-    peer.channel.receive(jpegFrame(1));
+      peer.channel.receive(jpegFrame(1, { width: frameWidth, height: frameHeight }));
+      await flush();
+
+      expect(createImageBitmap).toHaveBeenCalledTimes(1);
+      expect(drawImage).toHaveBeenCalledWith(bitmap, 0, 0);
+      expect(peer.close).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(0);
+      expect(requests().map((r) => r['width'])).toEqual([1280, frameWidth]);
+    },
+  );
+
+  it.each([
+    { width: 641, height: 400 },
+    { width: 640, height: 401 },
+  ])('rejects a pending frame of $width × $height after a monitor resize', async (size) => {
+    const { fixture, peer, root, requests, open } = setup();
+    await open({ ...MONITOR, monitors: [{ ...MONITOR.monitors[0], width: 640, height: 360 }] });
+    peer.channel.receive(
+      JSON.stringify({
+        ...MONITOR,
+        layout: LAYOUT + 1,
+        monitors: [{ ...MONITOR.monitors[0], height: 1200 }],
+      }),
+    );
+    expect(requests().map((r) => r['width'])).toEqual([640]);
+
+    peer.channel.receive(jpegFrame(1, size));
     await flush();
-    vi.advanceTimersByTime(0);
-    expect(requests().map((r) => r['width'])).toEqual([1280, 320]);
+    fixture.detectChanges();
+
+    expect(createImageBitmap).not.toHaveBeenCalled();
+    expect(root.querySelector('.notice')?.textContent).toContain('Não foi possível');
   });
 
   it('shows no selector with a single monitor', async () => {
@@ -523,18 +576,43 @@ describe('Tela do PC (página)', () => {
     expect(peer.close).not.toHaveBeenCalled();
   });
 
-  it('reopens the screen session by itself before the 90 s limit, without showing a failure', async () => {
+  it.each([
+    {
+      outcome: 'keeps the selected secondary monitor',
+      announcement: {
+        ...TWO_MONITORS,
+        monitors: [TWO_MONITORS.monitors[1], { ...TWO_MONITORS.monitors[0], width: 1024 }],
+      },
+      expectedMonitor: 3,
+      expectedWidth: 1024,
+    },
+    {
+      outcome: 'falls back to the primary monitor when the selected one is gone',
+      announcement: {
+        ...MONITOR,
+        monitors: [{ id: 5, width: 1024, height: 768, primary: false }, ...MONITOR.monitors],
+      },
+      expectedMonitor: 7,
+      expectedWidth: 1280,
+    },
+  ])('reopens the session before the 90 s limit and $outcome', async (scenario) => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const { fixture, peer, root, signaling, open } = setup();
-    await open();
-    expect(signaling.offer).toHaveBeenCalledTimes(1);
+    const { fixture, peer, createPeer, root, signaling, action, requests } = setup();
+    const renewedPeer = new FakeConnection();
+    createPeer.mockReturnValueOnce(peer).mockReturnValueOnce(renewedPeer);
+    action().click();
+    await flush();
+    peer.channel.receive(JSON.stringify(TWO_MONITORS));
+    fixture.detectChanges();
+    root.querySelectorAll<HTMLButtonElement>('.monitors button')[0].click();
 
-    // O PC vai respondendo (senão o aviso de 10 s sem resposta encerraria antes); aos 75 s a página renova.
+    // O PC responde aos pedidos até a renovação automática aos 75 s.
     for (let second = 0; second < 74; second++) {
       vi.advanceTimersByTime(1_000);
       peer.channel.receive(jpegFrame(second));
       await flush();
     }
+    expect(requests().at(-1)?.['monitor']).toBe(3);
     expect(signaling.offer).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(1_000);
     await flush(60);
@@ -542,9 +620,13 @@ describe('Tela do PC (página)', () => {
     expect(signaling.close).toHaveBeenCalledWith('sessao-tela', true);
     expect(signaling.offer).toHaveBeenCalledTimes(2);
     expect(root.textContent).not.toContain('Não foi possível');
+    expect(requests(renewedPeer)).toHaveLength(0);
 
-    peer.channel.receive(JSON.stringify(MONITOR));
+    renewedPeer.channel.receive(JSON.stringify(scenario.announcement));
     fixture.detectChanges();
+    expect(requests(renewedPeer)).toEqual([
+      expect.objectContaining({ monitor: scenario.expectedMonitor, width: scenario.expectedWidth }),
+    ]);
     expect(root.querySelector('.notice')).toBeNull();
   });
 
@@ -640,11 +722,64 @@ describe('Tela do PC (página)', () => {
   it('recusa dimensões divergentes no SOF antes de chamar o decodificador', async () => {
     const { fixture, peer, root, open } = setup();
     await open();
-    peer.channel.receive(jpegFrame(1, 641));
+    peer.channel.receive(jpegFrame(1, { jpegWidth: 641 }));
     await flush();
     fixture.detectChanges();
     expect(createImageBitmap).not.toHaveBeenCalled();
     expect(root.querySelector('.notice')?.textContent).toContain('Não foi possível');
+  });
+
+  it.each([
+    { monitorWidth: 1920, monitorHeight: 1081, width: 1280, height: 722 },
+    { monitorWidth: 100, monitorHeight: 400, width: 101, height: 400 },
+    { monitorWidth: 100, monitorHeight: 400, width: 100, height: 401 },
+  ])(
+    'rejects $width × $height before decoding for a $monitorWidth × $monitorHeight monitor',
+    async ({ monitorWidth, monitorHeight, width, height }) => {
+      const { fixture, peer, root, action } = setup();
+      action().click();
+      await flush();
+      peer.channel.receive(
+        JSON.stringify({
+          ...MONITOR,
+          monitors: [{ ...MONITOR.monitors[0], width: monitorWidth, height: monitorHeight }],
+        }),
+      );
+      fixture.detectChanges();
+      peer.channel.receive(jpegFrame(1, { width, height }));
+      await flush();
+      fixture.detectChanges();
+
+      expect(createImageBitmap).not.toHaveBeenCalled();
+      expect(drawImage).not.toHaveBeenCalled();
+      expect(root.querySelector('.notice')?.textContent).toContain('Não foi possível');
+    },
+  );
+
+  it('decodes and paints a frame at the rounded height limit of the requested width', async () => {
+    const width = 1280;
+    const height = 721;
+    const bitmap = { width, height, close: vi.fn() };
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(async () => bitmap),
+    );
+    const { fixture, peer, root, action } = setup();
+    action().click();
+    await flush();
+    peer.channel.receive(
+      JSON.stringify({
+        ...MONITOR,
+        monitors: [{ ...MONITOR.monitors[0], height: 1081 }],
+      }),
+    );
+    fixture.detectChanges();
+    peer.channel.receive(jpegFrame(1, { width, height }));
+    await flush();
+
+    expect(createImageBitmap).toHaveBeenCalledTimes(1);
+    expect(drawImage).toHaveBeenCalledWith(bitmap, 0, 0);
+    expect(root.querySelector('.notice')).toBeNull();
   });
 
   it('shows the elevated window notice', async () => {

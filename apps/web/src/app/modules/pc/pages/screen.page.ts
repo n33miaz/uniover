@@ -65,11 +65,8 @@ interface Link {
   readonly parentSessionId: string;
   sessionId: string | null;
   painting: boolean;
-  /** Monitor do último `s.get` enviado (o do pedido em andamento, se houver). */
-  requested?: number;
-  requestedWidth?: number;
-  /** O monitor e o arranjo do último `s.get` enviado: o quadro que chega responde a ele (um pedido por vez). */
-  requestedView?: FrameView;
+  /** O monitor, o arranjo e a largura do último `s.get` enviado (um pedido por vez). */
+  requested?: { readonly view: FrameView; readonly width: number };
   watchdog?: ReturnType<typeof setTimeout>;
   renew?: ReturnType<typeof setTimeout>;
 }
@@ -443,7 +440,7 @@ export class ScreenPage {
     this.finish('idle');
   }
 
-  protected async open(): Promise<void> {
+  protected async open(preferredMonitorId: number | null = null): Promise<void> {
     const parentSessionId = this.direct.pcSessionId();
     if (this.link || !this.factory || !this.canOpen() || !parentSessionId) return;
     this.phase.set('connecting');
@@ -461,14 +458,11 @@ export class ScreenPage {
         loop: new ScreenFrameLoop({
           send: (text) => channel.send(text),
           view: () => {
-            const view = this.viewRequest();
             const monitor = this.current();
-            if (view && monitor) {
-              active.requested = view.monitor;
-              active.requestedWidth = view.width;
-              active.requestedView = { monitor, layout: this.layout() };
-            }
-            return view;
+            if (!monitor) return null;
+            const width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, monitor.width));
+            active.requested = { view: { monitor, layout: this.layout() }, width };
+            return { monitor: monitor.id, width };
           },
           onTimeout: () => {
             if (this.link === active) this.finish(this.state() === 'locked' ? 'locked' : 'failed');
@@ -480,6 +474,7 @@ export class ScreenPage {
       };
       link = active;
       this.link = active;
+      this.monitorId.set(preferredMonitorId);
       this.listen(active);
       await connection.setLocalDescription(await connection.createOffer());
       await gatherDirectIce(connection);
@@ -682,13 +677,6 @@ export class ScreenPage {
     link.loop.restart();
   }
 
-  private viewRequest() {
-    const monitor = this.current();
-    return monitor
-      ? { monitor: monitor.id, width: Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, monitor.width)) }
-      : null;
-  }
-
   private listen(link: Link): void {
     const lost = () => {
       // Bloqueada, o PC avisa e fecha a sessão: é um aviso estável, não uma falha.
@@ -712,13 +700,22 @@ export class ScreenPage {
 
   private receive(link: Link, data: unknown): void {
     if (typeof data !== 'string') {
-      if (!(data instanceof ArrayBuffer) || link.painting) throw new Error('quadro inválido');
-      const frame = link.assembler.push(data, link.requestedWidth ?? 0);
+      const requested = link.requested;
+      if (!(data instanceof ArrayBuffer) || link.painting || !requested) {
+        throw new Error('quadro inválido');
+      }
+      // Dentro do pedido em andamento, o PC pode anunciar outro arranjo antes de capturar.
+      const monitor = this.monitors().find((item) => item.id === requested.view.monitor.id);
+      if (!monitor) throw new Error('monitor do quadro indisponível');
+      const width = Math.min(requested.width, monitor.width);
+      const frame = link.assembler.push(data, {
+        width,
+        height: Math.max(1, Math.round((monitor.height * width) / monitor.width)),
+      });
       if (frame) {
         link.painting = true;
-        // O quadro responde ao único pedido em andamento: mostra o monitor e o arranjo daquele pedido.
-        const view = link.requestedView ?? null;
-        void this.paint(link, frame, view).catch(() => {
+        // O toque aguarda o quadro de um pedido feito com o novo arranjo.
+        void this.paint(link, frame, requested.view).catch(() => {
           if (this.link === link) this.finish('failed');
         });
       }
@@ -744,9 +741,10 @@ export class ScreenPage {
         } else {
           // Se o monitor do pedido em andamento (não o selecionado) sumiu, o PC o descartou sem responder: ele é dado
           // como perdido.
+          const requestedMonitorId = link.requested?.view.monitor.id;
           const gone =
-            link.requested !== undefined &&
-            !message.monitors.some((item) => item.id === link.requested);
+            requestedMonitorId !== undefined &&
+            !message.monitors.some((item) => item.id === requestedMonitorId);
           // Outra impressão é outro arranjo, mesmo com o monitor de mesmo número e tamanho (dois iguais, o primeiro desligado).
           if (
             gone ||
@@ -783,12 +781,13 @@ export class ScreenPage {
   /** Fim normal da sessão de tela (90 s): fecha esta e abre outra, em vez de esperar o PC encerrar. */
   private renew(link: Link): void {
     if (this.link !== link) return;
+    const preferredMonitorId = this.monitorId();
     this.finish('connecting');
-    if (this.canOpen()) void this.open();
+    if (this.canOpen()) void this.open(preferredMonitorId);
     else this.phase.set('failed');
   }
 
-  private async paint(link: Link, frame: ScreenViewerFrame, view: FrameView | null): Promise<void> {
+  private async paint(link: Link, frame: ScreenViewerFrame, view: FrameView): Promise<void> {
     const bitmap = await createImageBitmap(new Blob(frame.chunks, { type: 'image/jpeg' }));
     try {
       const canvas = this.surface()?.nativeElement;
