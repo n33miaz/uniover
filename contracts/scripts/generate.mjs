@@ -136,6 +136,17 @@ function constToType(node) {
   }
 }
 
+function flattenScreen(screen) {
+  return screen.map(({ type, schema }) => {
+    const name = pascal(type);
+    const flat = structuredClone(schema);
+    flat.title = `${name}Message`;
+    nameNested(flat, name);
+    stripValidationOnly(flat);
+    return { type, name, schema: flat };
+  });
+}
+
 export function flatten({ envelope, messages, screen }) {
   const defs = envelope.$defs;
   const flatEnvelope = structuredClone(envelope);
@@ -154,15 +165,7 @@ export function flatten({ envelope, messages, screen }) {
     stripValidationOnly(flat);
     return { type, name, schema: flat };
   });
-  const flatScreen = screen.map(({ type, schema }) => {
-    const name = pascal(type);
-    const flat = structuredClone(schema);
-    flat.title = `${name}Message`;
-    nameNested(flat, name);
-    stripValidationOnly(flat);
-    return { type, name, schema: flat };
-  });
-  return { flatEnvelope, flatMessages, flatScreen };
+  return { flatEnvelope, flatMessages, flatScreen: flattenScreen(screen) };
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -335,6 +338,38 @@ function wrapPythonRootModelDefaults(code) {
   );
 }
 
+function pythonArgs(className) {
+  return [
+    "--from", DATAMODEL_CODEGEN,
+    "datamodel-codegen",
+    "--input-file-type", "jsonschema",
+    "--output-model-type", "pydantic_v2.BaseModel",
+    "--use-annotated",
+    "--disable-timestamp",
+    "--extra-fields", "forbid",
+    "--target-python-version", "3.13",
+    "--use-standard-collections",
+    "--use-union-operator",
+    "--enum-field-as-literal", "all",
+    "--use-title-as-name",
+    "--formatters", "builtin",
+    "--custom-file-header", PY_HEADER,
+    "--class-name", className,
+  ];
+}
+
+export function* generateScreenPython(flatScreen = flattenScreen(readSchemaDir(join(AGENT_SCHEMAS, "screen", "messages")))) {
+  for (const { type, name, schema } of flatScreen) {
+    const input = structuredClone(schema);
+    dropPatternOnDates(input);
+    const code = run("uvx", [...pythonArgs(`${name}Message`), ...SCREEN_PY_ARGS], {
+      input: JSON.stringify(input),
+      env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+    });
+    yield [`${GENERATED_PY_DIR}/${snake(type)}.py`, withFinalNewline(lf(wrapPythonRootModelDefaults(code)))];
+  }
+}
+
 function generatePython(out, flat, schemasMeta) {
   const dir = GENERATED_PY_DIR;
   const tmp = join(out, ".tmp-py");
@@ -343,8 +378,6 @@ function generatePython(out, flat, schemasMeta) {
   const items = [
     { module: "envelope", cls: "Envelope", schema: flat.flatEnvelope },
     ...flat.flatMessages.map((m) => ({ module: snake(m.type), cls: `${m.name}Message`, schema: m.schema, type: m.type })),
-    // Sem `type`: fica fora do `MESSAGE_MODELS`.
-    ...flat.flatScreen.map((m) => ({ module: snake(m.type), cls: `${m.name}Message`, schema: m.schema, extraArgs: SCREEN_PY_ARGS })),
   ];
   for (const it of items) {
     const input = join(tmp, `${it.module}.schema.json`);
@@ -352,29 +385,13 @@ function generatePython(out, flat, schemasMeta) {
     dropPatternOnDates(schema);
     writeFileSync(input, JSON.stringify(schema, null, 2), "utf8");
     const output = join(tmp, `${it.module}.py`);
-    run("uvx", [
-      "--from", DATAMODEL_CODEGEN,
-      "datamodel-codegen",
-      "--input", input,
-      "--input-file-type", "jsonschema",
-      "--output", output,
-      "--output-model-type", "pydantic_v2.BaseModel",
-      "--use-annotated",
-      "--disable-timestamp",
-      "--extra-fields", "forbid",
-      "--target-python-version", "3.13",
-      "--use-standard-collections",
-      "--use-union-operator",
-      "--enum-field-as-literal", "all",
-      "--use-title-as-name",
-      "--formatters", "builtin",
-      "--custom-file-header", PY_HEADER,
-      "--class-name", it.cls,
-      ...(it.extraArgs ?? []),
-    ]);
+    run("uvx", [...pythonArgs(it.cls), "--input", input, "--output", output]);
     write(out, `${dir}/${it.module}.py`, wrapPythonRootModelDefaults(readFileSync(output, "utf8")));
   }
   rmSync(tmp, { recursive: true, force: true });
+
+  // Os modelos do canal de tela ficam fora do `MESSAGE_MODELS`.
+  for (const [rel, code] of generateScreenPython(flat.flatScreen)) write(out, rel, code);
 
   const messageItems = items.filter((i) => i.type);
   const imports = messageItems.map((i) => `from .${i.module} import ${i.cls}`).join("\n");

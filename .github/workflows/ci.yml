@@ -7,7 +7,7 @@ name: CI
 #   web      lint, testes unitários, build de produção (com o orçamento do pacote inicial do angular.json)
 #   e2e      fumaça: um projeto (iphone-12) e só as telas críticas de .github/scripts/e2e-smoke.json
 #   agent    ruff, tipos (como no Windows), fronteiras do núcleo e o pytest sem cobertura (sem os módulos só do Windows)
-#   contracts  esquemas e exemplos (a regeneração dos tipos é do contracts-sync.yml)
+#   contracts  esquemas, exemplos e sincronismo dos modelos Python do canal de tela
 #   deploy-gate  casos do gate do Deploy (.github/scripts/release-gate.sh): só `chore: release x.y.z` publica
 # Nenhum check daqui é exigência de merge: virar exigência (ci-ok) é decisão do dono, nas regras de branch do GitHub.
 on:
@@ -59,9 +59,11 @@ jobs:
               - '.github/scripts/**'
             agent:
               - 'apps/agent/**'
+              - 'contracts/agent/screen/**'
               - '.github/workflows/ci.yml'
             contracts:
               - 'contracts/**'
+              - 'apps/agent/src/uniover_agent/contracts/pc_screen_*.py'
               - '.github/workflows/ci.yml'
 
   commits:
@@ -266,9 +268,12 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: contracts/package-lock.json
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          python-version: "3.14"
       - run: npm ci
-      - name: Validar esquemas e exemplos
-        run: npm run validate
+      - name: Validar esquemas, exemplos e modelos Python do canal de tela
+        run: npm run check -- --screen-python
 
   # Check único para exigir nas regras de branch (decisão do dono): jobs pulados por caminho contam como verdes.
   ci-ok:
