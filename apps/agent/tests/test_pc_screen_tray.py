@@ -39,9 +39,8 @@ WORKER = "uniover_agent.adapters.pc_screen_worker"
 # Uma bandeja em outro processo: grava um carimbo, diz quem é e espera ser morta (ou o pai sumir).
 _OTHER_TRAY = """
 import os, sys
-from uniover_agent.adapters import pc_screen_presence
-pc_screen_presence._TRAY_NAME = sys.argv[1]
-tray = pc_screen_presence.TrayBeat()
+from uniover_agent.adapters.pc_screen_presence import TrayBeat
+tray = TrayBeat()
 tray.beat()
 print(os.getpid(), flush=True)
 sys.stdin.readline()
@@ -159,9 +158,10 @@ def test_a_tray_that_does_not_acknowledge_refuses_the_viewing(
 
 
 @windows_only
-def test_a_killed_tray_process_stops_counting_at_once(private_screen_names: str) -> None:
+@pytest.mark.usefixtures("private_screen_names")
+def test_a_killed_tray_process_stops_counting_at_once() -> None:
     other = subprocess.Popen(  # noqa: S603 - o próprio interpretador dos testes
-        [sys.executable, "-c", _OTHER_TRAY, private_screen_names],
+        [sys.executable, "-c", _OTHER_TRAY],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,
@@ -180,6 +180,33 @@ def test_a_killed_tray_process_stops_counting_at_once(private_screen_names: str)
     finally:
         other.kill()
         other.communicate(timeout=30)
+
+
+@windows_only
+def test_only_the_same_installation_can_see_and_signal_the_view(
+    tmp_path: Path, live_tray: TrayBeat
+) -> None:
+    probe = """
+import json, sys
+from uniover_agent.adapters import pc_screen_presence as p
+viewing = sys.argv[1]
+print(json.dumps([p.tray_alive(), p.viewing_session(), p.wake_tray(),
+                  p.acknowledge_viewing(viewing), p.request_screen_stop(viewing)]))
+"""
+    with screen_indicator() as must_stop:
+        viewing = viewing_session()
+        assert viewing is not None
+        for home, same in ((tmp_path / "copia", False), (tmp_path, True)):
+            result = subprocess.run(  # noqa: S603 - o próprio interpretador dos testes
+                [sys.executable, "-c", probe, viewing],
+                env={**os.environ, "UNIOVER_HOME": str(home)},
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
+            )
+            assert json.loads(result.stdout) == [same, viewing if same else None, same, same, same]
+            assert must_stop() is same
 
 
 @windows_only

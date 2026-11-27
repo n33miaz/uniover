@@ -41,6 +41,14 @@ public static class UniOverTrayNative {
         var data = new NotifyIconData { Size = NotifyIconDataSize, Window = window, Id = id };
         return Shell_NotifyIconW(NimModify, ref data);
     }
+    private const uint NifIcon = 0x2, NifTip = 0x4;
+    public static bool ApplyIconAndTip(IntPtr window, uint id, IntPtr icon, string tip) {
+        // As propriedades do NotifyIcon descartam o retorno do Windows: esta chamada diz se o icone e a dica valeram.
+        var data = new NotifyIconData {
+            Size = NotifyIconDataSize, Window = window, Id = id, Flags = NifIcon | NifTip, Icon = icon, Tip = tip
+        };
+        return Shell_NotifyIconW(NimModify, ref data);
+    }
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr context);
 }
@@ -388,12 +396,15 @@ $timer.add_Tick({
                 $oldIcon.Dispose()
                 $script:currentIcon = [string]$view.icon
             }
-            if ($view.balloon -and $view.balloon.message) {
-                $icon.BalloonTipTitle = [string]$view.balloon.title
-                $icon.BalloonTipText = [string]$view.balloon.message
-                $icon.ShowBalloonTip(5000)
+            # Recusado pelo Windows, o estado fica pendente e o proximo tique aplica de novo.
+            if ([UniOverTrayNative]::ApplyIconAndTip($windowHandle, $iconId, $icon.Icon.Handle, $icon.Text)) {
+                if ($view.balloon -and $view.balloon.message) {
+                    $icon.BalloonTipTitle = [string]$view.balloon.title
+                    $icon.BalloonTipText = [string]$view.balloon.message
+                    $icon.ShowBalloonTip(5000)
+                }
+                $script:lastState = $raw
             }
-            $script:lastState = $raw
         }
         if (-not [UniOverTrayNative]::IsIconRegistered($windowHandle, $iconId)) {
             # Forca um novo registro se a bandeja perdeu o icone. O proximo tique confere o resultado.
@@ -401,7 +412,8 @@ $timer.add_Tick({
             $icon.Visible = $true
             return
         }
-        # A thread da interface confirma somente enquanto o Windows reconhece o icone.
+        if ($raw -ne $script:lastState) { return }
+        # A thread da interface confirma somente enquanto o Windows reconhece o icone e o estado lido.
         [Console]::Out.WriteLine('APPLIED ' + $script:viewing)
         [Console]::Out.Flush()
         $script:lastError = ''

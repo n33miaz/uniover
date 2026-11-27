@@ -361,6 +361,23 @@ def test_the_host_script_confirms_only_after_the_icon_took_the_state() -> None:
     assert cleared < icon < applied < confirmed
 
 
+def test_the_host_script_does_not_confirm_a_state_the_shell_refused() -> None:
+    """`NotifyIcon.Icon` e `.Text` não dizem se o Windows aceitou: a chamada nativa diz, e só o
+    estado aceito libera a confirmação."""
+    script = tray_host.host_script().read_text(encoding="ascii")
+
+    icon = script.index("$icon.Icon = $replacement")
+    native = script.index(
+        "if ([UniOverTrayNative]::ApplyIconAndTip($windowHandle, $iconId, $icon.Icon.Handle,"
+        " $icon.Text)) {"
+    )
+    accepted = script.index("$script:lastState = $raw")
+    pending = script.index("if ($raw -ne $script:lastState) { return }")
+    confirmed = script.index("[Console]::Out.WriteLine('APPLIED ' + $script:viewing)")
+    assert icon < native < accepted < pending < confirmed
+    assert "Flags = NifIcon | NifTip" in script
+
+
 @pytest.mark.parametrize("finished_at", [5.0, 14.0], ids=["lento", "carimbo-vencido"])
 def test_a_slow_refresh_keeps_only_the_latest_confirmation_and_preserves_actions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, finished_at: float
