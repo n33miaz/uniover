@@ -649,7 +649,10 @@ agente para manter o controle disponível. Para interromper o início do agente,
   visualização espera até 9 s pela confirmação do próprio indicador antes de transmitir quadros. Se a confirmação
   faltar nessa etapa, o canal da tela fecha e o app exibe uma falha genérica. O controle do PC continua.
   Durante a visualização, o **Sair**, a perda do carimbo ou seu vencimento encerram a tela na consulta seguinte
-  (a cada 0,2 s). O objeto some junto com o processo. Se o Windows perder o registro do ícone, a bandeja principal
+  (a cada 0,2 s). O objeto some junto com o processo. Os nomes desses objetos (carimbo, visualização, pedido de parar,
+  confirmação e despertar) levam a pasta de instalação, como a trava de instância única da bandeja: uma cópia isolada
+  no mesmo Windows (`UNIOVER_HOME`, ensaio de atualização) não mantém viva a tela da instalação real depois do
+  **Sair**, nem recebe o despertar dela. Se o Windows perder o registro do ícone, a bandeja principal
   tenta registrá-lo novamente e retoma a confirmação assim que ele volta. Se a bandeja principal cair, a tela volta a
   abrir quando a bandeja reserva assume. Quem fechou o ícone, ou desabilitou a entrada de inicialização, precisa abrir
   o atalho **UniOver** do menu Iniciar antes de ver a tela. Na bandeja reserva, o Windows pode aceitar a atualização do

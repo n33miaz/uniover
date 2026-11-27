@@ -3,7 +3,6 @@
 import faulthandler
 import sys
 import threading
-import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -17,16 +16,13 @@ REAL_WOL_SEND = _wol._send
 
 
 @pytest.fixture
-def private_screen_names(monkeypatch: pytest.MonkeyPatch) -> str:
-    """Nomes só deste teste para os objetos da tela e da bandeja: um agente instalado no PC não é
-    visto, parado nem tomado por bandeja viva. Devolve o nome do da bandeja."""
-    unique = rf"Local\UniOverTest.{uuid.uuid4().hex}"
-    monkeypatch.setattr(pc_screen_presence, "_VIEWING_NAME", unique)
-    monkeypatch.setattr(pc_screen_presence, "_STOP_PREFIX", f"{unique}.Stop.")
-    monkeypatch.setattr(pc_screen_presence, "_ACK_PREFIX", f"{unique}.Ack.")
-    monkeypatch.setattr(pc_screen_presence, "_TRAY_NAME", f"{unique}.Tray")
-    monkeypatch.setattr(pc_screen_presence, "_TRAY_WAKE_NAME", f"{unique}.Wake")
-    return f"{unique}.Tray"
+def private_screen_names(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
+    """Nomes só deste teste para os objetos da tela e da bandeja (derivados da pasta de instalação,
+    aqui a pasta do teste): um agente instalado no PC não é visto, parado nem tomado por bandeja
+    viva. Devolve o nome do carimbo da bandeja."""
+    monkeypatch.setenv("UNIOVER_HOME", str(tmp_path))
+    pc_screen_presence._namespace.cache_clear()
+    return f"{pc_screen_presence._namespace()}.Showing"
 
 
 @pytest.fixture
@@ -269,6 +265,7 @@ def restore_process_hooks() -> Iterator[None]:
 
 @pytest.fixture(autouse=True)
 def isolated_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    pc_screen_presence._namespace.cache_clear()
     for name in (
         "API_URL",
         "AGENT_ID",

@@ -21,15 +21,14 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from ctypes import wintypes
+from functools import cache
 from typing import Any, Final
+
+from uniover_agent.adapters.installation import installation_base
+from uniover_agent.adapters.tray_win32 import mutex_name
 
 _log = logging.getLogger(__name__)
 
-_VIEWING_NAME = r"Local\UniOverScreenViewing"
-_STOP_PREFIX = r"Local\UniOverScreenStop."
-_ACK_PREFIX = r"Local\UniOverScreenAck."
-_TRAY_NAME = r"Local\UniOverTrayShowing"
-_TRAY_WAKE_NAME = r"Local\UniOverTrayWake"
 _TICK_BYTES = 8
 # A folga cobre um PC lento sem aceitar um ícone parado.
 TRAY_STALE_SECONDS = 10.0
@@ -44,6 +43,12 @@ _HEX = frozenset("0123456789abcdef")
 _FILE_MAP_READ = 0x0004
 _EVENT_MODIFY_STATE = 0x0002
 _WAIT_OBJECT_0 = 0
+
+
+@cache
+def _namespace() -> str:
+    """O mesmo nome da trava da bandeja, fixo enquanto este processo estiver vivo."""
+    return mutex_name(installation_base())
 
 
 def _is_viewing_id(value: str) -> bool:
@@ -126,7 +131,7 @@ class TrayBeat:
                 return
             try:
                 if self._shared is None:
-                    self._shared = mmap.mmap(-1, _TICK_BYTES, tagname=_TRAY_NAME)
+                    self._shared = mmap.mmap(-1, _TICK_BYTES, tagname=f"{_namespace()}.Showing")
                 tick = tray_tick() if received_tick is None else received_tick
                 self._shared[:] = tick.to_bytes(_TICK_BYTES, "little")
             except OSError:
@@ -156,7 +161,7 @@ def fresh_tray_tick(tick: int, kernel: Any = None) -> bool:
 
 
 def _tray_alive(kernel: Any) -> bool:
-    value = _read_mapping(kernel, _TRAY_NAME, _TICK_BYTES)
+    value = _read_mapping(kernel, f"{_namespace()}.Showing", _TICK_BYTES)
     if value is None:
         return False
     return fresh_tray_tick(int.from_bytes(value, "little"), kernel)
@@ -175,7 +180,7 @@ def create_tray_wake_event() -> Any:
     """Cria ou abre o evento para a bandeja acordar e atualizar o ícone sem espera."""
     if sys.platform != "win32":
         return None
-    return _kernel().CreateEventW(None, False, False, _TRAY_WAKE_NAME)
+    return _kernel().CreateEventW(None, False, False, f"{_namespace()}.Wake")
 
 
 def wake_tray() -> bool:
@@ -183,7 +188,7 @@ def wake_tray() -> bool:
     if sys.platform != "win32":
         return False
     kernel = _kernel()
-    wake = kernel.OpenEventW(_EVENT_MODIFY_STATE, False, _TRAY_WAKE_NAME)
+    wake = kernel.OpenEventW(_EVENT_MODIFY_STATE, False, f"{_namespace()}.Wake")
     if not wake:
         return False
     try:
@@ -230,10 +235,10 @@ def screen_indicator() -> Iterator[Callable[[], bool]]:
         raise TrayUnavailableError("O ícone do UniOver não está aberto neste PC.")
     viewing = secrets.token_hex(_ID_BYTES)
     # O evento nasce antes de o identificador aparecer: quem o lê já tem a quem pedir.
-    stop = kernel.CreateEventW(None, True, False, _STOP_PREFIX + viewing)
+    stop = kernel.CreateEventW(None, True, False, f"{_namespace()}.Stop.{viewing}")
     if not stop:
         raise OSError("Não foi possível sinalizar a tela na bandeja.")
-    ack = kernel.CreateEventW(None, True, False, _ACK_PREFIX + viewing)
+    ack = kernel.CreateEventW(None, True, False, f"{_namespace()}.Ack.{viewing}")
     if not ack:
         kernel.CloseHandle(stop)
         raise OSError("Não foi possível criar o evento de confirmação da tela.")
@@ -243,7 +248,7 @@ def screen_indicator() -> Iterator[Callable[[], bool]]:
         return asked or not _tray_alive(kernel)
 
     try:
-        with mmap.mmap(-1, _ID_CHARS, tagname=_VIEWING_NAME) as shared:
+        with mmap.mmap(-1, _ID_CHARS, tagname=f"{_namespace()}.Viewing") as shared:
             shared.write(viewing.encode("ascii"))
             wake_tray()
             if not _wait_for_ack(kernel, ack):
@@ -258,7 +263,7 @@ def viewing_session() -> str | None:
     """O identificador da visualização em curso; `None` se ninguém está vendo."""
     if sys.platform != "win32":
         return None
-    raw = _read_mapping(_kernel(), _VIEWING_NAME, _ID_CHARS)
+    raw = _read_mapping(_kernel(), f"{_namespace()}.Viewing", _ID_CHARS)
     if raw is None:
         return None
     value = raw.decode("ascii", errors="replace")
@@ -270,7 +275,7 @@ def request_screen_stop(viewing: str) -> bool:
     if sys.platform != "win32" or not _is_viewing_id(viewing):
         return False
     kernel = _kernel()
-    stop = kernel.OpenEventW(_EVENT_MODIFY_STATE, False, _STOP_PREFIX + viewing)
+    stop = kernel.OpenEventW(_EVENT_MODIFY_STATE, False, f"{_namespace()}.Stop.{viewing}")
     if not stop:
         return False
     try:
@@ -284,7 +289,7 @@ def acknowledge_viewing(viewing: str) -> bool:
     if sys.platform != "win32" or not _is_viewing_id(viewing):
         return False
     kernel = _kernel()
-    ack = kernel.OpenEventW(_EVENT_MODIFY_STATE, False, _ACK_PREFIX + viewing)
+    ack = kernel.OpenEventW(_EVENT_MODIFY_STATE, False, f"{_namespace()}.Ack.{viewing}")
     if not ack:
         return False
     try:
