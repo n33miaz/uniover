@@ -11,7 +11,6 @@ using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Contracts;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
-using UniOver.Modules.Tv.Features.Tvs;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
 using UniOver.SharedKernel;
@@ -74,9 +73,9 @@ internal sealed class BindAgentHandler(
     ITvStreamPublisher stream,
     TvConfigView view,
     TimeProvider time,
+    TvLinkWatcher watcher,
     ITvCleanupSettingsPublisher? cleanupPublisher = null,
     IEventBus? events = null,
-    TvLinkWatcher? watcher = null,
     Microsoft.Extensions.Options.IOptions<TvModuleOptions>? options = null)
 {
     /// <summary>
@@ -162,16 +161,15 @@ internal sealed class BindAgentHandler(
         }
 
         var binding = new TvAgentBinding(tv.AgentSlug, tv.Name, TvAgentSource.Saved);
-        await TvRowLock.ApplyToCurrentBindingAsync(db, tv.Id, current =>
+        await watcher.SynchronizeBindingAsync(db, tv, agents, current =>
         {
-            agents.Set(new TvAgentBinding(current.AgentSlug, current.Name, TvAgentSource.Saved));
             if (changed && string.Equals(current.AgentSlug, tv.AgentSlug, StringComparison.Ordinal))
             {
                 AnnounceNewAgent(current.Id, current.AgentSlug);
             }
             else
             {
-                watcher?.Rebind(current.Id, current.AgentSlug);
+                watcher.Rebind(current.Id, current.AgentSlug);
             }
         });
 
@@ -218,7 +216,7 @@ internal sealed class BindAgentHandler(
     /// </summary>
     internal void AnnounceNewAgent(Guid tvId, string agentSlug)
     {
-        watcher?.Rebind(tvId, agentSlug);
+        watcher.Rebind(tvId, agentSlug);
         stream.AdoptUnidentifiedStream(tvId);
         var online = presence.IsOnline(agentSlug);
         state.NoteOnline(agentSlug, online);
@@ -226,15 +224,8 @@ internal sealed class BindAgentHandler(
         var announced = TvState.From(
             state.Last(agentSlug), online, offlineSince: online ? null : presence.OfflineSince(agentSlug),
             reportFresh: presence.HasRecentReport(agentSlug, linkStale));
-        if (watcher is not null)
-        {
-            // Publica e passa a vigiar o computador novo no mesmo passo.
-            watcher.Publish(tvId, agentSlug, announced);
-        }
-        else
-        {
-            stream.PublishState(tvId, announced);
-        }
+        // Publica e passa a vigiar o computador novo no mesmo passo.
+        watcher.Publish(tvId, agentSlug, announced);
     }
 }
 

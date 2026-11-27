@@ -53,8 +53,8 @@ internal sealed record TvAppsResponse(IReadOnlyList<TvAppOption> Items);
 /// </summary>
 internal sealed class ManageTvsHandler(
     TvDbContext db, IAgentDirectory agents, IAgentPresenceReader presence, TimeProvider time, ITvCommandAudit audit,
-    ITvCleanupSettingsPublisher cleanupPublisher, IEventBus? events = null, IAccountRoleDirectory? roles = null,
-    TvLinkWatcher? watcher = null)
+    ITvCleanupSettingsPublisher cleanupPublisher, TvLinkWatcher watcher, ITvAgentResolver resolver,
+    IEventBus? events = null, IAccountRoleDirectory? roles = null)
 {
     public async Task<TvListResponse> ListAsync(IReadOnlyList<TvTarget> visible, bool isOwner, CancellationToken cancellationToken)
     {
@@ -202,9 +202,9 @@ internal sealed class ManageTvsHandler(
 
         await transaction.CommitAsync(cancellationToken);
 
-        if (request.AgentSlug is not null && watcher is not null)
+        if (request.AgentSlug is not null)
         {
-            await TvRowLock.ApplyToCurrentBindingAsync(db, tv.Id, current => watcher.Rebind(current.Id, current.AgentSlug));
+            await watcher.SynchronizeBindingAsync(db, tv, resolver, current => watcher.Rebind(current.Id, current.AgentSlug));
         }
 
         if (agentChanged)

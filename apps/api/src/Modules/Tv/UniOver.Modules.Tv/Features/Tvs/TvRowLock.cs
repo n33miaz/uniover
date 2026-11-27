@@ -42,18 +42,15 @@ internal static class TvRowLock
     /// Depois do commit da troca, relê o vínculo e o aplica em memória sob o bloqueio da linha. A troca pode ter sido
     /// superada desde o commit, e nenhuma outra pode confirmar entre esta leitura e a atualização em memória.
     /// </summary>
-    public static async Task ApplyToCurrentBindingAsync(TvDbContext db, Guid tvId, Action<ConfiguredTv> apply)
+    public static async Task ApplyToCurrentBindingAsync(
+        TvDbContext db, Guid tvId, Action<ConfiguredTv?> apply, CancellationToken cancellationToken)
     {
-        // A troca já está gravada: o cancelamento da requisição não pode deixar a vigia com o vínculo anterior.
-        await using var transaction = await db.Database.BeginTransactionAsync(CancellationToken.None);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var current = await db.Tvs.FromSqlInterpolated($"""SELECT * FROM "tv"."tvs" WHERE id = {tvId} FOR UPDATE""")
-            .AsNoTracking().SingleOrDefaultAsync(CancellationToken.None);
-        if (current is not null)
-        {
-            apply(current);
-        }
+            .AsNoTracking().SingleOrDefaultAsync(cancellationToken);
+        apply(current);
 
-        await transaction.CommitAsync(CancellationToken.None);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     /// <summary>
