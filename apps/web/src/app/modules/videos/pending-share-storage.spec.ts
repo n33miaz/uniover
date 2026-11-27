@@ -81,7 +81,7 @@ describe('pending-share-storage', () => {
 
   it('finds the requested share in localStorage when another tab owns sessionStorage', () => {
     const id = stashPendingShare({ url: 'https://youtu.be/session' })!;
-    const local = { id: 'local', timestamp: 1, url: 'https://youtu.be/local' };
+    const local = { id: 'local', timestamp: Date.now(), url: 'https://youtu.be/local' };
     localStorage.setItem(PENDING_SHARE_STORAGE_KEY, JSON.stringify(local));
 
     expect(peekPendingShare('local')?.url).toBe('https://youtu.be/local');
@@ -118,9 +118,22 @@ describe('pending-share-storage', () => {
     const huge = 'https://youtu.be/abc ' + 'x'.repeat(MAX_SHARE_PARAM_LENGTH * 2);
     sessionStorage.setItem(
       PENDING_SHARE_STORAGE_KEY,
-      JSON.stringify({ id: 'old', timestamp: 1, text: huge }),
+      JSON.stringify({ id: 'old', timestamp: Date.now(), text: huge }),
     );
     expect(peekPendingShare('old')?.text).toHaveLength(MAX_SHARE_PARAM_LENGTH);
+  });
+
+  it('expires a pending share from memory and sessionStorage only after an hour', () => {
+    const clock = vi.spyOn(Date, 'now');
+    const timestamp = Date.now();
+    const id = stashPendingShare({ url: 'https://youtu.be/abc', timestamp })!;
+
+    clock.mockReturnValue(timestamp + 60 * 60 * 1000);
+    expect(peekPendingShare(id)?.id).toBe(id);
+
+    clock.mockReturnValue(timestamp + 60 * 60 * 1000 + 1);
+    expect(peekPendingShare(id)).toBeNull();
+    expect(sessionStorage.getItem(PENDING_SHARE_STORAGE_KEY)).toBeNull();
   });
 
   it('offers an interrupted share only to the account that was interrupted', () => {
@@ -153,6 +166,19 @@ describe('pending-share-storage', () => {
 
     expect(interruptedShareId('account-a')).toBe('before-reload');
   });
+
+  it.each([undefined, 42, {}, false])(
+    'ignores an interrupted share with accountId %j',
+    (accountId) => {
+      const id = 'before-reload';
+      const raw = JSON.stringify({ id, accountId });
+      sessionStorage.setItem(INTERRUPTED_SHARE_STORAGE_KEY, raw);
+
+      expect(interruptedShareId('account-a')).toBeNull();
+      clearPendingShare(id);
+      expect(sessionStorage.getItem(INTERRUPTED_SHARE_STORAGE_KEY)).toBe(raw);
+    },
+  );
 
   it('clears pending share explicitly', () => {
     stashPendingShare({ url: 'https://x.com/uniover/123' });
@@ -215,7 +241,7 @@ describe('pending-share-storage', () => {
     expect(peekPendingShare()).toBeNull();
   });
 
-  it('survives a reload via localStorage when sessionStorage fails', () => {
+  it('survives a reload via localStorage when sessionStorage fails and expires after an hour', () => {
     const denyAccess = () => {
       throw new Error('SecurityError');
     };
@@ -229,7 +255,8 @@ describe('pending-share-storage', () => {
     };
     vi.stubGlobal('sessionStorage', blockedSessionStorage);
 
-    stashPendingShare({ url: 'https://www.youtube.com/watch?v=abc' });
+    const timestamp = Date.now();
+    stashPendingShare({ url: 'https://www.youtube.com/watch?v=abc', timestamp });
 
     // localStorage deve ter recebido o item como fallback
     const stored = localStorage.getItem(PENDING_SHARE_STORAGE_KEY);
@@ -244,5 +271,9 @@ describe('pending-share-storage', () => {
     const peeked = peekPendingShare();
     expect(peeked).not.toBeNull();
     expect(peeked?.url).toBe('https://www.youtube.com/watch?v=abc');
+
+    vi.spyOn(Date, 'now').mockReturnValue(timestamp + 60 * 60 * 1000 + 1);
+    expect(peekPendingShare()).toBeNull();
+    expect(localStorage.getItem(PENDING_SHARE_STORAGE_KEY)).toBeNull();
   });
 });

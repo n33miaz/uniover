@@ -231,7 +231,7 @@ describe('ShareTargetPage', () => {
   it('resumes the interrupted share instead of the one written by another tab', async () => {
     accountRole = null;
     await open('/videos/compartilhar?url=https%3A%2F%2Fyoutu.be%2Fmine');
-    const other = { id: 'other-tab', timestamp: 1, url: 'https://youtu.be/other' };
+    const other = { id: 'other-tab', timestamp: Date.now(), url: 'https://youtu.be/other' };
     localStorage.setItem(PENDING_SHARE_STORAGE_KEY, JSON.stringify(other));
 
     accountRole = 'owner';
