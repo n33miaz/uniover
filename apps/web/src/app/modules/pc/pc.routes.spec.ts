@@ -1,13 +1,18 @@
 import { TestBed } from '@angular/core/testing';
 import {
+  GuardsCheckEnd,
   Router,
   UrlTree,
+  provideRouter,
   type ActivatedRouteSnapshot,
   type RouterStateSnapshot,
 } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { PcAvailability } from '../../core/modules/pc-availability';
+import { PcStore } from './data/pc-store';
 import { PcScreenAccess } from './data/screen-access';
-import { screenGuard } from './pc.routes';
+import { createFakePcStore } from './pc-test-kit';
+import { PC_ROUTES, screenGuard } from './pc.routes';
 
 function setup(opts: { loaded: boolean; allowedAfterRead: boolean; accountCanView?: boolean }) {
   let status: object | null = opts.loaded ? {} : null;
@@ -86,5 +91,39 @@ describe('screenGuard', () => {
     const result = await run();
     expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe('/pc');
     expect(refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe('PC entry route', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('opens the mouse page after the deadline when the first read never answers', async () => {
+    const { refresh } = setup({ loaded: false, allowedAfterRead: true });
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([{ path: 'pc', children: PC_ROUTES }]),
+        { provide: PcStore, useValue: createFakePcStore() },
+      ],
+    });
+    const harness = await RouterTestingHarness.create();
+    const router = TestBed.inject(Router);
+    const guardsChecked = vi.fn();
+    router.events.subscribe((event) => {
+      if (event instanceof GuardsCheckEnd) guardsChecked(event.shouldActivate);
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const navigation = harness.navigateByUrl('/pc');
+
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(harness.routeNativeElement).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(guardsChecked).toHaveBeenCalledWith(true);
+    await navigation;
+    expect(router.url).toBe('/pc');
+    expect(harness.routeNativeElement?.querySelector('app-pc-mouse-page')).toBeInstanceOf(
+      HTMLElement,
+    );
   });
 });

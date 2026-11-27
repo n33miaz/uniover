@@ -6,6 +6,8 @@ import { PcAvailability } from '../../core/modules/pc-availability';
 import { PcScreenAccess } from './data/screen-access';
 import { PcPage } from './pc-page';
 
+const FIRST_STATUS_READ_TIMEOUT_MS = 2000;
+
 const SCREEN_TAB: TabItem = {
   link: '/pc/tela',
   label: $localize`:@@pc.tab.screen:Tela`,
@@ -46,13 +48,23 @@ export const REMOTE_BACK: ShellBack = {
 
 /**
  * A tela do PC fica atrás do `pc_screen` e do `pc:screen`: sem eles a rota volta ao mouse. Num endereço aberto direto
- * (recarga ou link) o PC ainda não declarou as capacidades; a decisão espera a primeira leitura.
+ * (recarga ou link), a decisão dá um prazo para a primeira leitura. A leitura continua e pode atualizar as abas.
  */
 async function canViewScreen(): Promise<boolean> {
   const availability = inject(PcAvailability);
   const access = inject(PcScreenAccess);
   if (!access.accountCanView()) return false;
-  if (availability.status() === null) await availability.refresh();
+  if (availability.status() === null) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, FIRST_STATUS_READ_TIMEOUT_MS);
+    });
+    try {
+      await Promise.race([availability.refresh(), deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   return access.allowed();
 }
 
