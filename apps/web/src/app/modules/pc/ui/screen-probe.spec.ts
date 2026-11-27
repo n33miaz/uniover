@@ -138,17 +138,31 @@ describe('Medição da tela do PC', () => {
     expect(signaling.close).toHaveBeenCalledExactlyOnceWith('sessao-tela', true);
   });
 
-  it('decodifica um JPEG binário, conta só pongs da sessão e fecha após 60 s', async () => {
+  it.each([
+    ['monitor atual', MONITORS, false],
+    ['monitor único', '{"k":"s.mon","width":1920,"height":1080}', false],
+    ['JPEG sem cabeçalho binário', '{"k":"ready"}', true],
+  ] as const)('mede toque e pongs por 60 s com %s', async (_name, greeting, rawJpeg) => {
     const { fixture, root, peer, signaling, pongs, open } = setup();
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
-    const decode = vi.fn(async () => ({ width: 1280, height: 720, close: vi.fn() }));
+    const decode = vi.fn(async (blob: Blob) => {
+      expect(blob.size).toBe(CHUNK_BYTES + 16);
+      return { width: 1280, height: 720, close: vi.fn() };
+    });
     vi.stubGlobal('createImageBitmap', decode);
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
       setTimeout(() => callback(performance.now()), 1),
     );
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
       drawImage: vi.fn(),
-      getImageData: () => ({ data: new Uint8ClampedArray(128 * 4) }),
+      getImageData: () => {
+        const { marker } = JSON.parse(peer.channel.send.mock.lastCall![0]) as { marker: number };
+        const data = new Uint8ClampedArray(128 * 4);
+        for (let bit = 0; bit < 16; bit++) {
+          if (marker & (1 << bit)) data[(4 + 8 * bit) * 4] = 255;
+        }
+        return { data };
+      },
     } as unknown as CanvasRenderingContext2D);
     const copy = vi.fn(async () => undefined);
     vi.stubGlobal('navigator', { clipboard: { writeText: copy } });
@@ -157,19 +171,20 @@ describe('Medição da tela do PC', () => {
     expect(peer.channel.send).toHaveBeenLastCalledWith(
       JSON.stringify({ k: 'auth', token: 'autorizacao-tela' }),
     );
-    peer.channel.receive(MONITORS);
+    peer.channel.receive(greeting);
     expect(peer.channel.binaryType).toBe('arraybuffer');
     expect(peer.channel.send).toHaveBeenLastCalledWith(
       JSON.stringify({ k: 's.get', width: 1280, fps: 8, marker: 1, reset: true }),
     );
     for (let elapsed = 0; elapsed < 60_000; elapsed += 5_000) {
-      const packet = framePacket(elapsed / 5_000 + 1);
-      peer.channel.receive(
-        JSON.stringify({ k: 's.stat', bytes: packet.byteLength, cpu: null, privateMB: 63 }),
-      );
+      const frame = framePacket(elapsed / 5_000 + 1);
+      const packet = rawJpeg ? frame.slice(16) : frame;
+      const stats = { bytes: packet.byteLength, cpu: rawJpeg ? 19 : null, privateMB: 63 };
+      peer.channel.receive(JSON.stringify(rawJpeg ? stats : { k: 's.stat', ...stats }));
       peer.channel.receive(packet.slice(0, CHUNK_BYTES));
-      peer.channel.receive('{"k":"s.cur","x":10,"y":20}');
+      if (!rawJpeg) peer.channel.receive('{"k":"s.cur","x":10,"y":20}');
       peer.channel.receive(packet.slice(CHUNK_BYTES));
+      if (elapsed === 0) fixture.componentInstance.markTouch(performance.now());
       await vi.advanceTimersByTimeAsync(5);
       pongs.next({ sessionId: 'outro-ponteiro', milliseconds: 80 });
       pongs.next({ sessionId: 'sessao-ponteiro', milliseconds: 10 });
@@ -192,7 +207,7 @@ describe('Medição da tela do PC', () => {
     copyButton?.click();
     expect(copy).toHaveBeenCalledWith(expect.stringContaining('| Duração | 60 s | 60 s |'));
     expect(copy).toHaveBeenCalledWith(
-      expect.stringContaining('| Toque até o quadro marcado, p50 |'),
+      expect.stringMatching(/\| Toque até o quadro marcado, p50 \| [\d,.]+ ms \(n=1\) \|/),
     );
     expect(copy).toHaveBeenCalledWith(
       expect.stringContaining('| Toque até o quadro marcado, p95 |'),
@@ -204,12 +219,40 @@ describe('Medição da tela do PC', () => {
       expect.stringContaining('| JPEG binário e ponteiro ativos por 60 s | Sim | Sim |'),
     );
     expect(copy).toHaveBeenCalledWith(
-      expect.stringContaining('| CPU média do processo de tela | —%'),
+      expect.stringContaining(`| CPU média do processo de tela | ${rawJpeg ? '19' : '—'}%`),
     );
     expect(copy).toHaveBeenCalledWith(
       expect.stringContaining('| Pico de memória privada do processo de tela | 63 MB'),
     );
   });
+
+  it.each([
+    ['{"k":"ready"}', 1281, false],
+    [MONITORS, 1280, false],
+    ['{"k":"ready"}', 1280, true],
+  ] as const)(
+    'recusa JPEG fora dos limites ou formato trocado (%s, %i, %s)',
+    async (greeting, width, taggedStats) => {
+      const { fixture, root, peer, open } = setup();
+      const decode = vi.fn();
+      vi.stubGlobal('createImageBitmap', decode);
+      await open();
+      peer.channel.receive(greeting);
+      const jpeg = framePacket(1, width).slice(16);
+      peer.channel.receive(
+        JSON.stringify({
+          ...(taggedStats ? { k: 's.stat' } : {}),
+          bytes: jpeg.byteLength,
+          cpu: 19,
+          privateMB: 63,
+        }),
+      );
+      peer.channel.receive(jpeg);
+      fixture.detectChanges();
+      expect(decode).not.toHaveBeenCalled();
+      expect(root.textContent).toContain('Não foi possível medir a tela.');
+    },
+  );
 
   it.each([
     { jpegWidth: 1281, omitHeader: false },
