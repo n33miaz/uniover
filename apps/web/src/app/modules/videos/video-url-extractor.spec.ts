@@ -44,6 +44,19 @@ describe('extractVideoUrl', () => {
     expect(url).toBe('https://youtu.be/dQw4w9WgXcQ');
   });
 
+  it.each(['\t', '\r', '\n'])('rejects credentials split by %j in the url field', (separator) => {
+    expect(extractVideoUrl({ url: `https://user${separator}:senha@example.org/video` })).toBeNull();
+  });
+
+  it.each(['@perfil', 'nota: contato@example.org'])(
+    'extracts a link followed by %s on a separate line',
+    (description) => {
+      expect(extractVideoUrl({ text: `https://example.org\n${description}` })).toBe(
+        'https://example.org/',
+      );
+    },
+  );
+
   it('handles typical Android TikTok app share format', () => {
     const url = extractVideoUrl({
       text: 'Confira este video incrivel! https://vm.tiktok.com/ZM8abc123/',

@@ -10,6 +10,17 @@ const EMBEDDING_SCHEME =
   /(?:^|[^a-z0-9+.-])(?:blob|data|file|filesystem|javascript|vbscript|view-source):$/i;
 
 export function extractVideoUrl(payload: RawSharePayload | null | undefined): string | null {
+  const url = typeof payload?.url === 'string' ? clampShareParam(payload.url) : null;
+  if (url?.includes('@')) {
+    try {
+      // O parser ignora TAB, CR e LF na URL. Em texto e título, eles separam trechos da descrição.
+      const parsed = new URL(url);
+      if (parsed.username || parsed.password) return null;
+    } catch {
+      // O campo também pode conter texto com um link, tratado pela busca abaixo.
+    }
+  }
+
   let firstUrl: string | null = null;
   for (const field of [payload?.url, payload?.text, payload?.title]) {
     if (typeof field !== 'string') continue;

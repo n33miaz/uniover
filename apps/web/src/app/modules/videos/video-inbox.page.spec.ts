@@ -6,7 +6,12 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { IDBFactory as FakeIDBFactory, IDBKeyRange as FakeIDBKeyRange } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionState } from '../../core/session/session-state';
-import { clearPendingShare, peekPendingShare, stashPendingShare } from './pending-share-storage';
+import {
+  clearPendingShare,
+  markInterruptedShare,
+  peekPendingShare,
+  stashPendingShare,
+} from './pending-share-storage';
 import { VIDEO_INBOX_DB_FACTORY, VideoInboxDb } from './video-inbox-db';
 import { platformLabel, type VideoInboxItem } from './video-inbox.model';
 import { VideoInboxPage } from './video-inbox.page';
@@ -29,7 +34,10 @@ describe('VideoInboxPage', () => {
     clearPendingShare();
     TestBed.configureTestingModule({
       providers: [
-        provideRouter([{ path: 'videos', component: VideoInboxPage }]),
+        provideRouter([
+          { path: '', children: [] },
+          { path: 'videos', component: VideoInboxPage },
+        ]),
         VideoInboxService,
         { provide: LOCALE_ID, useValue: 'en-US' },
         {
@@ -198,6 +206,29 @@ describe('VideoInboxPage', () => {
     expect(await inboxService.list()).toEqual([]);
     expect(peekPendingShare(share)?.url).toBe('https://youtu.be/other-intent');
   });
+
+  it.each(['url', 'text', 'title'])(
+    'keeps the interrupted share pending when /videos receives %s',
+    async (field) => {
+      const interruptedUrl = 'https://example.org/interrupted';
+      const incomingUrl = 'https://example.org/incoming';
+      const share = stashPendingShare({ url: interruptedUrl })!;
+      markInterruptedShare(share, user.id);
+
+      const { harness, el } = await open(`/videos?${field}=${encodeURIComponent(incomingUrl)}`);
+
+      expect((await inboxService.list()).map((item) => item.canonical_url)).toEqual([incomingUrl]);
+      expect(peekPendingShare(share)?.url).toBe(interruptedUrl);
+
+      await harness.navigateByUrl('/');
+      await harness.navigateByUrl('/videos');
+      await vi.waitFor(() => {
+        harness.detectChanges();
+        expect(el.querySelector(`.item-url[href="${interruptedUrl}"]`)).not.toBeNull();
+      });
+      expect(peekPendingShare(share)).toBeNull();
+    },
+  );
 
   it('processes query parameters passed directly to /videos', async () => {
     const { el } = await open('/videos?url=https%3A%2F%2Fvm.tiktok.com%2FZM8abc%2F&text=TikTok');

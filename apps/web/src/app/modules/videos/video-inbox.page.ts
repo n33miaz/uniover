@@ -85,9 +85,10 @@ export class VideoInboxPage implements OnInit {
     const url = query.get('url');
     const text = query.get('text');
     const title = query.get('title');
+    const hasIncomingShare = !!(share || url?.trim() || text?.trim() || title?.trim());
 
-    // Sem `share` na URL, retoma o compartilhamento que o guard desviou nesta aba.
-    const interrupted = share ? null : interruptedShareId(accountId);
+    // Em uma visita sem conteúdo novo, retoma o compartilhamento que o guard desviou nesta aba.
+    const interrupted = hasIncomingShare ? null : interruptedShareId(accountId);
     if (interrupted) {
       const resumed = await this.inboxService.processPendingShare(interrupted);
       if (this.activeAccountId() !== accountId) return;
@@ -99,12 +100,7 @@ export class VideoInboxPage implements OnInit {
       }
     }
 
-    if (
-      share ||
-      (url && url.trim().length > 0) ||
-      (text && text.trim().length > 0) ||
-      (title && title.trim().length > 0)
-    ) {
+    if (hasIncomingShare) {
       const captured = share
         ? await this.inboxService.processPendingShare(share)
         : await this.inboxService.captureShare({ url, text, title });
