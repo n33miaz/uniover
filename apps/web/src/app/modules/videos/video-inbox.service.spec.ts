@@ -118,7 +118,7 @@ describe('VideoInboxService', () => {
   });
 
   it('keeps a pending share for retry and uses its capture time', async () => {
-    const timestamp = Date.UTC(2026, 10, 21);
+    const timestamp = Date.now() - 60_000;
     const id = stashPendingShare({ text: '', title: 'https://example.org/video', timestamp })!;
     fakeSession.accountId = () => null;
     await expect(service.processPendingShare(id)).rejects.toThrow();
@@ -155,7 +155,7 @@ describe('VideoInboxService', () => {
   it('keeps a share written by another tab while capturing the current share', async () => {
     const id = stashPendingShare({ url: 'https://example.org/first' })!;
     const capturing = service.processPendingShare(id);
-    const other = { id: 'other-tab', timestamp: 1, url: 'https://example.org/second' };
+    const other = { id: 'other-tab', timestamp: Date.now(), url: 'https://example.org/second' };
     localStorage.setItem(PENDING_SHARE_STORAGE_KEY, JSON.stringify(other));
 
     expect((await capturing)?.canonical_url).toBe('https://example.org/first');

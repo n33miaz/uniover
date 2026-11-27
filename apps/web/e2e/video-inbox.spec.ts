@@ -19,7 +19,9 @@ test('keeps a text-only share through sign-in and lists it once after reload', a
     [params.title]: 'Receita',
   });
   await page.goto(action + '?' + query);
-  await expect(page).toHaveURL(/\/entrar\?next=%2Fvideos$/);
+  await expect(page).toHaveURL(
+    /\/entrar\?next=%2Fvideos%3Fshare%3D[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
   await page.reload();
   await page.getByLabel('E-mail').fill(OWNER.email);
   await page.getByLabel('Senha', { exact: true }).fill(OWNER.password);

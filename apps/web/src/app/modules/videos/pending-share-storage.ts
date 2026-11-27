@@ -3,6 +3,7 @@ import { clampShareParam } from './share-input-limits';
 import { extractVideoUrl } from './video-url-extractor';
 
 export const PENDING_SHARE_STORAGE_KEY = 'uniover.videos.pending_share';
+const PENDING_SHARE_MAX_AGE_MS = 60 * 60 * 1000;
 
 export interface PendingShare extends RawSharePayload {
   readonly id: string;
@@ -22,9 +23,13 @@ interface InterruptedShare {
 let fallback: PendingShare | null = null;
 let interrupted: InterruptedShare | null = null;
 
+function isExpired(timestamp: number): boolean {
+  return Date.now() - timestamp > PENDING_SHARE_MAX_AGE_MS;
+}
+
 /**
  * Valida um registro vindo do compartilhamento ou de um storage (inclusive gravado por versões
- * antigas). Só aceita registros com id, data válida e um link de vídeo http/https sem credenciais.
+ * antigas). Exige id, data válida com até uma hora de idade e link de vídeo http/https sem credenciais.
  */
 function toPendingShare(value: unknown): PendingShare | null {
   if (typeof value !== 'object' || value === null) return null;
@@ -32,6 +37,7 @@ function toPendingShare(value: unknown): PendingShare | null {
   const { id, timestamp } = record;
   if (typeof id !== 'string' || id.length === 0) return null;
   if (typeof timestamp !== 'number' || !Number.isFinite(new Date(timestamp).getTime())) return null;
+  if (isExpired(timestamp)) return null;
   const fields: (string | null)[] = [];
   for (const key of ['url', 'text', 'title']) {
     const field = record[key];
@@ -94,6 +100,7 @@ function readStoredShare(name: StorageName): PendingShare | null {
  * um compartilhamento de outra aba ou de outro fluxo nunca é devolvido no lugar dele.
  */
 export function peekPendingShare(id?: string): PendingShare | null {
+  if (fallback && isExpired(fallback.timestamp)) fallback = null;
   const candidates = [
     () => fallback,
     () => readStoredShare('sessionStorage'),
@@ -137,7 +144,13 @@ function readInterruptedShare(): InterruptedShare | null {
   if (interrupted) return interrupted;
   try {
     const raw = sessionStorage.getItem(INTERRUPTED_SHARE_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as InterruptedShare | null) : null;
+    if (!raw) return null;
+    const record: unknown = JSON.parse(raw);
+    if (typeof record !== 'object' || record === null) return null;
+    const { id, accountId } = record as Record<string, unknown>;
+    if (typeof id !== 'string' || (typeof accountId !== 'string' && accountId !== null))
+      return null;
+    return { id, accountId };
   } catch {
     return null;
   }
@@ -146,7 +159,7 @@ function readInterruptedShare(): InterruptedShare | null {
 /** Id do compartilhamento interrompido nesta aba que esta conta pode retomar, ou `null`. */
 export function interruptedShareId(accountId: string): string | null {
   const share = readInterruptedShare();
-  if (!share || typeof share.id !== 'string') return null;
+  if (!share) return null;
   return share.accountId === null || share.accountId === accountId ? share.id : null;
 }
 
