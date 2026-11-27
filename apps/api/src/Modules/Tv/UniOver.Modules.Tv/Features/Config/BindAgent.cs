@@ -11,6 +11,7 @@ using UniOver.Modules.Tv.Adapters;
 using UniOver.Modules.Tv.Contracts;
 using UniOver.Modules.Tv.Domain;
 using UniOver.Modules.Tv.Features.Commands;
+using UniOver.Modules.Tv.Features.Tvs;
 using UniOver.Modules.Tv.Persistence;
 using UniOver.Modules.Tv.Ports;
 using UniOver.SharedKernel;
@@ -161,10 +162,21 @@ internal sealed class BindAgentHandler(
         }
 
         var binding = new TvAgentBinding(tv.AgentSlug, tv.Name, TvAgentSource.Saved);
-        agents.Set(binding);
+        await TvRowLock.ApplyToCurrentBindingAsync(db, tv.Id, current =>
+        {
+            agents.Set(new TvAgentBinding(current.AgentSlug, current.Name, TvAgentSource.Saved));
+            if (changed && string.Equals(current.AgentSlug, tv.AgentSlug, StringComparison.Ordinal))
+            {
+                AnnounceNewAgent(current.Id, current.AgentSlug);
+            }
+            else
+            {
+                watcher?.Rebind(current.Id, current.AgentSlug);
+            }
+        });
+
         if (changed)
         {
-            AnnounceNewAgent(tv.Id, binding.AgentSlug!);
             await PublishCleanupAsync(previousSlug, tv.AgentSlug, cancellationToken);
         }
 

@@ -202,10 +202,13 @@ internal sealed class ManageTvsHandler(
 
         await transaction.CommitAsync(cancellationToken);
 
+        if (request.AgentSlug is not null && watcher is not null)
+        {
+            await TvRowLock.ApplyToCurrentBindingAsync(db, tv.Id, current => watcher.Rebind(current.Id, current.AgentSlug));
+        }
+
         if (agentChanged)
         {
-            watcher?.Rebind(tv.Id, tv.AgentSlug);
-
             // O computador antigo para o que tinha agendado nesta TV; o novo recebe as preferências dela.
             await PublishUnboundAsync(previousSlug, cancellationToken);
         }
