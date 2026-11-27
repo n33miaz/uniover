@@ -28,9 +28,18 @@ def _checked(kwargs: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_hidden(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
-    """`subprocess.run` sem janela."""
+    """`subprocess.run` sem janela e, em modo texto, tolerante a bytes fora da codificação.
+
+    Ferramentas do Windows escrevem na página de códigos do console: sem `errors`, um byte assim
+    derruba a thread de leitura e a saída se perde. A codificação e o `errors` do chamador ficam
+    como estão; sem modo texto a saída continua em bytes.
+    """
     checked = _checked(kwargs)
     checked.setdefault("check", False)
+    text_mode = any(checked.get(name) for name in ("text", "universal_newlines", "encoding"))
+    # Só em modo texto: `errors` sozinho já ligaria o modo texto numa captura em bytes.
+    if text_mode and checked.get("errors") is None:
+        checked["errors"] = "replace"
     return subprocess.run(args, **checked)  # noqa: S603, PLW1510 - `check` vai em `checked`
 
 
