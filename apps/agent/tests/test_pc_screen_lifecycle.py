@@ -922,6 +922,34 @@ async def test_screen_answer_that_cannot_be_sent_logs_only_the_refusal(
     assert_one_refusal(caplog, "rtc_failed", "answer_not_sent")
 
 
+async def test_screen_offer_cancelled_while_sending_the_answer_logs_one_line(
+    measurement: tuple[Lab, FakeScreen],
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lab, _ = measurement
+    await lab.open_authenticated(device_id=_DEVICE, clock=False)
+    sending = asyncio.Event()
+
+    async def pending_send(_message: object) -> None:
+        sending.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(lab.transport, "send", pending_send)
+    caplog.set_level(logging.DEBUG)
+    caplog.clear()
+
+    task = asyncio.create_task(signal_offer(lab))
+    async with asyncio.timeout(1):
+        await sending.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert offer_lines(caplog) == [f"oferta de tela interrompida (sessão {_SCREEN[:8]}): cancelled"]
+    assert_no_secrets(caplog)
+
+
 @pytest.mark.parametrize("failure", ["internal", "cancelled"])
 async def test_screen_offer_that_ends_without_an_answer_still_logs_one_line(
     measurement: tuple[Lab, FakeScreen],
