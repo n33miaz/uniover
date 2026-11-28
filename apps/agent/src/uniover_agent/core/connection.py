@@ -5,9 +5,10 @@ import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Final
 
+from uniover_agent.core.diagnostics import DiagnosticsRecorder, describe_exception
 from uniover_agent.core.envelopes import EnvelopeFactory
 from uniover_agent.ports import (
     Clock,
@@ -72,10 +73,28 @@ RECANDIDACY_LIMIT: Final = 5
 RECANDIDACY_WINDOW_SECONDS: Final = 60.0
 # A API confirma que promoveu esta conexão (candidata da passagem): só então deixa de ser candidato.
 HANDOVER_ACCEPTED_TYPE: Final = "agent.handover.accepted.v1"
+# Numa queda, a primeira falha vai ao registro; as repetidas viram um resumo de tempos em tempos,
+# para não empurrar para fora do arquivo rotativo o histórico que explica a falha.
+OUTAGE_SUMMARY_SECONDS: Final = 5 * 60.0
+# A partir desta duração, a volta da conexão também gera uma ocorrência de diagnóstico.
+LONG_OUTAGE_SECONDS: Final = 5 * 60.0
 
 
 class NetworkMoved(TransportError):  # noqa: N818 - lê-se como fato, não como erro genérico
     """A rede do PC mudou e o canal (aberto ou abrindo) ficou na rota velha: reconecta logo."""
+
+
+@dataclass(slots=True)
+class _Outage:
+    """Uma queda em curso: da primeira falha até o próximo `hello` enviado."""
+
+    started: float
+    reported_at: float
+    last_status: str
+    # Tentativas de conectar sem sucesso (a perda de uma conexão que estava de pé não conta).
+    attempts: int
+    # Falhas inesperadas cuja pilha já foi ao registro nesta queda.
+    traced: set[str] = field(default_factory=set)
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +172,7 @@ class ConnectionSupervisor:
         on_handover_restarted: Callable[[], None] | None = None,
         network_watcher: NetworkChangeWatcherFactory | None = None,
         liveness: Callable[[float], Awaitable[bool]] | None = None,
+        recorder: DiagnosticsRecorder | None = None,
     ) -> None:
         """`handover`: esta execução veio tomar o lugar de outra. Ela é CANDIDATA (rota própria da
         conexão e `handover` no `hello`) até a API confirmar a promoção com
@@ -172,7 +192,10 @@ class ConnectionSupervisor:
         em curso desde antes da troca, ela é abandonada (ficou na rota velha) e refeita em
         instantes; com o canal aberto, `liveness(prazo)` (um ping do transporte) confere se ele
         segue de pé, e só se não seguir a conexão é refeita. Nenhuma placa é escolhida aqui: a
-        rota é a do sistema."""
+        rota é a do sistema.
+
+        `recorder` recebe uma ocorrência quando a conexão volta de uma queda longa (ver
+        `LONG_OUTAGE_SECONDS`), com a duração e o último status."""
         self._transport = transport
         self._process = process_message
         self._envelopes = envelopes
@@ -236,6 +259,10 @@ class ConnectionSupervisor:
         self._network_watcher: NetworkChangeWatcher | None = None
         self._liveness = liveness
         self._last_network_abort: float | None = None
+        self._recorder = recorder
+        self._outage: _Outage | None = None
+        # A sessão atual (ou a última) chegou a enviar o `hello`.
+        self._established = False
 
     @property
     def handover_pending(self) -> bool:
@@ -456,6 +483,8 @@ class ConnectionSupervisor:
                 self.stop_reason = STOP_CREDENTIAL_REJECTED
                 return
             except ConnectionReplaced:
+                # Rara e limitada (espera longa, parada por disputa): sempre vai ao registro.
+                self._note_loss("outra instância deste agente assumiu a conexão")
                 if self._recandidate():
                     wait = (
                         self._policy.restart_now_min
@@ -488,7 +517,8 @@ class ConnectionSupervisor:
                     self._policy.restart_now_min
                     + (self._policy.restart_now_max - self._policy.restart_now_min) * self._random()
                 )
-                _log.info(
+                _log.log(
+                    self._note_loss(f"a API pediu reconectar já ({exc})"),
                     "conexão perdida após %.1f s: a API pediu reconectar já (%s); volto em %.1f s",
                     self._last_session_seconds,
                     exc,
@@ -499,7 +529,7 @@ class ConnectionSupervisor:
             except NetworkMoved as exc:
                 # Não cresce a espera: a culpa é da troca de rede, não da API.
                 wait = self._network_settle()
-                _log.info("%s; reconecto em %.1f s", exc, wait)
+                _log.log(self._note_loss(str(exc)), "%s; reconecto em %.1f s", exc, wait)
                 await self._sleep(wait)
                 continue
             except HandoverUnsupported:
@@ -515,7 +545,8 @@ class ConnectionSupervisor:
             except ServerRestarting as exc:
                 # Não cresce a espera: o aviso é do próprio servidor, não falha de rede.
                 wait = self._policy.restart_wait * (0.5 + self._random())
-                _log.info(
+                _log.log(
+                    self._note_loss(f"servidor reiniciando ({exc})"),
                     "conexão perdida após %.1f s: servidor reiniciando (%s); volto em %.1f s",
                     self._last_session_seconds,
                     exc,
@@ -524,17 +555,29 @@ class ConnectionSupervisor:
                 await self._sleep(wait)
                 continue
             except TransportError as exc:
-                _log.info("conexão perdida após %.1f s: %s", self._last_session_seconds, exc)
+                level = self._note_loss(str(exc))
+                _log.log(level, "conexão perdida após %.1f s: %s", self._last_session_seconds, exc)
                 await self._note_failure(exc, unexpected=False)
             except Exception as exc:
                 # Nada que o laço não preveja pode matar o agente: PC ligado há horas e agente fora
                 # do ar era exatamente isso. Registra a causa e reconecta com a espera normal.
-                _log.exception("falha inesperada na conexão; reconectando")
+                # Só o tipo e o lugar: a mensagem de uma falha imprevista não vai ao diagnóstico.
+                status = describe_exception(exc)
+                level = self._note_loss(status)
+                if self._first_trace(status):
+                    _log.exception("falha inesperada na conexão; reconectando")
+                else:
+                    _log.debug("falha inesperada repetida: %s", status)
                 await self._note_failure(exc, unexpected=True)
             else:
-                _log.info("conexão encerrada pelo servidor após %.1f s", self._last_session_seconds)
+                level = self._note_loss("conexão encerrada pelo servidor")
+                _log.log(
+                    level,
+                    "conexão encerrada pelo servidor após %.1f s",
+                    self._last_session_seconds,
+                )
             delay = self._backoff.next_delay(self._recent_connection_cap())
-            _log.info("reconectando em %.1f s", delay)
+            _log.log(level, "reconectando em %.1f s", delay)
             await self._sleep_for_reconnect(delay)
 
     def _recandidate(self) -> bool:
@@ -573,6 +616,53 @@ class ConnectionSupervisor:
             return None
         return RECENT_CONNECTION_CAP_SECONDS
 
+    def _note_loss(self, status: str) -> int:
+        """Conta a falha na queda em curso (ou abre uma) e devolve o nível do registro dela:
+        `INFO` na primeira; `DEBUG` nas repetidas, que aparecem no resumo periódico."""
+        now = self._clock.monotonic()
+        outage = self._outage
+        if outage is None:
+            self._outage = _Outage(now, now, status, attempts=0 if self._established else 1)
+            return logging.INFO
+        outage.attempts += 1
+        outage.last_status = status
+        if now - outage.reported_at >= OUTAGE_SUMMARY_SECONDS:
+            outage.reported_at = now
+            _log.info(
+                "ainda sem conexão há %.0f s (tentativas sem sucesso: %d; último status: %s)",
+                now - outage.started,
+                outage.attempts,
+                status,
+            )
+        return logging.DEBUG
+
+    def _first_trace(self, status: str) -> bool:
+        """A pilha de cada falha inesperada diferente vai ao registro uma vez por queda."""
+        outage = self._outage
+        if outage is None:
+            return True
+        if status in outage.traced:
+            return False
+        outage.traced.add(status)
+        return True
+
+    def _note_recovery(self) -> None:
+        """Fecha a queda em curso, se houver: registra a duração e, se foi longa, o diagnóstico."""
+        outage = self._outage
+        if outage is None:
+            return
+        self._outage = None
+        seconds = self._clock.monotonic() - outage.started
+        summary = (
+            f"conexão restabelecida após {seconds:.0f} s de queda (tentativas sem sucesso: "
+            f"{outage.attempts}; último status: {outage.last_status})"
+        )
+        _log.info("%s", summary)
+        if seconds >= LONG_OUTAGE_SECONDS and self._recorder is not None:
+            self._recorder.record(
+                "connection.outage_recovered", "warn", summary, component="connection"
+            )
+
     async def _note_failure(self, exc: BaseException, *, unexpected: bool) -> None:
         if self._hello_done or self._on_startup_failure is None:
             return
@@ -600,16 +690,20 @@ class ConnectionSupervisor:
         tasks: list[asyncio.Task[None]] = []
         self._generation += 1
         mine = self._generation
+        self._established = False
         try:
             await self._open()
             started = self._clock.monotonic()
-            _log.info("conectado")
+            # Numa queda, quem avisa a volta é `_note_recovery`, depois do `hello`.
+            _log.log(logging.INFO if self._outage is None else logging.DEBUG, "conectado")
             await self._bounded(
                 self._transport.send(self._hello()), self._policy.send_timeout, "o envio do hello"
             )
             self._last_connected_at = self._clock.monotonic()
             self._hello_done = True
             self._in_session = True
+            self._established = True
+            self._note_recovery()
             if self._on_connected is not None:
                 await self._bounded(
                     self._on_connected(),
