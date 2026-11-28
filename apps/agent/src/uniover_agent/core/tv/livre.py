@@ -1029,12 +1029,22 @@ class TvLivre:
                 message = f"{message} {self._notice}"
             raise LivreError("sleep_failed", message)
         if isinstance(self._remote_guard, SleepScreenObserver):
-            if minutes is None:
+            if minutes is None or await self._ignores_sleep_minutes():
                 minutes = self._state.load().get("sleepMinutes")
             self._remote_guard.sleep_screen_opened(
                 PACKAGE,
                 minutes if isinstance(minutes, int) and 0 <= minutes <= MAX_SLEEP_MINUTES else None,
             )
+
+    async def _ignores_sleep_minutes(self) -> bool:
+        """O launcher de nível 1 não lê o prazo do pedido: vale o da configuração dele.
+
+        Sem resposta do ADB não se conclui nada, e a tela já aberta não vira falha por isso."""
+        try:
+            level = await self._launcher_level()
+        except AdbError, OSError:
+            return False
+        return level is not None and level <= OLD_LAUNCHER_LEVEL
 
     # --- auditoria ----------------------------------------------------------------------------
 

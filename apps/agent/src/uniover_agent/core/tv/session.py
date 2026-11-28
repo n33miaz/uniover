@@ -1396,7 +1396,13 @@ class TvSessionManager:
         if snapshot.connection == "hot" or snapshot.mode is not None:
             self._presence.note(*open_session_presence(snapshot.mode))
         elif snapshot.connection == "hibernating" and self._state is SessionState.HIBERNATING:
-            self._presence.note("ready", "o controle da TV está hibernando")
+            # Hibernar não prova nada: sem observação, ou depois de uma falha, só uma sondagem ou
+            # abertura que dê certo mostra a TV pronta.
+            seen = self._presence.current
+            if self._probe == "reachable" or (
+                seen is not None and seen.status not in {"unreachable", "unresponsive"}
+            ):
+                self._presence.note("ready", "o controle da TV está hibernando")
         for listener in self._listeners:
             try:
                 listener(snapshot)

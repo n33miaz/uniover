@@ -313,6 +313,63 @@ async def test_tv_livre_tells_the_session_about_the_sleep_screen(tmp_path: Path)
     await rig.manager.settle()
 
 
+@pytest.mark.parametrize(
+    ("level", "configured", "expires_after"),
+    [
+        (None, 0, None),  # launcher antigo, sono ilimitado: o pedido de 1 minuto é ignorado
+        (None, 5, 300),
+        (2, 0, 60),
+        (2, 5, 60),
+    ],
+)
+async def test_the_reported_sleep_time_is_the_one_the_launcher_applies(
+    tmp_path: Path, level: int | None, configured: int, expires_after: int | None
+) -> None:
+    rig = Rig()
+    android = FakeAndroid()
+    android.level = level
+    livre = TvLivre(
+        android,
+        FakeApkSource(tmp_path, None),
+        LivreStateFile(tmp_path / "tv-livre.json"),
+        PhotoStaging(rig.clock),
+        rig.clock,
+        remote_guard=rig.manager,
+    )
+    await livre.run({"action": "install"})
+    config = f'{{"sleep":{{"maxMinutes":{configured}}}}}'
+    await livre.run({"action": "apply", "revision": 1, "configJson": config})
+    await livre.run({"action": "sleep", "minutes": 1})
+    if expires_after is None:
+        rig.clock.advance(100_000)
+        assert rig.mode() == "sleep"
+    else:
+        rig.clock.advance(expires_after - 1)
+        assert rig.mode() == "sleep"
+        rig.clock.advance(1)
+        assert rig.mode() is None
+    await rig.manager.settle()
+
+
+@pytest.mark.parametrize("recovery", ["probe", "open"])
+async def test_an_idle_session_that_drops_stays_unresponsive_until_proven_ready(
+    recovery: str,
+) -> None:
+    rig = Rig()
+    await rig.manager.wake()
+    rig.clock.advance(100_000)
+    rig.remote.drop()
+    await rig.manager.settle()
+    assert rig.manager.snapshot().connection == "hibernating"
+    assert rig.status() == "unresponsive"
+
+    if recovery == "probe":
+        rig.manager.note_probe("reachable")
+    else:
+        await rig.manager.wake()
+    assert rig.status() == "ready"
+
+
 async def test_sleep_with_no_requested_time_uses_the_applied_launcher_config(
     tmp_path: Path,
 ) -> None:
