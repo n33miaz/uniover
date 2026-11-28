@@ -3,10 +3,14 @@ import json
 import logging
 from collections.abc import Callable
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
-from uniover_agent.adapters.fakes import FakeClock, FakeTransport
+from uniover_agent.adapters.fakes import FakeClock, FakeSecretStore, FakeTransport
+from uniover_agent.care_setup import build_diagnostics
+from uniover_agent.composition import connection as connection_module
+from uniover_agent.config import Settings
 from uniover_agent.core import (
     Backoff,
     BackoffPolicy,
@@ -17,12 +21,15 @@ from uniover_agent.core import (
 from uniover_agent.core.connection import (
     APPLICATION_KEEPALIVE_SECONDS,
     DUPLICATE_WINDOW_SECONDS,
+    LONG_OUTAGE_SECONDS,
     NETWORK_WAKE_MIN_SECONDS,
+    OUTAGE_SUMMARY_SECONDS,
     RECANDIDACY_LIMIT,
     STOP_CREDENTIAL_REJECTED,
     STOP_DUPLICATE,
     STOP_HANDOVER,
 )
+from uniover_agent.core.diagnostics import DiagnosticsRecorder
 from uniover_agent.ports import (
     ConnectionReplaced,
     CredentialRejected,
@@ -31,8 +38,9 @@ from uniover_agent.ports import (
     ServerRestartNow,
     TransportError,
 )
+from uniover_agent.ports.diagnostics import DiagnosticEvent
 
-from .support import AGENT_ID
+from .support import AGENT_ID, TOKEN, FakeApi
 
 POLICY = BackoffPolicy()
 
@@ -114,8 +122,8 @@ def network_supervisor(
     return supervisor, holder
 
 
-async def settle(condition: Callable[[], bool]) -> bool:
-    for _ in range(200):
+async def settle(condition: Callable[[], bool], attempts: int = 200) -> bool:
+    for _ in range(attempts):
         if condition():
             return True
         await asyncio.sleep(0)
@@ -902,3 +910,163 @@ async def test_cancelling_the_run_still_cancels_it() -> None:
     with pytest.raises(asyncio.CancelledError):
         await task
     assert supervisor.stop_reason is None
+
+
+# ---- quedas: poucas linhas no registro e diagnóstico na volta de uma queda longa ----
+
+
+async def test_composition_passes_its_diagnostics_recorder_to_the_supervisor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kit = build_diagnostics(FakeClock())
+    build_supervisor = Mock(wraps=ConnectionSupervisor)
+    monkeypatch.setattr(connection_module, "ConnectionSupervisor", build_supervisor)
+    store = FakeSecretStore()
+    store.set(AGENT_ID, TOKEN)
+
+    async with FakeApi(reject_status=403) as api:
+        settings = Settings(api_url=api.http_url, agent_id=AGENT_ID, allow_insecure=True)
+        await asyncio.wait_for(connection_module.run(settings, lambda: store, kit), timeout=15)
+
+    assert build_supervisor.call_count == 1
+    assert build_supervisor.call_args.kwargs.get("recorder") is kit.recorder
+
+
+class Outage(FakeTransport):
+    """Recusa as primeiras `failures` aberturas; a seguinte fica aberta."""
+
+    def __init__(self, failures: int, error: Exception | None = None) -> None:
+        super().__init__()
+        self.failures = failures
+        self.error = error or TransportError("sem rede")
+
+    async def connect(self) -> None:
+        if self.connects < self.failures:
+            self.connects += 1
+            raise self.error
+        await super().connect()
+
+    async def incoming(self):  # type: ignore[no-untyped-def]
+        await asyncio.Event().wait()
+        yield "nunca"
+
+
+class MemoryStore:
+    def __init__(self) -> None:
+        self.events: list[DiagnosticEvent] = []
+
+    def append(self, event: DiagnosticEvent) -> None:
+        self.events.append(event)
+
+    def take(self, limit: int) -> list[DiagnosticEvent]:
+        return []
+
+    def confirm(self, events: list[DiagnosticEvent]) -> None: ...
+
+    def put_back(self, events: list[DiagnosticEvent]) -> None: ...
+
+
+async def _recover(
+    transport: Outage, clock: FakeClock, caplog: pytest.LogCaptureFixture
+) -> tuple[list[str], list[DiagnosticEvent]]:
+    """Roda até a conexão voltar; devolve as linhas do laço (`INFO` ou acima) e o diagnóstico."""
+    store = MemoryStore()
+    supervisor = ConnectionSupervisor(
+        transport,
+        lambda raw: asyncio.sleep(0),
+        EnvelopeFactory(AGENT_ID, EnvelopeGate(AGENT_ID), clock),
+        clock,
+        middle,
+        agent_version="0.1.0",
+        capabilities=[],
+        keepalive_interval=60.0,
+        recorder=DiagnosticsRecorder(store, clock),
+    )
+    with caplog.at_level(logging.INFO, logger="uniover_agent.core.connection"):
+        task = asyncio.create_task(supervisor.run())
+        assert await settle(lambda: bool(transport.sent), attempts=5000)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    lines = [r.getMessage() for r in caplog.records if r.name == "uniover_agent.core.connection"]
+    return lines, store.events
+
+
+async def test_a_hundred_failures_in_a_row_write_only_a_few_lines(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    clock = FakeClock()
+    lines, _ = await _recover(Outage(100), clock, caplog)
+
+    # O recuo segue o de sempre, uma espera por falha.
+    assert clock.sleeps == [1, 2, 4, 8, 16] + [30] * 95
+    assert lines[:2] == ["conexão perdida após 0.0 s: sem rede", "reconectando em 1.0 s"]
+    # Cerca de 48 minutos de queda, com um resumo a cada 5 minutos ou pouco mais.
+    summaries = lines[2:-1]
+    assert 8 <= len(summaries) <= sum(clock.sleeps) // OUTAGE_SUMMARY_SECONDS
+    assert all(line.startswith("ainda sem conexão há ") for line in summaries)
+    assert summaries[0] == (
+        "ainda sem conexão há 301 s (tentativas sem sucesso: 15; último status: sem rede)"
+    )
+    assert lines[-1] == (
+        f"conexão restabelecida após {sum(clock.sleeps):.0f} s de queda "
+        "(tentativas sem sucesso: 100; último status: sem rede)"
+    )
+
+
+async def test_the_return_from_a_long_outage_records_one_diagnostic(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    clock = FakeClock()
+    _, events = await _recover(Outage(20), clock, caplog)
+
+    assert sum(clock.sleeps) >= LONG_OUTAGE_SECONDS
+    (event,) = events
+    assert (event.kind, event.severity, event.component) == (
+        "connection.outage_recovered",
+        "warn",
+        "connection",
+    )
+    assert event.detail == (
+        f"conexão restabelecida após {sum(clock.sleeps):.0f} s de queda "
+        "(tentativas sem sucesso: 20; último status: sem rede)"
+    )
+
+
+async def test_the_return_from_a_short_outage_logs_the_duration_without_a_diagnostic(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    lines, events = await _recover(Outage(3), FakeClock(), caplog)
+
+    assert lines == [
+        "conexão perdida após 0.0 s: sem rede",
+        "reconectando em 1.0 s",
+        "conexão restabelecida após 7 s de queda "
+        "(tentativas sem sucesso: 3; último status: sem rede)",
+    ]
+    assert events == []
+
+
+async def test_a_repeated_unexpected_failure_writes_its_traceback_once_per_outage(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _, events = await _recover(Outage(20, RuntimeError("detalhe interno")), FakeClock(), caplog)
+
+    traced = [record for record in caplog.records if record.exc_info]
+    assert [record.message for record in traced] == ["falha inesperada na conexão; reconectando"]
+    # Ao diagnóstico vai o tipo da falha, nunca a mensagem dela.
+    (event,) = events
+    assert "último status: RuntimeError em " in event.detail
+    assert "detalhe interno" not in event.detail
+
+
+async def test_a_drop_of_an_open_connection_is_not_counted_as_an_attempt(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    transport = FakeTransport([[TransportError("caiu")]])
+    supervisor = _supervisor(transport, FakeClock())
+
+    with caplog.at_level(logging.INFO, logger="uniover_agent.core.connection"):
+        await _run_until(supervisor, lambda: len(transport.sent) >= 2)
+
+    assert "(tentativas sem sucesso: 0; último status: caiu)" in caplog.text

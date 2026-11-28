@@ -1216,6 +1216,7 @@ async def _serve(  # noqa: PLR0911, PLR0912, PLR0915 - composição
         network_watcher=network_change_watcher,
         # Com o canal aberto, a troca de rede confere se ele segue de pé (um ping curto).
         liveness=transport.check_alive,
+        recorder=kit.recorder,
     )
     # A API passou a listar uma capacidade nova (ex.: depois de um deploy dela): declara já, sem
     # esperar o `hello` de 5 minutos.
