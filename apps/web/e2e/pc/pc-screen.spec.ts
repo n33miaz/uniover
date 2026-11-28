@@ -5,7 +5,7 @@ import { expect, expectNoHorizontalScroll, test } from '../fixtures';
 import { settle } from '../screens/screen-helpers';
 import { installFakeEventSource, mockTvApi } from '../tv/tv-mock';
 import { PcMock, mockPcApi } from './pc-mock';
-import { injectRtcScreenFrame, injectRtcScreenMonitors, installFakeRtc } from './rtc-fake';
+import { injectRtcScreenFrame, injectRtcScreenMonitors, installFakeRtc, rtcLog } from './rtc-fake';
 
 // A API é simulada pelas rotas do Playwright, que não enxergam o que passa pelo service worker.
 test.use({ serviceWorkers: 'block' });
@@ -231,6 +231,12 @@ test.describe('tela do PC (/pc/tela)', () => {
       // Tab avança para o botão de rolar.
       await page.keyboard.press('Tab');
       await expect(scroll).toBeFocused();
+
+      // Tab avança para o teclado e para a tela cheia.
+      await page.keyboard.press('Tab');
+      await expect(page.getByRole('button', { name: 'Teclado', exact: true })).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(page.getByRole('button', { name: 'Tela cheia', exact: true })).toBeFocused();
 
       // Tab avança para o botão Parar.
       await page.keyboard.press('Tab');

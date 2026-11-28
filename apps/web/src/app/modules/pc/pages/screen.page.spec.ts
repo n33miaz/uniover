@@ -7,9 +7,10 @@ import {
   PC_RTC_FACTORY,
 } from '../../../core/direct/direct-channel';
 import { AccountScope } from '../../../core/session/account-scope';
-import type { PcFailure } from '../data/pc-failure';
 import { PcStore } from '../data/pc-store';
 import { PcScreenAccess } from '../data/screen-access';
+import { createFakePcStore } from '../pc-test-kit';
+import { SENTINEL } from '../ui/live-keyboard';
 import { ScreenPage } from './screen.page';
 
 class FakeChannel extends EventTarget {
@@ -121,16 +122,8 @@ function setup({ authorized = true, screenAvailable = true } = {}) {
     accepts: vi.fn(() => true),
     sendAbsolute: vi.fn(),
   };
-  const store = {
-    notice: signal<PcFailure | null>(null),
-    movePointer: vi.fn(),
-    scrollPointer: vi.fn(),
-    click: vi.fn(async () => null),
-    startDrag: vi.fn(async () => null),
-    release: vi.fn(async () => null),
-    beginGesture: vi.fn(),
-    endGesture: vi.fn(),
-  };
+  // O dublê completo: o teclado ao vivo da página usa a mesma fila de entrada do Mouse.
+  const store = createFakePcStore();
   const peer = new FakeConnection();
   const createPeer = vi.fn(() => peer);
   const signaling = {
@@ -1186,6 +1179,272 @@ describe('Tela do PC (página)', () => {
       button.click();
       fixture.detectChanges();
       expect(root.querySelector('.tools button')!.textContent).toContain('Touchpad');
+    });
+    it('zooming and panning with two fingers never click nor move the PC pointer, not even a tap still waiting', async () => {
+      const { fire, direct, store, fixture, root } = await touching();
+      // Um toque que ainda espera o segundo e, logo depois, a pinça: o toque que esperava é descartado.
+      fire('pointerdown', 100, 100, 1);
+      fire('pointerup', 100, 100, 1);
+      vi.advanceTimersByTime(50);
+      fire('pointerdown', 100, 100, 1);
+      fire('pointerdown', 200, 100, 2);
+      fire('pointermove', 300, 100, 2);
+      // Os dois dedos andam juntos: só desloca a imagem ampliada.
+      fire('pointermove', 80, 60, 1);
+      fire('pointermove', 280, 60, 2);
+      fire('pointerup', 80, 60, 1);
+      fire('pointerup', 280, 60, 2);
+      vi.advanceTimersByTime(1000);
+      fixture.detectChanges();
+      expect(root.querySelector<HTMLElement>('.view')!.style.transform).toContain('scale(');
+      expect(direct.command).not.toHaveBeenCalled();
+      expect(direct.sendAbsolute).not.toHaveBeenCalled();
+      expect(store.click).not.toHaveBeenCalled();
+      expect(store.movePointer).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('typing and full screen', () => {
+    async function live({ touch = true } = {}) {
+      const kit = setup();
+      kit.touchOn.set(touch);
+      await kit.open(TWO_MONITORS);
+      kit.peer.channel.receive(jpegFrame(1));
+      await flush();
+      kit.fixture.detectChanges();
+      const keyboardButton = () => kit.root.querySelector<HTMLButtonElement>('button.keyboard');
+      const fullscreenButton = () =>
+        kit.root.querySelector<HTMLButtonElement>('button.fullscreen')!;
+      const shell = () => kit.root.querySelector<HTMLElement>('.shell')!;
+      const field = () => kit.root.querySelector<HTMLTextAreaElement>('textarea')!;
+      const click = (button: HTMLButtonElement) => {
+        button.click();
+        kit.fixture.detectChanges();
+      };
+      return { ...kit, keyboardButton, fullscreenButton, shell, field, click };
+    }
+
+    /** O jsdom não tem a Fullscreen API: o teste a instala e a tira. */
+    function installFullscreen({ refuse = false } = {}) {
+      let element: Element | null = null;
+      const grant = (target: Element) => {
+        if (refuse) return Promise.reject(new Error('recusada'));
+        element = target;
+        document.dispatchEvent(new Event('fullscreenchange'));
+        return Promise.resolve();
+      };
+      const request = vi.fn(function (this: Element) {
+        return grant(this);
+      });
+      const exit = vi.fn(() => {
+        element = null;
+        document.dispatchEvent(new Event('fullscreenchange'));
+        return Promise.resolve();
+      });
+      Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+        value: request,
+        configurable: true,
+      });
+      Object.defineProperty(document, 'exitFullscreen', { value: exit, configurable: true });
+      Object.defineProperty(document, 'fullscreenElement', {
+        get: () => element,
+        configurable: true,
+      });
+      /** O navegador saiu sozinho (Esc, voltar do Android). */
+      const leaveBySystem = () => {
+        element = null;
+        document.dispatchEvent(new Event('fullscreenchange'));
+      };
+      return { request, exit, leaveBySystem };
+    }
+
+    afterEach(() => {
+      delete (HTMLElement.prototype as { requestFullscreen?: unknown }).requestFullscreen;
+      delete (document as { exitFullscreen?: unknown }).exitFullscreen;
+      delete (document as { fullscreenElement?: unknown }).fullscreenElement;
+    });
+
+    it('the keyboard button opens the phone keyboard and what is typed goes to the PC at once', async () => {
+      const { keyboardButton, field, click, store } = await live();
+      const button = keyboardButton()!;
+      expect(button.textContent).toContain('Teclado');
+      expect(button.getAttribute('aria-pressed')).toBe('false');
+      click(button);
+      expect(document.activeElement).toBe(field());
+      expect(button.getAttribute('aria-pressed')).toBe('true');
+      field().value = SENTINEL + 'olá';
+      field().dispatchEvent(new Event('input', { bubbles: true }));
+      expect(store.sendText.mock.calls).toEqual([['olá']]);
+      // Tocar de novo fecha o teclado.
+      click(button);
+      expect(document.activeElement).not.toBe(field());
+      expect(button.getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('keeps the typed text out of the page and out of storage', async () => {
+      const { keyboardButton, field, click, root } = await live();
+      click(keyboardButton()!);
+      field().value = SENTINEL + 'segredo123';
+      field().dispatchEvent(new Event('input', { bubbles: true }));
+      await flush();
+      expect(root.textContent).not.toContain('segredo123');
+      const stored = [localStorage, sessionStorage].flatMap((area) =>
+        Array.from({ length: area.length }, (_, index) => area.getItem(area.key(index)!) ?? ''),
+      );
+      expect(stored.some((value) => value.includes('segredo123'))).toBe(false);
+    });
+
+    it('typing follows the input access: no keyboard while the PC cannot take input', async () => {
+      const { keyboardButton, field, store, fixture } = await live();
+      store.phase.set('offline');
+      fixture.detectChanges();
+      expect(keyboardButton()!.disabled).toBe(true);
+      expect(field().disabled).toBe(true);
+    });
+
+    it('offers the keyboard without the touch capability, since typing is the usual PC input', async () => {
+      const { keyboardButton, root } = await live({ touch: false });
+      expect(root.querySelector('.tools')).toBeNull();
+      expect(keyboardButton()).not.toBeNull();
+    });
+
+    it('enters and leaves full screen through the API, keeping the session, the monitor and the zoom', async () => {
+      const api = installFullscreen();
+      const { fullscreenButton, shell, click, root, createPeer, signaling, requests } =
+        await live();
+      // Escolhe o monitor que não é o principal.
+      const monitorButtons = root.querySelectorAll<HTMLButtonElement>('.monitors button');
+      click(monitorButtons[0]);
+      expect(monitorButtons[0].getAttribute('aria-pressed')).toBe('true');
+      const asked = requests().length;
+      click(fullscreenButton());
+      expect(api.request).toHaveBeenCalledOnce();
+      expect(api.request.mock.contexts[0]).toBe(shell());
+      expect(shell().classList).toContain('full');
+      expect(shell().classList).not.toContain('pseudo');
+      expect(fullscreenButton().textContent).toContain('Sair da tela cheia');
+      expect(fullscreenButton().getAttribute('aria-pressed')).toBe('true');
+      // A sessão segue a mesma: nenhuma oferta nova, nenhum fechamento, o monitor escolhido continua.
+      expect(createPeer).toHaveBeenCalledOnce();
+      expect(signaling.close).not.toHaveBeenCalled();
+      expect(monitorButtons[0].getAttribute('aria-pressed')).toBe('true');
+      expect(requests().length).toBe(asked);
+      click(fullscreenButton());
+      expect(api.exit).toHaveBeenCalledOnce();
+      expect(shell().classList).not.toContain('full');
+      expect(fullscreenButton().textContent).toContain('Tela cheia');
+      expect(monitorButtons[0].getAttribute('aria-pressed')).toBe('true');
+      expect(createPeer).toHaveBeenCalledOnce();
+    });
+
+    it('follows the browser when it leaves full screen by itself', async () => {
+      const api = installFullscreen();
+      const { fullscreenButton, shell, click, fixture } = await live();
+      click(fullscreenButton());
+      api.leaveBySystem();
+      fixture.detectChanges();
+      expect(shell().classList).not.toContain('full');
+      expect(fullscreenButton().getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('falls back to the CSS full screen without the API (iPhone) and leaves it with the button or Escape', async () => {
+      const { fullscreenButton, shell, click, fixture, createPeer } = await live();
+      click(fullscreenButton());
+      expect(shell().classList).toContain('full');
+      expect(shell().classList).toContain('pseudo');
+      shell().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      fixture.detectChanges();
+      expect(shell().classList).not.toContain('full');
+      click(fullscreenButton());
+      expect(shell().classList).toContain('pseudo');
+      click(fullscreenButton());
+      expect(shell().classList).not.toContain('full');
+      expect(createPeer).toHaveBeenCalledOnce();
+    });
+
+    it('in full screen the failure of a key that did not reach the PC still shows', async () => {
+      const { fullscreenButton, click, root, store, fixture } = await live();
+      store.notice.set({ kind: 'network', message: 'Sem conexão com o PC.' });
+      fixture.detectChanges();
+      // Fora da tela cheia o aviso é da casca do módulo, não desta página.
+      expect(root.querySelector('.fullscreen-notice')).toBeNull();
+      click(fullscreenButton());
+      expect(root.querySelector('.fullscreen-notice')?.textContent).toContain(
+        'Sem conexão com o PC.',
+      );
+      expect(root.querySelector('.fullscreen-notice')?.getAttribute('role')).toBe('alert');
+    });
+
+    it('uses the CSS full screen when the browser says full screen is not allowed', async () => {
+      installFullscreen();
+      Object.defineProperty(document, 'fullscreenEnabled', { value: false, configurable: true });
+      try {
+        const { fullscreenButton, shell, click } = await live();
+        click(fullscreenButton());
+        expect(shell().classList).toContain('pseudo');
+        expect(HTMLElement.prototype.requestFullscreen).not.toHaveBeenCalled();
+      } finally {
+        delete (document as { fullscreenEnabled?: unknown }).fullscreenEnabled;
+      }
+    });
+
+    it('falls back to the CSS full screen when the browser refuses the API', async () => {
+      installFullscreen({ refuse: true });
+      const { fullscreenButton, shell, click, fixture } = await live();
+      click(fullscreenButton());
+      await flush();
+      fixture.detectChanges();
+      expect(shell().classList).toContain('pseudo');
+    });
+
+    it('the zoom survives entering full screen', async () => {
+      installFullscreen();
+      const { fullscreenButton, click, root, fixture } = await live();
+      const stage = root.querySelector<HTMLElement>('.stage')!;
+      Object.defineProperty(stage, 'clientWidth', { value: 400, configurable: true });
+      Object.defineProperty(stage, 'clientHeight', { value: 225, configurable: true });
+      stage.getBoundingClientRect = () => ({ left: 0, top: 0 }) as DOMRect;
+      const fire = (type: string, x: number, pointer: number) => {
+        const event = new MouseEvent(type, { clientX: x, clientY: 100, bubbles: true });
+        Object.defineProperty(event, 'pointerId', { value: pointer });
+        stage.dispatchEvent(event);
+      };
+      fire('pointerdown', 150, 1);
+      fire('pointerdown', 250, 2);
+      fire('pointermove', 350, 2);
+      fire('pointerup', 150, 1);
+      fire('pointerup', 350, 2);
+      fixture.detectChanges();
+      const zoomed = root.querySelector<HTMLElement>('.view')!.style.transform;
+      expect(zoomed).toContain('scale(');
+      click(fullscreenButton());
+      expect(root.querySelector<HTMLElement>('.view')!.style.transform).toBe(zoomed);
+    });
+
+    it('keeps the way out of full screen when the screen stops', async () => {
+      const { fullscreenButton, shell, click, action } = await live();
+      click(fullscreenButton());
+      click(action());
+      expect(shell().classList).toContain('full');
+      click(fullscreenButton());
+      expect(shell().classList).not.toContain('full');
+    });
+
+    it('leaving the page ends the API full screen', async () => {
+      const api = installFullscreen();
+      const { fullscreenButton, click, fixture } = await live();
+      click(fullscreenButton());
+      fixture.destroy();
+      expect(api.exit).toHaveBeenCalledOnce();
+      expect(document.fullscreenElement).toBeNull();
+    });
+
+    it('leaving the page does not touch a full screen that belongs to someone else', async () => {
+      const api = installFullscreen();
+      const { fixture } = await live();
+      await document.body.requestFullscreen();
+      fixture.destroy();
+      expect(api.exit).not.toHaveBeenCalled();
     });
   });
 });
