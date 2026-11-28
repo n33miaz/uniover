@@ -1,4 +1,5 @@
 using AwesomeAssertions;
+using UniOver.BuildingBlocks.AgentProtocol;
 using UniOver.Modules.Devices.Features.GetModuleInfo;
 
 namespace UniOver.Modules.Devices.Tests;
@@ -24,12 +25,31 @@ public class GetModuleInfoHandlerTests
         info.Features.Should().Contain("tv.rtc.v1", "o agente só declara as teclas da TV pelo canal depois de a API listar");
         info.Features.Should().Contain("pc.rtc.reconcile.v1", "o agente só reconcilia o canal direto depois de a API listar");
         info.Features.Should().Contain("tv.state.waking", "o agente só conta que a TV está ligando depois de a API aceitar o valor");
+        info.Features.Should().Contain("tv.state.mode", "o agente só envia o modo da TV depois de a API aceitar o campo");
         info.Features.Should().Contain("tv.state.adb_permission", "o agente só conta a permissão do ADB no estado depois de a API aceitar o campo");
         info.Features.Should().Contain("tv.state.wake_hints", "o agente só conta os avisos de ligar pela rede depois de a API aceitar o campo");
         info.Features.Should().Contain("tv.adb.rebind.v1", "o agente só declara o refazer do registro do ADB depois de a API o listar");
         info.Features.Should().Contain("transport.restart.v1", "o agente só declara que entende o fechamento 4411 depois de a API o listar");
         info.Features.Should().Contain("agent.handover.v1", "a passagem continua disponível por padrão");
         info.Features.Should().Contain("agent.keepalive.loop_lag", "o agente só manda o atraso do laço no batimento depois de a API aceitar o campo");
+    }
+
+    [Fact]
+    public void TvStateModeFeature_AcceptsAReportFromAnAgentThatOmitsMode()
+    {
+        var info = new GetModuleInfoHandler("1.2.3").Handle();
+        info.Features.Should().Contain("tv.state.mode");
+
+        var result = new AgentEnvelopeValidator().Validate("""
+            {
+              "v": 1, "id": "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e9f", "type": "tv.state.v1",
+              "source": "agent:pc-casa", "target": "api", "ts": "2026-10-18T14:00:00Z",
+              "correlationId": null,
+              "body": { "power": "off", "volume": null, "app": null, "connection": "hot" }
+            }
+            """u8.ToArray());
+
+        result.IsSuccess.Should().BeTrue(result.IsFailure ? result.Error.Message : string.Empty);
     }
 
     [Fact]

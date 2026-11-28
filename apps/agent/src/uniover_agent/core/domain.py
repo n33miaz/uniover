@@ -46,6 +46,8 @@ Connection = Literal["hot", "hibernating", "disconnected", "not_paired"]
 # `waking` só existe no fio (`tv.state.v1`): a sessão em si nunca tem esse valor, que o publicador
 # monta a partir de `TvState.waking` quando a API o aceita.
 WireConnection = Literal["hot", "hibernating", "disconnected", "not_paired", "waking"]
+# Como a TV está quando há prova disso: desligada, em standby ou no Modo Dormir.
+TvMode = Literal["off", "standby", "sleep"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,3 +61,5 @@ class TvState:
     # A sessão está sendo aberta e a TV ainda não respondeu (acordando do standby). Passageiro: a
     # API só o recebe se disse que aceita (`tv.state.waking`); sem isso o estado sai como sempre.
     waking: bool = False
+    # Opcional no `tv.state.v1`: energia confirmada pela TV ou abertura do Modo Dormir pelo agente.
+    mode: TvMode | None = None

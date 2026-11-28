@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
 from uniover_agent.core.domain import Connection, TvState, WireConnection
@@ -28,6 +29,7 @@ class TvStatePublisher:
         adb_permission_reason: Callable[[], str | None] = lambda: None,
         reports_wake_hints: Callable[[], bool] = lambda: False,
         wake_hints: Callable[[], tuple[str, ...]] = tuple,
+        reports_mode: Callable[[], bool] = lambda: False,
     ) -> None:
         self._transport = transport
         self._envelopes = envelopes
@@ -44,6 +46,8 @@ class TvStatePublisher:
         # Os avisos de ligar pela rede (TCL), também só para a API que conhece o campo.
         self._reports_wake_hints = reports_wake_hints
         self._wake_hints = wake_hints
+        # Uma API anterior recusaria o estado inteiro se recebesse `mode`.
+        self._reports_mode = reports_mode
         self._pending: TvState | None = None
         self._task: asyncio.Task[None] | None = None
 
@@ -65,6 +69,8 @@ class TvStatePublisher:
         # O motivo só interessa ao app quando a permissão falta (é ele que decide se abre a folha).
         reason = self._adb_permission_reason() if permission == "missing" else None
         hints = self._wake_hints() if self._reports_wake_hints() else ()
+        if state.mode is not None and not self._reports_mode():
+            state = replace(state, mode=None)
         return self._envelopes.tv_state(state, self._wire(state), permission, reason, hints)
 
     def _wire(self, state: TvState) -> WireConnection:

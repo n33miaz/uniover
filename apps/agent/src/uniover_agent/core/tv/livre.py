@@ -39,6 +39,7 @@ from uniover_agent.core.tv.livre_config import (
     build_launcher_config,
     is_valid_package_name,
 )
+from uniover_agent.core.tv.presence import SleepScreenObserver
 from uniover_agent.ports import AdbError, AdbNotReady, Clock, Transport, TransportError
 from uniover_agent.ports.tv_livre import LauncherApkError, LauncherApkSource, TvLivreAdb
 
@@ -603,7 +604,11 @@ class TvLivre:
             return False
         await self._clock.sleep(STARTUP_WAIT_SECONDS)
         alive = await self._adb.shell(f"pidof {package}")
-        return any(_PID.fullmatch(token) for token in alive.text.split())
+        running = any(_PID.fullmatch(token) for token in alive.text.split())
+        if running and isinstance(self._remote_guard, SleepScreenObserver):
+            # A tela inicial já abriu, mesmo que uma etapa posterior da ação falhe.
+            self._remote_guard.sleep_screen_closed()
+        return running
 
     async def _require_launcher_runs(self) -> None:
         if not await self._runs(_OPEN_LAUNCHER, PACKAGE):
@@ -727,6 +732,12 @@ class TvLivre:
                 if photo is not None:
                     await self._push_atomic(Path(scratch), "wallpaper.jpg", photo)
                 await self._push_atomic(Path(scratch), "config.json", text.encode("utf-8"))
+        # Sem prazo no pedido, o launcher usa a última configuração que chegou à TV.
+        stored = self._state.load()
+        minutes = config.get("sleep", {}).get("maxMinutes", 0)
+        if minutes != stored.get("sleepMinutes", 0):
+            stored["sleepMinutes"] = minutes
+            self._state.save(stored)
         if self._extended() and await self._other_app_in_front():
             # Alguém está vendo outra coisa: o arquivo chegou, e a tela inicial o lê sozinha quando
             # voltar à frente. Abrir a home agora tiraria o filme da tela.
@@ -927,7 +938,18 @@ class TvLivre:
                 raise LivreError(
                     "uninstall_failed", "A TV voltou ao original, mas não desinstalou o TV Livre."
                 )
-        if not remaining:
+        self._settle_restored_state(stored, uninstall, remaining)
+
+    def _settle_restored_state(
+        self, stored: dict[str, Any], uninstall: bool, remaining: list[str]
+    ) -> None:
+        """Guarda só o que a TV restaurada ainda precisa; sem nada pendente, apaga o estado."""
+        if uninstall and remaining:
+            stored.pop("sleepMinutes", None)
+            self._state.save(stored)
+        elif not uninstall and not remaining and stored.get("sleepMinutes"):
+            self._state.save({"sleepMinutes": stored["sleepMinutes"]})
+        elif not remaining:
             self._state.delete()
 
     async def _live_protected(self) -> frozenset[str]:
@@ -1006,6 +1028,13 @@ class TvLivre:
             if self._notice is not None:
                 message = f"{message} {self._notice}"
             raise LivreError("sleep_failed", message)
+        if isinstance(self._remote_guard, SleepScreenObserver):
+            if minutes is None:
+                minutes = self._state.load().get("sleepMinutes")
+            self._remote_guard.sleep_screen_opened(
+                PACKAGE,
+                minutes if isinstance(minutes, int) and 0 <= minutes <= MAX_SLEEP_MINUTES else None,
+            )
 
     # --- auditoria ----------------------------------------------------------------------------
 

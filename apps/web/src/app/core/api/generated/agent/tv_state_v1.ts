@@ -3,6 +3,7 @@
 export type TvStateV1BodyPower = 'on' | 'off' | 'unknown';
 export type TvStateV1BodyConnection =
   'hot' | 'hibernating' | 'disconnected' | 'not_paired' | 'waking';
+export type TvStateV1BodyMode = 'off' | 'standby' | 'sleep';
 export type TvStateV1BodyAdbPermission = 'granted' | 'missing' | 'pending';
 export type TvStateV1BodyWakeHintsItem = 'screenless_off' | 'replug';
 
@@ -24,6 +25,7 @@ export interface TvStateV1Body {
   volume: number | null;
   app: string | null;
   connection: TvStateV1BodyConnection;
+  mode?: TvStateV1BodyMode;
   adbPermission?: TvStateV1BodyAdbPermission;
   adbPermissionReason?: string;
   /**

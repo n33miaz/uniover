@@ -23,6 +23,8 @@ FEATURES_TIMEOUT_SECONDS: Final = 3.0
 NOT_PAIRED_FEATURE: Final = "tv.state.not_paired"
 # A API aceita `tv.state.v1` com `connection: waking` (a TV está ligando; uma anterior o recusaria).
 WAKING_FEATURE: Final = "tv.state.waking"
+# A API aceita o campo opcional `mode` no corpo de `tv.state.v1`.
+TV_STATE_MODE_FEATURE: Final = "tv.state.mode"
 # A API aceita `adbPermission` (granted, missing, pending) no corpo de `tv.state.v1`; uma anterior
 # recusaria o campo e perderia o estado inteiro.
 ADB_PERMISSION_FEATURE: Final = "tv.state.adb_permission"

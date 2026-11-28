@@ -61,6 +61,10 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         [JsonPropertyName("connection")]
         public TvStateV1BodyConnection Connection { get; set; }
 
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonPropertyName("mode")]
+        public TvStateV1BodyMode? Mode { get; set; }
+
         [JsonPropertyName("power")]
         public TvStateV1BodyPower Power { get; set; }
 
@@ -75,6 +79,8 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
     public enum TvStateV1BodyAdbPermission { Granted, Missing, Pending };
 
     public enum TvStateV1BodyConnection { Disconnected, Hibernating, Hot, NotPaired, Waking };
+
+    public enum TvStateV1BodyMode { Off, Sleep, Standby };
 
     public enum TvStateV1BodyPower { Off, On, Unknown };
 
@@ -98,6 +104,7 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
             {
                 TvStateV1MessageTvStateV1BodyAdbPermissionConverter.Singleton,
                 TvStateV1MessageTvStateV1BodyConnectionConverter.Singleton,
+                TvStateV1MessageTvStateV1BodyModeConverter.Singleton,
                 TvStateV1MessageTvStateV1BodyPowerConverter.Singleton,
                 TvStateV1MessageTvStateV1BodyWakeHintsItemConverter.Singleton,
                 TvStateV1MessageIsoDateTimeOffsetConverter.Singleton
@@ -191,6 +198,45 @@ namespace UniOver.BuildingBlocks.AgentProtocol.Generated
         }
 
         public static readonly TvStateV1MessageTvStateV1BodyConnectionConverter Singleton = new TvStateV1MessageTvStateV1BodyConnectionConverter();
+    }
+
+    internal class TvStateV1MessageTvStateV1BodyModeConverter : JsonConverter<TvStateV1BodyMode>
+    {
+        public override bool CanConvert(Type t) => t == typeof(TvStateV1BodyMode);
+
+        public override TvStateV1BodyMode Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString();
+            switch (value)
+            {
+                case "off":
+                    return TvStateV1BodyMode.Off;
+                case "sleep":
+                    return TvStateV1BodyMode.Sleep;
+                case "standby":
+                    return TvStateV1BodyMode.Standby;
+            }
+            throw new Exception("Cannot unmarshal type TvStateV1BodyMode");
+        }
+
+        public override void Write(Utf8JsonWriter writer, TvStateV1BodyMode value, JsonSerializerOptions options)
+        {
+            switch (value)
+            {
+                case TvStateV1BodyMode.Off:
+                    JsonSerializer.Serialize(writer, "off", options);
+                    return;
+                case TvStateV1BodyMode.Sleep:
+                    JsonSerializer.Serialize(writer, "sleep", options);
+                    return;
+                case TvStateV1BodyMode.Standby:
+                    JsonSerializer.Serialize(writer, "standby", options);
+                    return;
+            }
+            throw new Exception("Cannot marshal type TvStateV1BodyMode");
+        }
+
+        public static readonly TvStateV1MessageTvStateV1BodyModeConverter Singleton = new TvStateV1MessageTvStateV1BodyModeConverter();
     }
 
     internal class TvStateV1MessageTvStateV1BodyPowerConverter : JsonConverter<TvStateV1BodyPower>

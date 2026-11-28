@@ -37,6 +37,7 @@ from uniover_agent.adapters.tv_discovery import (
     http_json,
     local_address_for,
     samsung_identity,
+    samsung_power_state,
     subnet_hosts,
     tcp_open,
     tcp_probe,
@@ -49,6 +50,7 @@ from uniover_agent.core.tv.locator import (
     TvKnown,
     TvLocator,
 )
+from uniover_agent.core.tv.presence import TvProbeResult
 from uniover_agent.ports import Clock
 
 _log = logging.getLogger(__name__)
@@ -116,10 +118,27 @@ async def ssdp_search(
     return collector.senders
 
 
+async def _samsung_info(host: str, fetch_json: FetchJson | None = None) -> dict[str, object] | None:
+    fetch = fetch_json or http_json
+    return await fetch(f"http://{host}:{SAMSUNG_REST_PORT}/api/v2/")
+
+
 async def identify_samsung(host: str, fetch_json: FetchJson | None = None) -> TvIdentity | None:
     """Pergunta ao REST da Samsung quem ela é (`duid` e MAC Wi-Fi); `None` se não responde."""
-    fetch = fetch_json or http_json
-    return samsung_identity(await fetch(f"http://{host}:{SAMSUNG_REST_PORT}/api/v2/"))
+    return samsung_identity(await _samsung_info(host, fetch_json))
+
+
+async def probe_samsung(host: str, known: TvKnown) -> TvProbeResult:
+    """A mesma resposta identifica a TV e informa sua energia, mesmo com o controle hibernando."""
+    info = await _samsung_info(host)
+    identity = samsung_identity(info)
+    if identity is None or (known.can_identify and not known.matches(identity)):
+        return "unreachable"
+    match samsung_power_state(info):
+        case "off" | "standby" as power:
+            return power
+        case _:
+            return "reachable"
 
 
 async def identify_android(host: str) -> TvIdentity | None:
