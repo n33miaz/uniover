@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import sys
 from collections.abc import Callable
 
@@ -13,8 +14,20 @@ from uniover_agent.adapters.process import exec_hidden
 _log = logging.getLogger(__name__)
 
 _BELOW_NORMAL_PRIORITY_CLASS = 0x4000
-_STDERR_READ_SIZE = 4096
-_MAX_STDERR_BYTES = 64 * 1024
+_KNOWN_WORKER_CODES = {
+    "capture_error",
+    "dpi_failed",
+    "init_failed",
+    "invalid_offer",
+    "offer_refused",
+    "premature_exit",
+    "sdp_failed",
+    "sdp_syntax",
+    "syntax_error",
+    "timeout",
+    "tray_unavailable",
+    "worker_error",
+}
 
 
 class ScreenWorkerError(RuntimeError):
@@ -67,8 +80,6 @@ class ScreenProcess:
         self._process: asyncio.subprocess.Process | None = None
         self._stopped = False
         self._job: ScreenJob | None = None
-        self._stderr_tail = bytearray()
-        self._stderr_task: asyncio.Task[None] | None = None
         self._stdout_task: asyncio.Task[None] | None = None
         self._last_error: ScreenWorkerError | None = None
 
@@ -83,11 +94,9 @@ class ScreenProcess:
             creationflags=_BELOW_NORMAL_PRIORITY_CLASS,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
         )
         self._process = process
-        if process.stderr is not None:
-            self._stderr_task = asyncio.create_task(self._drain_stderr())
         try:
             if self._stopped or process.stdin is None or process.stdout is None:
                 err: ScreenWorkerError = ScreenWorkerInitError(
@@ -106,8 +115,8 @@ class ScreenProcess:
             try:
                 process.stdin.write(json.dumps(offer).encode("ascii") + b"\n")
                 await process.stdin.drain()
-            except OSError as exc:
-                raise await self._premature_exit(process) from exc
+            except OSError:
+                raise await self._premature_exit(process, read_diagnostic=True) from None
 
             raw_line = await process.stdout.readline()
             if not raw_line:
@@ -115,13 +124,13 @@ class ScreenProcess:
 
             try:
                 answer = json.loads(raw_line)
-            except (ValueError, TypeError) as exc:
+            except ValueError, TypeError:
                 err = ScreenWorkerSyntaxError(
                     "Resposta do worker não é um JSON válido.",
                     code="syntax_error",
                 )
                 self._record_error(err)
-                raise err from exc
+                raise err from None
 
             if not isinstance(answer, dict):
                 err = ScreenWorkerSyntaxError(
@@ -132,12 +141,7 @@ class ScreenProcess:
                 raise err
 
             if "error" in answer:
-                error_msg = str(answer.get("error", "Erro do worker de tela."))
-                error_code = str(answer.get("code", "worker_error"))
-                error_cls = self._error_class_for_code(error_code)
-                err = error_cls(error_msg, code=error_code)
-                self._record_error(err)
-                raise err
+                raise self._report_worker_error(answer, startup=True)
 
             answer_sdp = answer.get("sdp")
             if not isinstance(answer_sdp, str) or not answer_sdp:
@@ -154,7 +158,7 @@ class ScreenProcess:
         except Exception, asyncio.CancelledError:
             self.stop()
             await process.wait()
-            await self._finish_drains()
+            await self._finish_stdout()
             raise
 
     async def _attach_job(self, process: asyncio.subprocess.Process) -> None:
@@ -162,31 +166,45 @@ class ScreenProcess:
             self._job = ScreenJob(process.pid)
         except OSError as exc:
             if self._stopped or process.returncode is not None:
-                raise await self._premature_exit(process) from exc
+                raise await self._premature_exit(process, read_diagnostic=True) from None
             error = ScreenWorkerInitError("Não foi possível vincular o worker de tela ao job.")
             self._record_error(error)
             raise error from exc
 
-    async def _premature_exit(self, process: asyncio.subprocess.Process) -> ScreenWorkerInitError:
+    async def _premature_exit(
+        self, process: asyncio.subprocess.Process, *, read_diagnostic: bool = False
+    ) -> ScreenWorkerError:
+        answer = None
+        if read_diagnostic and not self._stopped and process.stdout is not None:
+            # O worker pode já ter escrito o diagnóstico quando o canal de entrada falhou.
+            with contextlib.suppress(OSError, ValueError):
+                answer = json.loads(await process.stdout.readline())
         await process.wait()
-        await self._finish_drains()
         if self._stopped:
             return ScreenWorkerInitError(
                 "Medição encerrada durante a inicialização.", code="closed"
             )
+        if isinstance(answer, dict) and "error" in answer:
+            return self._report_worker_error(answer, startup=True)
         error = ScreenWorkerInitError(
             "Processo de medição encerrou prematuramente sem resposta.",
-            code=self._classify_stderr(),
+            code="unknown",
         )
         self._record_error(error)
         return error
 
-    def _record_error(self, error: ScreenWorkerError) -> None:
+    def _record_error(
+        self, error: ScreenWorkerError, metadata: dict[str, str | int] | None = None
+    ) -> None:
         self._last_error = error
-        _log.error("erro do worker de tela: %s (código: %s)", error, error.code)
+        diagnostic = {"code": error.code, **(metadata or {})}
+        _log.warning(
+            "falha no worker de tela: %s", diagnostic, extra={"worker_diagnostic": diagnostic}
+        )
         if self._record is not None:
             # "warn": é a severidade mais alta que o registro do controle do PC preserva.
-            self._record("pc.screen_error", "warn", f"ScreenWorkerError: {error.code}")
+            fields = "".join(f" {key}={value}" for key, value in (metadata or {}).items())
+            self._record("pc.screen_error", "warn", f"ScreenWorkerError: {error.code}{fields}")
 
     @staticmethod
     def _error_class_for_code(code: str) -> type[ScreenWorkerError]:
@@ -194,47 +212,34 @@ class ScreenProcess:
             return ScreenWorkerSyntaxError
         if code in {"invalid_offer", "offer_refused"}:
             return ScreenWorkerRefusedError
-        if code in {"dpi_failed", "init_failed", "premature_exit"}:
+        if code in {"dpi_failed", "init_failed", "premature_exit", "unknown"}:
             return ScreenWorkerInitError
         return ScreenWorkerError
 
-    def _classify_stderr(self) -> str:
-        combined = self._stderr_tail.decode("utf-8", errors="replace").lower()
-        if "syntaxerror" in combined or "invalid syntax" in combined:
-            return "syntax_error"
-        if (
-            "importerror" in combined
-            or "modulenotfounderror" in combined
-            or "dll load failed" in combined
+    def _report_worker_error(self, data: dict[str, object], *, startup: bool) -> ScreenWorkerError:
+        raw_code = data.get("code")
+        code = "unknown"
+        if isinstance(raw_code, str) and raw_code in _KNOWN_WORKER_CODES:
+            code = raw_code
+        error_cls = self._error_class_for_code(code) if startup else ScreenWorkerError
+        error = error_cls("Falha no worker de tela.", code=code)
+        metadata: dict[str, str | int] = {}
+        exception_type, file, line = data.get("exception_type"), data.get("file"), data.get("line")
+        if isinstance(exception_type, str) and re.fullmatch(
+            r"[A-Za-z_][A-Za-z0-9_]{0,127}", exception_type
         ):
-            return "init_failed"
-        if "setprocessdpiawarenesscontext" in combined or "dpi" in combined:
-            return "dpi_failed"
-        if "timeout" in combined:
-            return "timeout"
-        if "capture" in combined:
-            return "capture_error"
-        return "init_failed"
+            metadata["exception_type"] = exception_type
+        if isinstance(file, str) and re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}", file):
+            metadata["file"] = file
+        if isinstance(line, str) and re.fullmatch(r"[1-9][0-9]{0,8}", line):
+            metadata["line"] = int(line)
+        self._record_error(error, metadata)
+        return error
 
-    async def _drain_stderr(self) -> None:
-        stderr = self._process.stderr if self._process is not None else None
-        if stderr is None:
-            return
-        with contextlib.suppress(Exception, asyncio.CancelledError):
-            # Drena mesmo sem quebra de linha e guarda só o fim para classificar falhas.
-            while chunk := await stderr.read(_STDERR_READ_SIZE):
-                self._stderr_tail.extend(chunk)
-                if len(self._stderr_tail) > _MAX_STDERR_BYTES:
-                    del self._stderr_tail[:-_MAX_STDERR_BYTES]
-
-    async def _finish_drains(self) -> None:
-        """Espera a leitura das saídas acabar.
-
-        `asyncio.wait` não repassa o cancelamento que `stop()` faz numa leitura ainda não iniciada.
-        """
-        drains = [task for task in (self._stdout_task, self._stderr_task) if task is not None]
-        if drains:
-            await asyncio.wait(drains)
+    async def _finish_stdout(self) -> None:
+        if self._stdout_task is not None:
+            # `asyncio.wait` não repassa o cancelamento de uma leitura ainda não iniciada.
+            await asyncio.wait([self._stdout_task])
 
     async def _drain_stdout(self) -> None:
         if self._process is None or self._process.stdout is None:
@@ -247,10 +252,7 @@ class ScreenProcess:
                 with contextlib.suppress(ValueError, TypeError):
                     data = json.loads(line)
                     if isinstance(data, dict) and data.get("k") == "error":
-                        code = str(data.get("code", "capture_error"))
-                        msg = str(data.get("error", "Erro durante fluxo de tela."))
-                        err = ScreenWorkerError(f"Erro no fluxo de tela: {msg}", code=code)
-                        self._record_error(err)
+                        self._report_worker_error(data, startup=False)
 
     def stop(self) -> None:
         self._stopped = True
@@ -265,20 +267,18 @@ class ScreenProcess:
                 process.terminate()
         if self._stdout_task is not None:
             self._stdout_task.cancel()
-        # O stderr continua a ser drenado até o processo fechar o pipe.
 
     async def wait(self) -> None:
         if self._process is not None:
             await self._process.wait()
-            await self._finish_drains()
+            await self._finish_stdout()
             if not self._stopped:
                 if self._last_error is not None:
                     raise self._last_error
                 if self._process.returncode != 0:
-                    code = self._classify_stderr()
                     err = ScreenWorkerError(
                         f"Processo de medição encerrou com código {self._process.returncode}.",
-                        code=code,
+                        code="unknown",
                     )
                     self._record_error(err)
                     raise err

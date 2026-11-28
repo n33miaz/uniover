@@ -6,6 +6,7 @@ import ctypes
 import hmac
 import json
 import logging
+import ntpath
 import os
 import struct
 import sys
@@ -504,9 +505,6 @@ class ScreenSession:
                 except DesktopLockedError:
                     await self.report_state(STATE_LOCKED)
                     return
-                except Exception as exc:
-                    _log.exception("exceção na captura do quadro: %s", type(exc).__name__)
-                    raise
                 # Com marca, o receptor exibe pixels diferentes do recorte: não serve de base.
                 self.crc = None if request.marker else shot.crc
                 peak = max(peak, memory())
@@ -575,16 +573,19 @@ class ScreenSession:
                             viewing,
                             probes_instance,
                         )
-                    except ScreenIndicatorError as exc:
-                        reply({"k": "error", "code": "tray_unavailable", "error": str(exc)})
+                    except ScreenIndicatorError:
+                        reply(
+                            {
+                                "k": "error",
+                                "code": "tray_unavailable",
+                                "error": "Não foi possível ativar o indicador da tela.",
+                            }
+                        )
                     except TimeoutError:
                         # Espera de autorização ou de pedido vencida: fim normal, sem erro.
                         raise
                     except Exception as exc:
-                        _log.exception(
-                            "exceção fatal na transmissão de tela: %s", type(exc).__name__
-                        )
-                        reply({"k": "error", "code": "capture_error", "error": type(exc).__name__})
+                        reply(_failure("capture_error", exc))
                         self.closed.set()
                         raise
             except TimeoutError:
@@ -606,6 +607,22 @@ class ScreenSession:
             await asyncio.gather(*tasks, return_exceptions=True)
             if self.peer is not None:
                 await self.peer.close()
+
+
+def _failure(code: str, exc: Exception) -> dict[str, str]:
+    data = {
+        "k": "error",
+        "code": code,
+        "error": "Falha no worker de tela.",
+        "exception_type": type(exc).__name__,
+    }
+    frame = exc.__traceback__
+    if frame is not None:
+        while frame.tb_next is not None:
+            frame = frame.tb_next
+        data["file"] = ntpath.basename(frame.tb_frame.f_code.co_filename)
+        data["line"] = str(frame.tb_lineno)
+    return data
 
 
 def _read_pipe(
@@ -635,14 +652,11 @@ def _read_pipe(
             loop.call_soon_threadsafe(closed.set)
 
 
-async def main() -> None:
+async def _run_worker(reply: Callable[[dict[str, str]], None]) -> None:
     loop = asyncio.get_running_loop()
     raw: asyncio.Future[bytes] = loop.create_future()
     closed = asyncio.Event()
     Thread(target=_read_pipe, args=(loop, raw, closed), daemon=True).start()
-
-    def reply(data: dict[str, str]) -> None:
-        print(json.dumps(data), flush=True)
 
     startup = asyncio.create_task(closed.wait())
     try:
@@ -669,6 +683,23 @@ async def main() -> None:
         await ScreenSession(offer).run(offer, closed, reply, screen_indicator)
     finally:
         startup.cancel()
+
+
+async def main() -> None:
+    reported_error = False
+
+    def reply(data: dict[str, str]) -> None:
+        nonlocal reported_error
+        print(json.dumps(data), flush=True)
+        reported_error = reported_error or "error" in data
+
+    try:
+        await _run_worker(reply)
+    except Exception as exc:
+        if not reported_error:
+            with contextlib.suppress(OSError):
+                reply(_failure("unknown", exc))
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

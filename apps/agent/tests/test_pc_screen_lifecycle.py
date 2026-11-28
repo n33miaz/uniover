@@ -1,6 +1,7 @@
 """Ciclo de vida da medição junto ao canal existente, com dois pares falsos."""
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from types import SimpleNamespace
@@ -225,17 +226,18 @@ async def test_screen_process_raises_refused_error_on_invalid_offer(
     assert records == [("pc.screen_error", "warn", "ScreenWorkerError: invalid_offer")]
 
 
-async def test_screen_process_raises_init_error_on_premature_exit_with_stderr(
-    monkeypatch: pytest.MonkeyPatch,
+async def test_screen_process_reports_unknown_on_premature_exit_with_stderr(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     records: list[tuple[str, str, str]] = []
     fake_proc = FakeSubprocess(
         stdout_lines=[],
-        stderr_lines=[b"ImportError: DLL load failed while importing aiortc\n"],
+        stderr_lines=[b"ImportError: texto reservado\n"],
         returncode=1,
     )
 
-    async def fake_exec(*_args: Any, **_kwargs: Any) -> FakeSubprocess:
+    async def fake_exec(*_args: Any, **kwargs: Any) -> FakeSubprocess:
+        assert kwargs["stderr"] == asyncio.subprocess.DEVNULL
         return fake_proc
 
     monkeypatch.setattr("uniover_agent.adapters.pc_screen_process.exec_hidden", fake_exec)
@@ -248,16 +250,17 @@ async def test_screen_process_raises_init_error_on_premature_exit_with_stderr(
     with pytest.raises(ScreenWorkerInitError) as exc_info:
         await process.accept_offer("sdp", "token", 10, 60)
 
-    assert exc_info.value.code == "init_failed"
-    assert records == [("pc.screen_error", "warn", "ScreenWorkerError: init_failed")]
+    assert exc_info.value.code == "unknown"
+    assert records == [("pc.screen_error", "warn", "ScreenWorkerError: unknown")]
+    assert caplog.records[-1].__dict__["worker_diagnostic"] == {"code": "unknown"}
+    assert "texto reservado" not in caplog.text
 
 
-async def test_screen_process_raises_init_error_on_dpi_failure_in_stderr(
+async def test_screen_process_raises_init_error_on_structured_dpi_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_proc = FakeSubprocess(
-        stdout_lines=[],
-        stderr_lines=[b"SetProcessDpiAwarenessContext failed with code -4\n"],
+        stdout_lines=[b'{"error": "Falha de DPI", "code": "dpi_failed"}\n'],
         returncode=1,
     )
 
@@ -277,15 +280,15 @@ async def test_screen_process_raises_init_error_on_dpi_failure_in_stderr(
     assert exc_info.value.code == "dpi_failed"
 
 
-async def test_screen_process_drains_stderr_after_an_oversized_line(
+async def test_screen_process_filters_unknown_code_and_invalid_metadata(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     records: list[tuple[str, str, str]] = []
     fake_proc = FakeSubprocess(
-        stderr_lines=[
-            b"texto reservado " + b"x" * (70 * 1024) + b"\n",
-            b"mais saida\n" * (50 * 1024),
-            b"SyntaxError: outro texto reservado\n",
+        stdout_lines=[
+            b'{"error":"mensagem reservada","code":"bilhete reservado",'
+            b'"exception_type":"mensagem reservada","file":"C:/privado/captura.py",'
+            b'"line":"trecho reservado"}\n',
         ],
         returncode=1,
     )
@@ -295,11 +298,12 @@ async def test_screen_process_drains_stderr_after_an_oversized_line(
     with pytest.raises(ScreenWorkerInitError) as exc_info:
         await process.accept_offer("sdp", "token", 10, 60)
 
-    assert exc_info.value.code == "syntax_error"
-    assert fake_proc.stderr.at_eof()
-    assert len(process._stderr_tail) <= 64 * 1024
-    assert records == [("pc.screen_error", "warn", "ScreenWorkerError: syntax_error")]
-    assert "texto reservado" not in caplog.text
+    assert exc_info.value.code == "unknown"
+    assert records == [("pc.screen_error", "warn", "ScreenWorkerError: unknown")]
+    assert caplog.records[-1].__dict__["worker_diagnostic"] == {"code": "unknown"}
+    for text in ("reservad", "C:/privado/captura.py"):
+        assert text not in str(exc_info.value)
+        assert text not in caplog.text
 
 
 async def test_screen_process_raises_syntax_error_on_malformed_stdout(
@@ -324,13 +328,14 @@ async def test_screen_process_raises_syntax_error_on_malformed_stdout(
 
 
 async def test_screen_process_captures_error_event_during_stream_and_raises_on_wait(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     records: list[tuple[str, str, str]] = []
     fake_proc = FakeSubprocess(
         stdout_lines=[
             b'{"sdp": "resposta-sdp"}\n',
-            b'{"k": "error", "code": "capture_error", "error": "RuntimeError"}\n',
+            b'{"k":"error","code":"capture_error","error":"mensagem reservada",'
+            b'"exception_type":"RuntimeError","file":"capture.py","line":"42"}\n',
         ]
     )
 
@@ -353,7 +358,24 @@ async def test_screen_process_captures_error_event_during_stream_and_raises_on_w
         await process.wait()
 
     assert exc_info.value.code == "capture_error"
-    assert ("pc.screen_error", "warn", "ScreenWorkerError: capture_error") in records
+    assert records == [
+        (
+            "pc.screen_error",
+            "warn",
+            "ScreenWorkerError: capture_error exception_type=RuntimeError file=capture.py line=42",
+        ),
+    ]
+    (warning,) = caplog.records
+    assert warning.levelno == logging.WARNING
+    assert warning.__dict__["worker_diagnostic"] == {
+        "code": "capture_error",
+        "exception_type": "RuntimeError",
+        "file": "capture.py",
+        "line": 42,
+    }
+    assert warning.exc_info is None
+    assert "mensagem reservada" not in caplog.text
+    assert "mensagem reservada" not in str(exc_info.value)
 
 
 async def test_screen_process_wait_raises_error_on_nonzero_exit_code(
@@ -381,7 +403,7 @@ async def test_screen_process_wait_raises_error_on_nonzero_exit_code(
     with pytest.raises(ScreenWorkerError) as exc_info:
         await process.wait()
 
-    assert exc_info.value.code == "syntax_error"
+    assert exc_info.value.code == "unknown"
 
 
 async def test_lifecycle_handles_screen_worker_typed_error_and_preserves_parent(
@@ -417,7 +439,13 @@ async def test_screen_process_reports_pipe_failure_during_offer(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, failure: str
 ) -> None:
     records: list[tuple[str, str, str]] = []
-    fake_proc = FakeSubprocess(stderr_lines=[b"DPI: texto reservado\n"], returncode=1)
+    fake_proc = FakeSubprocess(
+        stdout_lines=[b'{"error":"texto reservado","code":"dpi_failed"}\n']
+        if failure == "write"
+        else None,
+        stderr_lines=[b"DPI: texto reservado\n"],
+        returncode=1,
+    )
     patch_worker_process(monkeypatch, fake_proc)
     process = ScreenProcess(record=lambda cat, lvl, msg: records.append((cat, lvl, msg)))
 
@@ -446,13 +474,14 @@ async def test_screen_process_reports_pipe_failure_during_offer(
         assert records == []
         assert caplog.records == []
     else:
-        assert exc_info.value.code == "dpi_failed"
-        assert records == [("pc.screen_error", "warn", "ScreenWorkerError: dpi_failed")]
+        code = "dpi_failed" if failure == "write" else "unknown"
+        assert exc_info.value.code == code
+        assert records == [("pc.screen_error", "warn", f"ScreenWorkerError: {code}")]
 
 
 @pytest.mark.parametrize(
     ("returncode", "stopped", "code"),
-    [(None, False, "init_failed"), (1, False, "dpi_failed"), (1, True, "closed")],
+    [(None, False, "init_failed"), (1, False, "unknown"), (1, True, "closed")],
 )
 async def test_screen_process_reports_job_attachment_failure(
     monkeypatch: pytest.MonkeyPatch,

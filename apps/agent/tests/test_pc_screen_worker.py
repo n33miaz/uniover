@@ -316,7 +316,7 @@ async def test_worker_reports_sdp_failed_diagnostic_on_generic_error(
 
 
 async def test_worker_reports_capture_error_diagnostic_and_stops_on_fatal_exception(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     offer = Offer("oferta", "bilhete-de-teste", 10, 60)
     measure, channel = session("192.168.1.6")
@@ -344,7 +344,15 @@ async def test_worker_reports_capture_error_diagnostic_and_stops_on_fatal_except
     with pytest.raises(RuntimeError, match="falha fatal no subsistema de captura"):
         await task
 
-    assert {"k": "error", "code": "capture_error", "error": "RuntimeError"} in replies
+    assert replies[-1] == {
+        "k": "error",
+        "code": "capture_error",
+        "error": "Falha no worker de tela.",
+        "exception_type": "RuntimeError",
+        "file": "test_pc_screen_worker.py",
+        "line": str(failing_capture.__code__.co_firstlineno + 1),
+    }
+    assert "falha fatal no subsistema de captura" not in caplog.text
     assert measure.closed.is_set()
 
 
@@ -417,6 +425,30 @@ async def test_worker_closes_normally_when_the_channel_starts_closing_during_a_f
     assert replies == [{"sdp": "resposta-sdp"}]
     assert len([payload for payload in channel.sent if isinstance(payload, bytes)]) == 1
     assert measure.closed.is_set()
+
+
+async def test_worker_main_reports_unclassified_exception_safely(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fail_to_start(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("bilhete reservado")
+
+    monkeypatch.setattr(pc_screen_worker, "Thread", fail_to_start)
+
+    with pytest.raises(SystemExit) as exit_info:
+        await pc_screen_worker.main()
+
+    assert exit_info.value.code == 1
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {
+        "k": "error",
+        "code": "unknown",
+        "error": "Falha no worker de tela.",
+        "exception_type": "RuntimeError",
+        "file": "test_pc_screen_worker.py",
+        "line": str(fail_to_start.__code__.co_firstlineno + 1),
+    }
+    assert captured.err == ""
 
 
 async def test_worker_main_reports_invalid_offer_code(monkeypatch: pytest.MonkeyPatch) -> None:
