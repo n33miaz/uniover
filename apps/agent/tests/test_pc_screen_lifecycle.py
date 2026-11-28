@@ -1,6 +1,7 @@
 """Ciclo de vida da medição junto ao canal existente, com dois pares falsos."""
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from types import SimpleNamespace
@@ -16,13 +17,16 @@ from uniover_agent.adapters.pc_screen_process import (
     ScreenWorkerSyntaxError,
 )
 from uniover_agent.composition import pc as pc_composition
+from uniover_agent.core import Command, CommandResult, pc_rtc_handlers
 from uniover_agent.core.pc.devices import DeviceDecision
 from uniover_agent.core.pc.direct import DirectRefused, DirectSettings
+from uniover_agent.ports import TransportError
+from uniover_agent.ports.pc_direct import DirectUnavailable
 
-from .test_pc_direct import SESSION, Lab, _Approvals, settle
+from .test_pc_direct import SESSION, TOKEN, Lab, _Approvals, settle
 
 _DEVICE = "iphone-da-casa"
-_SCREEN = "sessao-tela"
+_SCREEN = "0192f9aa-7b3a-7c2e-9d11-5a4b6c7d8e55"
 
 
 class FakeScreen:
@@ -671,3 +675,290 @@ def test_composition_gives_the_screen_process_the_diagnostic_record(
     screen = service._screen_factory()
     assert isinstance(screen, ScreenProcess)
     assert screen._record is record
+
+
+_TICKET = "TICKET-SCREEN"
+_SECRET_ERROR = "v=0 a=fingerprint TOKEN-SCREEN 192.168.0.9"
+_SECRETS = (
+    "OFFER-SCREEN",
+    "ANSWER-SCREEN",
+    "TOKEN-SCREEN",
+    _TICKET,
+    TOKEN,
+    "v=0",
+    "fingerprint",
+    "192.168.0.9",
+    _DEVICE,
+)
+
+
+async def signal_offer(
+    lab: Lab,
+    *,
+    parent: str = SESSION,
+    device: str | None = _DEVICE,
+    scopes: tuple[str, ...] = ("screen",),
+) -> CommandResult:
+    """A oferta como a API a manda: pelo handler, que é quem escreve a linha do registro."""
+    handlers = pc_rtc_handlers(lab.service, lab.transport, lab.envelopes)
+    command = Command(
+        "0192f1e4-7b3a-7c2e-9d11-5a4b6c7d8e77",
+        "pc.rtc.offer.v1",
+        {
+            "sessionId": _SCREEN,
+            "sdp": "OFFER-SCREEN",
+            "token": "TOKEN-SCREEN",
+            "tokenTtlSeconds": 15,
+            "maxLifetimeSeconds": 90,
+            "scopes": list(scopes),
+            "ticket": _TICKET,
+            "parentSessionId": parent,
+        },
+        device_id=device,
+        device_name="iPhone",
+    )
+    return await handlers["pc.rtc.offer.v1"](command)
+
+
+def offer_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.getMessage().startswith("oferta de tela")]
+
+
+def assert_no_secrets(caplog: pytest.LogCaptureFixture) -> None:
+    for secret in _SECRETS:
+        assert secret not in caplog.text
+
+
+def assert_one_refusal(caplog: pytest.LogCaptureFixture, code: str, reason: str) -> None:
+    assert offer_lines(caplog) == [
+        f"oferta de tela recusada (sessão {_SCREEN[:8]}): código {code}; motivo {reason}"
+    ]
+    assert_no_secrets(caplog)
+
+
+@pytest.mark.parametrize(
+    ("path", "code", "reason"),
+    [
+        ("mixed_scopes", "rtc_unavailable", "unsupported_scopes"),
+        ("no_factory", "rtc_unavailable", "screen_unsupported"),
+        ("closed_before", "rtc_closed", "session_closed"),
+        ("no_parent", "rtc_unavailable", "parent_missing"),
+        ("unauthenticated", "rtc_unavailable", "parent_unauthenticated"),
+        ("tv_parent", "rtc_unavailable", "parent_without_pc"),
+        ("other_parent", "rtc_unavailable", "parent_mismatch"),
+        ("no_device", "rtc_unavailable", "device_missing"),
+        ("other_device", "rtc_unavailable", "device_mismatch"),
+        ("no_approvals", "rtc_unavailable", "device_approvals_unavailable"),
+        ("denied", "device_denied", "device_denied"),
+        ("pending", "device_pending", "device_pending"),
+        ("unknown", "device_unknown", "device_unknown"),
+        ("duplicate", "rtc_unavailable", "duplicate_session"),
+    ],
+)
+async def test_each_refused_screen_offer_logs_one_line_with_a_fixed_reason(
+    measurement: tuple[Lab, FakeScreen],
+    caplog: pytest.LogCaptureFixture,
+    path: str,
+    code: str,
+    reason: str,
+) -> None:
+    lab, _ = measurement
+    if path == "unauthenticated":
+        await lab.open(device_id=_DEVICE)
+    elif path != "no_parent":
+        await lab.open_authenticated(device_id=_DEVICE, clock=False)
+    if path == "no_factory":
+        lab.service._screen_factory = None
+    elif path == "closed_before":
+        await lab.service.close(_SCREEN)
+    elif path == "tv_parent":
+        assert lab.service._current is not None
+        lab.service._current.scopes = frozenset({"tv"})
+    elif path == "no_approvals":
+        lab.service._devices = None
+    elif path in ("denied", "pending", "unknown"):
+        lab.service._devices = _Approvals(DeviceDecision(path))  # type: ignore[assignment]
+    elif path == "duplicate":
+        await offer(lab)
+    caplog.set_level(logging.DEBUG)
+    caplog.clear()
+
+    result = await signal_offer(
+        lab,
+        parent="outro-canal" if path == "other_parent" else SESSION,
+        device={"no_device": None, "other_device": "outro-iphone"}.get(path, _DEVICE),
+        scopes=("screen", "pc") if path == "mixed_scopes" else ("screen",),
+    )
+
+    assert (result.status.value, result.code) == ("rejected", code)
+    assert_one_refusal(caplog, code, reason)
+
+
+@pytest.mark.parametrize(
+    ("path", "code", "reason"),
+    [
+        ("tray_closed", "rtc_unavailable", "peer_unavailable"),
+        ("worker_failed", "rtc_failed", "peer_failed"),
+        ("inner_timeout", "rtc_failed", "peer_failed"),
+        ("deadline", "rtc_failed", "accept_timeout"),
+        ("closed", "rtc_closed", "closed_during_offer"),
+        ("closed_then_failed", "rtc_failed", "closed_during_offer"),
+        ("closed_then_deadline", "rtc_closed", "closed_during_offer"),
+        ("disconnected", "rtc_closed", "api_disconnected"),
+    ],
+)
+async def test_each_screen_offer_refused_while_negotiating_logs_its_reason(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    code: str,
+    reason: str,
+) -> None:
+    screen = FakeScreen()
+    lab = Lab(
+        settings=DirectSettings(accept_timeout_seconds=5, tick_seconds=0.005),
+        screen_factory=lambda: screen,
+    )
+    lab.service._devices = _Approvals(DeviceDecision.APPROVED)  # type: ignore[assignment]
+
+    async def accept(_sdp: str, _token: str, _ttl: int, _lifetime: int) -> str:
+        if path == "tray_closed":
+            raise DirectUnavailable(_SECRET_ERROR)
+        if path == "worker_failed":
+            raise ScreenWorkerSyntaxError(_SECRET_ERROR, code="sdp_syntax")
+        if path == "inner_timeout":
+            raise TimeoutError(_SECRET_ERROR)
+        if path == "disconnected":
+            lab.service.api_disconnected()
+        elif path.startswith("closed"):
+            await lab.service.close(_SCREEN)
+        if path == "closed_then_failed":
+            raise RuntimeError(_SECRET_ERROR)
+        if path.endswith("deadline"):
+            await asyncio.Event().wait()
+        return "ANSWER-SCREEN"
+
+    monkeypatch.setattr(screen, "accept_offer", accept)
+    try:
+        await lab.open_authenticated(device_id=_DEVICE, clock=False)
+        if path.endswith("deadline"):
+            lab.service._settings = replace(lab.service._settings, accept_timeout_seconds=0.02)
+        caplog.set_level(logging.DEBUG)
+        caplog.clear()
+
+        result = await signal_offer(lab)
+
+        assert (result.status.value, result.code) == ("rejected", code)
+        assert_one_refusal(caplog, code, reason)
+        assert lab.transport.sent == []
+    finally:
+        await lab.aclose()
+
+
+@pytest.mark.parametrize("moment", ["queued", "previous_exit"])
+async def test_screen_offer_overtaken_by_a_disconnect_while_waiting_logs_it(
+    measurement: tuple[Lab, FakeScreen], caplog: pytest.LogCaptureFixture, moment: str
+) -> None:
+    lab, _ = measurement
+    await lab.open_authenticated(device_id=_DEVICE, clock=False)
+    released = asyncio.Event()
+
+    async def previous_exit() -> None:
+        await released.wait()
+
+    if moment == "queued":
+        await lab.service._screen_lifecycle.acquire()
+    else:
+        lab.service._screen_exit = asyncio.create_task(previous_exit())
+    caplog.set_level(logging.DEBUG)
+    caplog.clear()
+
+    task = asyncio.create_task(signal_offer(lab))
+    await settle()
+    lab.service.api_disconnected()
+    if moment == "queued":
+        lab.service._screen_lifecycle.release()
+    released.set()
+    result = await task
+
+    assert result.code == "rtc_closed"
+    assert_one_refusal(caplog, "rtc_closed", "api_disconnected")
+
+
+async def test_accepted_screen_offer_logs_one_line_with_the_short_session_id(
+    measurement: tuple[Lab, FakeScreen], caplog: pytest.LogCaptureFixture
+) -> None:
+    lab, _ = measurement
+    await lab.open_authenticated(device_id=_DEVICE, clock=False)
+    caplog.set_level(logging.DEBUG)
+    caplog.clear()
+
+    result = await signal_offer(lab)
+
+    assert result.status.value == "ok"
+    assert offer_lines(caplog) == [f"oferta de tela aceita (sessão {_SCREEN[:8]})"]
+    assert_no_secrets(caplog)
+
+
+async def test_screen_answer_that_cannot_be_sent_logs_only_the_refusal(
+    measurement: tuple[Lab, FakeScreen],
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lab, screen = measurement
+    await lab.open_authenticated(device_id=_DEVICE, clock=False)
+
+    async def fail_send(_message: object) -> None:
+        raise TransportError(_SECRET_ERROR)
+
+    monkeypatch.setattr(lab.transport, "send", fail_send)
+    caplog.set_level(logging.DEBUG)
+    caplog.clear()
+
+    result = await signal_offer(lab)
+
+    assert (result.status.value, result.code) == ("failed", "rtc_failed")
+    assert screen.stopped.is_set()
+    assert_one_refusal(caplog, "rtc_failed", "answer_not_sent")
+
+
+@pytest.mark.parametrize("failure", ["internal", "cancelled"])
+async def test_screen_offer_that_ends_without_an_answer_still_logs_one_line(
+    measurement: tuple[Lab, FakeScreen],
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    lab, screen = measurement
+    await lab.open_authenticated(device_id=_DEVICE, clock=False)
+    started = asyncio.Event()
+
+    def broken_factory() -> FakeScreen:
+        raise RuntimeError(_SECRET_ERROR)
+
+    async def pending(_sdp: str, _token: str, _ttl: int, _lifetime: int) -> str:
+        started.set()
+        await asyncio.Event().wait()
+        return "ANSWER-SCREEN"
+
+    if failure == "internal":
+        lab.service._screen_factory = broken_factory
+    else:
+        monkeypatch.setattr(screen, "accept_offer", pending)
+    caplog.set_level(logging.DEBUG)
+    caplog.clear()
+
+    task = asyncio.create_task(signal_offer(lab))
+    if failure == "cancelled":
+        await started.wait()
+        task.cancel()
+    with pytest.raises(RuntimeError if failure == "internal" else asyncio.CancelledError):
+        await task
+
+    expected = (
+        f"oferta de tela com erro (sessão {_SCREEN[:8]}): motivo internal_error"
+        if failure == "internal"
+        else f"oferta de tela interrompida (sessão {_SCREEN[:8]}): cancelled"
+    )
+    assert offer_lines(caplog) == [expected]
+    assert_no_secrets(caplog)

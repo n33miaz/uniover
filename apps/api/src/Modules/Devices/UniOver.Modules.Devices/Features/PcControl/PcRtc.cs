@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using UniOver.BuildingBlocks.AgentProtocol.Generated;
 using UniOver.BuildingBlocks.Web;
 using UniOver.Modules.Devices.Contracts.Agents;
@@ -61,9 +62,9 @@ internal sealed class PcRtcAnswers(TimeProvider time)
 /// e a TV é dela, decidido pelo módulo TV agora), repassa a oferta ao agente pelo canal que já existe, devolve a resposta (com a
 /// impressão digital DTLS) e um token de uso único e vida curta, que a primeira mensagem do canal precisa apresentar. Os escopos
 /// concedidos vão na oferta e o agente só os aplica. Nenhum SDP é guardado nem vai para o registro, e o token só passa daqui para o
-/// agente e para o app.
+/// agente e para o app. A oferta da tela recusada deixa uma linha no registro com o código fixo do motivo.
 /// </summary>
-internal sealed class PcRtcHandler(
+internal sealed partial class PcRtcHandler(
     PcAgentResolver resolver,
     IAgentGateway gateway,
     PcRtcSessions sessions,
@@ -73,6 +74,7 @@ internal sealed class PcRtcHandler(
     PcOriginReader origins,
     PcDeviceStates deviceStates,
     IAccessGrants grants,
+    ILogger<PcRtcHandler> logger,
     ITvDirectChannels? tv = null,
     PcRtcTickets? tickets = null,
     TimeProvider? time = null,
@@ -108,22 +110,38 @@ internal sealed class PcRtcHandler(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        var requested = PcRtcScopeNames.Parse(request.Scopes);
+        var isScreen = requested == PcRtcScopes.Screen;
+        var asksScreen = requested.HasFlag(PcRtcScopes.Screen);
+        Guid? openedId = null;
+
+        // Só a oferta que pede a tela é anotada, e só com códigos fixos e ids curtos: nunca o SDP, o token nem o texto do agente.
+        void Note(string reason)
+        {
+            if (asksScreen)
+            {
+                LogScreenOfferRefused(reason, ShortId(openedId), ShortId(request.ParentSessionId));
+            }
+        }
+
+        IResult Refuse(string reason, IResult problem)
+        {
+            Note(reason);
+            return problem;
+        }
+
         // Falta menos que o piso do token de acesso: um canal de 60 s que sobrevive ao token que o autorizou não existe. O app
         // renova o token (o 401 faz isso) e oferece de novo.
         if (lifetime < MinLifetime)
         {
-            return RemoteCareProblems.Unauthenticated();
+            return Refuse("token_expiring", RemoteCareProblems.Unauthenticated());
         }
 
-        var requested = PcRtcScopeNames.Parse(request.Scopes);
-        var isScreen = requested == PcRtcScopes.Screen;
         // A tela só abre com a flag ligada, para o dono e com a permissão própria (pc:screen, além de module:pc, conferida mais abaixo).
-        if (requested.HasFlag(PcRtcScopes.Screen) && (!isScreen || !isOwner || sessionFamily is null
-            || request.ParentSessionId is null || request.ParentSessionId == Guid.Empty
-            || screenFlag?.Enabled != true
-            || !await grants.HasAsync(userId, AccessPermissions.PcScreen, cancellationToken)))
+        if (asksScreen
+            && await ScreenBlockAsync(userId, isOwner, sessionFamily, requested, request.ParentSessionId, cancellationToken) is { } blocked)
         {
-            return PcProblems.DirectForbidden();
+            return Refuse(blocked, PcProblems.DirectForbidden());
         }
 
         var granted = PcRtcScopes.None;
@@ -156,29 +174,34 @@ internal sealed class PcRtcHandler(
             }
             else if (pc is null && target is null)
             {
-                return PcProblems.Unavailable();
+                return Refuse("pc_unavailable", PcProblems.Unavailable());
             }
         }
 
         if (!allowed)
         {
-            return PcProblems.DirectForbidden();
+            return Refuse("pc_permission_missing", PcProblems.DirectForbidden());
         }
 
         if (target is null || granted == PcRtcScopes.None)
         {
             // A TV é dela mas o computador não existe mais (ou nunca conectou): é o mesmo "fora do ar" das outras rotas.
-            return RemoteCareProblems.Offline();
+            return Refuse("pc_unavailable", RemoteCareProblems.Offline());
         }
 
         if (!target.Connected)
         {
-            return RemoteCareProblems.Offline();
+            return Refuse("agent_offline", RemoteCareProblems.Offline());
         }
 
-        if (!OffersDirect(target) || isScreen && !target.Capabilities.Contains(PcMessages.ScreenRtcCapability, StringComparer.Ordinal))
+        if (!OffersDirect(target))
         {
-            return PcProblems.DirectUnavailable();
+            return Refuse("direct_unsupported", PcProblems.DirectUnavailable());
+        }
+
+        if (isScreen && !target.Capabilities.Contains(PcMessages.ScreenRtcCapability, StringComparer.Ordinal))
+        {
+            return Refuse("screen_unsupported", PcProblems.DirectUnavailable());
         }
 
         // O escopo da TV só vai a quem declara `tv.rtc.v1` (o esquema da oferta de um agente anterior é fechado); sem ele a TV segue pela nuvem.
@@ -196,9 +219,13 @@ internal sealed class PcRtcHandler(
         // da TV não depende dessa aprovação (a TV pela nuvem também não depende).
         var origin = origins.Read();
         var withPc = granted.HasFlag(PcRtcScopes.Pc) || isScreen;
-        if (isScreen && (origin.DeviceId is null || !target.Capabilities.Contains(PcMessages.DeviceCapability, StringComparer.Ordinal)))
+        if (isScreen && origin.DeviceId is null)
         {
-            return PcProblems.DirectForbidden();
+            return Refuse("device_id_missing", PcProblems.DirectForbidden());
+        }
+        if (isScreen && !target.Capabilities.Contains(PcMessages.DeviceCapability, StringComparer.Ordinal))
+        {
+            return Refuse("device_approval_unsupported", PcProblems.DirectForbidden());
         }
         if (withPc && origin.DeviceId is not null && deviceStates.RefusalFor(target.Slug, origin.DeviceId) is { } refusal)
         {
@@ -212,7 +239,7 @@ internal sealed class PcRtcHandler(
             }
             else
             {
-                return PcProblems.DeviceRefused(refusal);
+                return Refuse(refusal, PcProblems.DeviceRefused(refusal));
             }
         }
 
@@ -228,9 +255,10 @@ internal sealed class PcRtcHandler(
             : sessions.TryOpen(userId, isOwner, target.AgentId, target.Slug, sessionFamily, granted, tvId, out previous);
         if (session is null)
         {
-            return isScreen ? PcProblems.DirectForbidden() : PcProblems.DirectBusy();
+            return isScreen ? Refuse("parent_not_open", PcProblems.DirectForbidden()) : PcProblems.DirectBusy();
         }
 
+        openedId = session.Id;
         var token = NewToken();
         using var pending = answers.Expect(target.Slug, session.Id);
         var maxLifetime = (int)Math.Min(lifetime.TotalSeconds, (isScreen ? ScreenMaxLifetime : MaxLifetime).TotalSeconds);
@@ -275,12 +303,13 @@ internal sealed class PcRtcHandler(
         if (reply.IsFailure)
         {
             sessions.TakeOwned(session.Id, userId);
-            return PcProblems.FromGateway(reply.Error);
+            return Refuse($"gateway:{reply.Error.Code}", PcProblems.FromGateway(reply.Error));
         }
 
         if (!reply.Value.Ok)
         {
             sessions.TakeOwned(session.Id, userId);
+            Note(AgentReason(reply.Value.Error?.Code));
             // O agente já tinha o fechamento desta sessão (a revogação passou na frente da oferta): é a mesma resposta de quando a
             // revogação é descoberta depois, e o app não insiste.
             if (PcProblems.IsDeviceRefusal(reply.Value.Error?.Code))
@@ -319,6 +348,7 @@ internal sealed class PcRtcHandler(
         if (await PcRtcRights.StillValidAsync(resolver, grants, tv, userId, isOwner, granted, tvId, target.Slug, cancellationToken) != granted)
         {
             sessions.TakeOwned(session.Id, userId);
+            Note("rights_revoked");
             await CloseWithoutRequestAsync(target.Slug, session.Id);
             return PcProblems.DirectRevoked();
         }
@@ -327,6 +357,7 @@ internal sealed class PcRtcHandler(
         if (answer is null)
         {
             sessions.TakeOwned(session.Id, userId);
+            Note("answer_timeout");
             if (isScreen)
             {
                 await CloseWithoutRequestAsync(target.Slug, session.Id);
@@ -344,6 +375,7 @@ internal sealed class PcRtcHandler(
                 sessions.TakeOwned(session.Id, userId);
             }
 
+            Note("closed_during_negotiation");
             await CloseWithoutRequestAsync(target.Slug, session.Id);
             return PcProblems.DirectRevoked();
         }
@@ -361,6 +393,59 @@ internal sealed class PcRtcHandler(
         return TypedResults.Ok(new PcRtcOfferResponse(
             session.Id, answer, token, (int)PcRtcSessions.TokenLifetime.TotalSeconds, PcRtcScopeNames.ToWire(granted)));
     }
+
+    /// <summary>A oferta da tela que a validação do pedido recusou, antes de chegar a <see cref="OfferAsync"/>.</summary>
+    public void NoteInvalidOffer(PcRtcOfferRequest? request)
+    {
+        if (PcRtcScopeNames.Parse(request?.Scopes).HasFlag(PcRtcScopes.Screen))
+        {
+            LogScreenOfferRefused("invalid_request", ShortId(null), ShortId(request?.ParentSessionId));
+        }
+    }
+
+    /// <summary>O que impede a tela antes de olhar o PC, na ordem da conferência; <c>null</c> se nada impede.</summary>
+    private async Task<string?> ScreenBlockAsync(
+        Guid userId, bool isOwner, Guid? sessionFamily, PcRtcScopes requested, Guid? parentId, CancellationToken cancellationToken)
+    {
+        if (requested != PcRtcScopes.Screen)
+        {
+            return "mixed_scopes";
+        }
+
+        if (!isOwner)
+        {
+            return "not_owner";
+        }
+
+        if (sessionFamily is null)
+        {
+            return "login_session_missing";
+        }
+
+        if (parentId is null || parentId == Guid.Empty)
+        {
+            return "parent_missing";
+        }
+
+        if (screenFlag?.Enabled != true)
+        {
+            return "screen_disabled";
+        }
+
+        return await grants.HasAsync(userId, AccessPermissions.PcScreen, cancellationToken) ? null : "screen_permission_missing";
+    }
+
+    /// <summary>O código do agente é texto que vem do fio: só os que a API conhece vão ao registro.</summary>
+    internal static string AgentReason(string? code) =>
+        code is RtcClosedCode or "rtc_failed" or "rtc_unavailable" || PcProblems.IsDeviceRefusal(code)
+            ? $"agent:{code}"
+            : "agent:other";
+
+    /// <summary>Os 8 primeiros caracteres do id, os mesmos que o agente escreve; sem id, um traço.</summary>
+    private static string ShortId(Guid? id) => id?.ToString("N")[..8] ?? "-";
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Oferta da tela recusada em /api/v1/pc/rtc/offer: motivo {Reason}; sessão {Session}; canal do PC {Parent}.")]
+    private partial void LogScreenOfferRefused(string reason, string session, string parent);
 
     private async Task ReplacePreviousAsync(
         IReadOnlyList<PcRtcSession> previous, string agentSlug, ClientInfo client, CancellationToken cancellationToken)

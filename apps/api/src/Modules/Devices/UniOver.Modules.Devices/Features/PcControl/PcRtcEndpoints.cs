@@ -195,16 +195,20 @@ internal static class PcRtcEndpoints
         }
 
         var errors = PcRtcValidator.Offer(request);
-        return errors.Count > 0
-            ? ProblemDetailsExtensions.ValidationProblem(errors)
-            : await handler.OfferAsync(
-                userId,
-                string.Equals(AccountRoles.Of(http.User), AccountRoles.Owner, StringComparison.Ordinal),
-                current.SessionId,
-                RemainingAccess(http.User, time),
-                request!,
-                ClientInfo.From(http),
-                cancellationToken);
+        if (errors.Count > 0)
+        {
+            handler.NoteInvalidOffer(request);
+            return ProblemDetailsExtensions.ValidationProblem(errors);
+        }
+
+        return await handler.OfferAsync(
+            userId,
+            string.Equals(AccountRoles.Of(http.User), AccountRoles.Owner, StringComparison.Ordinal),
+            current.SessionId,
+            RemainingAccess(http.User, time),
+            request!,
+            ClientInfo.From(http),
+            cancellationToken);
     }
 
     /// <summary>O que resta do token de acesso (claim <c>exp</c>); sem a claim, o teto.</summary>

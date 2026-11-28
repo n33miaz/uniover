@@ -311,11 +311,15 @@ def _unbound_lost() -> None:
 
 
 class DirectRefused(Exception):  # noqa: N818 - o nome diz o que aconteceu
-    """A oferta não pôde ser atendida; `code` é o código estável devolvido à API."""
+    """A oferta não pôde ser atendida; `code` é o código estável devolvido à API.
 
-    def __init__(self, code: str) -> None:
+    `reason` é o código fixo da causa, que só vai ao registro daqui (várias causas respondem à API
+    com o mesmo `code`); sem um próprio, é o `code`."""
+
+    def __init__(self, code: str, reason: str | None = None) -> None:
         super().__init__(code)
         self.code = code
+        self.reason = reason or code
 
 
 class _Rate:
@@ -632,7 +636,7 @@ class PcDirectService:
                 parent_session_id,
             )
         if not granted or not granted <= KNOWN_SCOPES:
-            raise DirectRefused(REFUSED_UNAVAILABLE)
+            raise DirectRefused(REFUSED_UNAVAILABLE, "unsupported_scopes")
         if SCOPE_TV in granted and self._tv is None:
             # A API só oferece o escopo a quem declarou `tv.rtc.v1`; chegar aqui é uma configuração
             # que mudou no meio: a TV segue pela nuvem.
@@ -718,20 +722,20 @@ class PcDirectService:
     ) -> str:
         factory = self._screen_factory
         if factory is None:
-            raise DirectRefused(REFUSED_UNAVAILABLE)
+            raise DirectRefused(REFUSED_UNAVAILABLE, "screen_unsupported")
         disconnects = self._screen_disconnects
         async with self._screen_lifecycle:
             if disconnects != self._screen_disconnects:
-                raise DirectRefused(REFUSED_CLOSED)
+                raise DirectRefused(REFUSED_CLOSED, "api_disconnected")
             self._check_screen_offer(session_id, device_id, parent_session_id)
             if self._screen is not None and self._screen[0] == session_id:
-                raise DirectRefused(REFUSED_UNAVAILABLE)
+                raise DirectRefused(REFUSED_UNAVAILABLE, "duplicate_session")
             self._stop_screen()
             if self._screen_exit is not None:
                 await asyncio.shield(self._screen_exit)
                 self._screen_exit = None
                 if disconnects != self._screen_disconnects:
-                    raise DirectRefused(REFUSED_CLOSED)
+                    raise DirectRefused(REFUSED_CLOSED, "api_disconnected")
                 self._check_screen_offer(session_id, device_id, parent_session_id)
             parent_id = parent_session_id
             peer = factory()
@@ -745,28 +749,46 @@ class PcDirectService:
                 async with deadline:
                     answer = await peer.accept_offer(sdp, token, ttl_seconds, lifetime)
                 if self._screen is not screen:
-                    raise DirectRefused(REFUSED_CLOSED)
+                    raise DirectRefused(REFUSED_CLOSED, self._interrupted_reason(disconnects))
                 self._screen_parent = parent_id
             except (Exception, asyncio.CancelledError) as error:
-                if isinstance(error, TimeoutError) and deadline.expired():
-                    if self._screen is not screen:
-                        raise DirectRefused(REFUSED_CLOSED) from None
-                    _log.warning("tempo limite atingido ao abrir a tela do PC")
-                    if self._record is not None:
-                        self._record("pc.screen_error", "warn", "ScreenWorkerError: init_timeout")
+                timed_out = isinstance(error, TimeoutError) and deadline.expired()
+                # Conferido antes de parar a tela: se alguém a parou no meio da oferta, é a causa.
+                interrupted = self._screen is not screen
+                if timed_out:
+                    if interrupted:
+                        raise DirectRefused(
+                            REFUSED_CLOSED, self._interrupted_reason(disconnects)
+                        ) from None
+                    self._record_screen_timeout()
                 self._stop_screen(session_id)
                 if isinstance(error, (DirectRefused, asyncio.CancelledError)):
                     raise
                 unavailable = isinstance(error, DirectUnavailable)
+                if interrupted:
+                    reason = self._interrupted_reason(disconnects)
+                else:
+                    reason = _peer_failure_reason(unavailable, timed_out)
                 raise DirectRefused(
-                    REFUSED_UNAVAILABLE if unavailable else REFUSED_FAILED
+                    REFUSED_UNAVAILABLE if unavailable else REFUSED_FAILED, reason
                 ) from None
             self._spawn(self._watch_screen(screen))
             return answer
 
+    def _record_screen_timeout(self) -> None:
+        """Anota no diagnóstico que a tela não abriu no prazo."""
+        if self._record is not None:
+            self._record("pc.screen_error", "warn", "ScreenWorkerError: init_timeout")
+
+    def _interrupted_reason(self, disconnects: int) -> str:
+        """Por que a tela parou no meio da oferta: caiu a conexão com a API ou foi fechada."""
+        if disconnects != self._screen_disconnects:
+            return "api_disconnected"
+        return "closed_during_offer"
+
     def _check_device(self, device_id: str | None, device_name: str | None) -> None:
         if self._devices is None:
-            raise DirectRefused(REFUSED_UNAVAILABLE)
+            raise DirectRefused(REFUSED_UNAVAILABLE, "device_approvals_unavailable")
         decision = self._devices.check(device_id, device_name)
         if decision is not DeviceDecision.APPROVED:
             raise DirectRefused(
@@ -780,18 +802,20 @@ class PcDirectService:
         self, session_id: str, device_id: str | None, parent_session_id: str | None
     ) -> None:
         if self._was_closed(session_id):
-            raise DirectRefused(REFUSED_CLOSED)
+            raise DirectRefused(REFUSED_CLOSED, "session_closed")
         parent = self._current
-        if (
-            parent is None
-            or parent.closed
-            or not parent.authenticated
-            or SCOPE_PC not in parent.scopes
-            or parent.id != parent_session_id
-            or device_id is None
-            or parent.device_id != device_id
-        ):
-            raise DirectRefused(REFUSED_UNAVAILABLE)
+        if parent is None or parent.closed:
+            raise DirectRefused(REFUSED_UNAVAILABLE, "parent_missing")
+        if not parent.authenticated:
+            raise DirectRefused(REFUSED_UNAVAILABLE, "parent_unauthenticated")
+        if SCOPE_PC not in parent.scopes:
+            raise DirectRefused(REFUSED_UNAVAILABLE, "parent_without_pc")
+        if parent.id != parent_session_id:
+            raise DirectRefused(REFUSED_UNAVAILABLE, "parent_mismatch")
+        if device_id is None:
+            raise DirectRefused(REFUSED_UNAVAILABLE, "device_missing")
+        if parent.device_id != device_id:
+            raise DirectRefused(REFUSED_UNAVAILABLE, "device_mismatch")
         self._check_device(device_id, parent.device_name)
 
     async def _watch_screen(self, screen: tuple[str, ScreenPeer]) -> None:
@@ -1696,6 +1720,20 @@ def _scopes_of(value: object) -> list[str] | None:
     return [item for item in value if isinstance(item, str)]
 
 
+def _peer_failure_reason(unavailable: bool, timed_out: bool) -> str:
+    """Por que o par da tela não respondeu à oferta, quando ninguém a parou no meio."""
+    if timed_out:
+        return "accept_timeout"
+    return "peer_unavailable" if unavailable else "peer_failed"
+
+
+def _log_screen_refusal(session_id: str, code: str, reason: str) -> None:
+    """A linha da oferta de tela recusada: só o id curto da sessão e códigos fixos."""
+    _log.warning(
+        "oferta de tela recusada (sessão %s): código %s; motivo %s", session_id[:8], code, reason
+    )
+
+
 def pc_rtc_handlers(
     service: PcDirectService, transport: Sender, envelopes: EnvelopeFactory
 ) -> dict[str, Handler]:
@@ -1705,6 +1743,9 @@ def pc_rtc_handlers(
     async def offer(command: Command) -> CommandResult:
         body = command.body
         session_id = str(body["sessionId"])
+        scopes = _scopes_of(body.get("scopes"))
+        # Cada oferta de tela termina em uma linha no registro: aceita ou o motivo de não ter sido.
+        screen = scopes is not None and SCOPE_SCREEN in scopes
         try:
             answer = await service.open(
                 session_id,
@@ -1714,22 +1755,39 @@ def pc_rtc_handlers(
                 int(body["maxLifetimeSeconds"]),
                 device_id=command.device_id,
                 device_name=command.device_name,
-                scopes=_scopes_of(body.get("scopes")),
+                scopes=scopes,
                 ticket=_text_of(body.get("ticket")),
                 parent_session_id=_text_of(body.get("parentSessionId")),
             )
         except DirectRefused as refused:
+            if screen:
+                _log_screen_refusal(session_id, refused.code, refused.reason)
             return CommandResult(
                 command.id, ResultStatus.REJECTED, "canal direto indisponível", refused.code
             )
+        except asyncio.CancelledError:
+            if screen:
+                _log.warning("oferta de tela interrompida (sessão %s): cancelled", session_id[:8])
+            raise
+        except Exception:
+            if screen:
+                # Sem a mensagem da exceção, que pode trazer o que veio na oferta.
+                _log.warning(
+                    "oferta de tela com erro (sessão %s): motivo internal_error", session_id[:8]
+                )
+            raise
         try:
             # A resposta sai antes do resultado do comando: a API a espera depois dele, com folga.
             await transport.send(envelopes.pc_rtc_answer(session_id, answer, command.id))
         except TransportError:
+            if screen:
+                _log_screen_refusal(session_id, REFUSED_FAILED, "answer_not_sent")
             await service.close(session_id, REASON_FAILED)
             return CommandResult(
                 command.id, ResultStatus.FAILED, "resposta não enviada", REFUSED_FAILED
             )
+        if screen:
+            _log.info("oferta de tela aceita (sessão %s)", session_id[:8])
         return CommandResult(command.id, ResultStatus.OK)
 
     async def candidate(command: Command) -> CommandResult:

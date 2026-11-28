@@ -299,6 +299,7 @@ public sealed class PcRtcTests(PostgresFixture postgres)
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().EndWith("/pc-direct-forbidden");
+        ExpectScreenRefusalLogged(app, "login_session_missing", parentId, secrets: token);
         await ExpectStillOpenAsync(app, agent, parentId);
     }
 
@@ -446,6 +447,7 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         await ExpectProblemAsync(response, HttpStatusCode.Conflict, "pc-direct-revoked");
         (await response.Content.ReadAsStringAsync(Ct)).Should().NotContain("ANSWER-SDP", "nada do canal chega a quem perdeu o acesso");
         await ExpectRevokedCloseAsync(agent, screenId);
+        ExpectScreenRefusalLogged(app, "rights_revoked", parentId, screenId);
         (await ScreenTrailAsync(app)).Should().Be((0, 0, 0));
         await ExpectStillOpenAsync(app, agent, parentId);
     }
@@ -525,6 +527,7 @@ public sealed class PcRtcTests(PostgresFixture postgres)
         await ExpectProblemAsync(response, HttpStatusCode.Conflict, "pc-direct-revoked");
         (await response.Content.ReadAsStringAsync(Ct)).Should().NotContain("ANSWER-SDP");
         await ExpectRevokedCloseAsync(agent, screenId);
+        ExpectScreenRefusalLogged(app, "closed_during_negotiation", parentId, screenId);
         (await ScreenTrailAsync(app)).Should().Be((0, 0, 1));
     }
 
@@ -605,6 +608,7 @@ public sealed class PcRtcTests(PostgresFixture postgres)
 
         await OpenScreenAsync(app, agent, parentId, replacing: first);
 
+        ScreenRefusalLines(app).Should().BeEmpty("oferta aceita não é recusa");
         (await ScreenTrailAsync(app)).Should().Be((2, 1, 0));
     }
 
@@ -1540,6 +1544,7 @@ public sealed class PcRtcTests(PostgresFixture postgres)
 
         response.StatusCode.Should().NotBe(HttpStatusCode.OK);
         (await DevicesApp.JsonAsync(response)).GetProperty("type").GetString().Should().NotEndWith("/pc-direct-revoked");
+        ScreenRefusalLines(app).Should().BeEmpty("só a oferta que pede a tela é anotada");
     }
 
     private static Task<Guid> OwnerIdAsyncFromToken(TransportApp app) =>
@@ -1647,6 +1652,235 @@ public sealed class PcRtcTests(PostgresFixture postgres)
 
         statuses.Should().Contain(HttpStatusCode.TooManyRequests);
         statuses.Take(20).Should().OnlyContain(s => s == HttpStatusCode.NotFound);
+    }
+
+    // ---- o motivo da tela recusada no registro ----
+
+    [Theory]
+    [InlineData("flag_off", "screen_disabled", HttpStatusCode.Forbidden)]
+    [InlineData("no_screen_permission", "screen_permission_missing", HttpStatusCode.Forbidden)]
+    [InlineData("no_pc_permission", "pc_permission_missing", HttpStatusCode.Forbidden)]
+    [InlineData("denied", "device_denied", HttpStatusCode.Forbidden)]
+    [InlineData("pending", "device_pending", HttpStatusCode.Forbidden)]
+    [InlineData("unknown_parent", "parent_not_open", HttpStatusCode.Forbidden)]
+    [InlineData("mixed_request", "invalid_request", HttpStatusCode.BadRequest)]
+    public async Task ScreenRefusedByTheApi_LogsTheReason_WithoutSdpOrTicket(string path, string reason, HttpStatusCode status)
+    {
+        var gate = new GrantGate();
+        await using var app = await TransportApp.StartAsync(postgres, new DevicesAppOptions
+        {
+            PcScreen = path != "flag_off",
+            ConfigureServices = services => services.AddSingleton<IAccessGrants>(
+                provider => new GatedGrants(provider.GetRequiredService<AccessGrantsService>(), gate)),
+        });
+        await using var agent = await ConnectScreenReconcilingAsync(app);
+        var (parent, parentOffer) = await OpenAsync(app, agent);
+        var parentId = path == "unknown_parent" ? Guid.CreateVersion7() : parent.GetProperty("sessionId").GetGuid();
+        switch (path)
+        {
+            case "no_screen_permission":
+                gate.Forced["pc:screen"] = false;
+                break;
+            case "no_pc_permission":
+                gate.Forced["module:pc"] = false;
+                break;
+            case "denied" or "pending":
+                app.App.Services.GetRequiredService<PcDeviceStates>()
+                    .Set(app.Agent.Slug, parentOffer.GetProperty("deviceId").GetString()!, path);
+                break;
+        }
+
+        string[] scopes = path == "mixed_request" ? ["screen", "pc"] : ScreenScopes;
+        using var response = await PostAsync(app, "offer", new { sdp = FakeSdp, scopes, parentSessionId = parentId });
+
+        response.StatusCode.Should().Be(status);
+        ExpectScreenRefusalLogged(app, reason, parentId, secrets: SecretsOf(parent, parentOffer));
+    }
+
+    [Theory]
+    [InlineData("no_pc", "pc_unavailable", HttpStatusCode.Conflict)]
+    [InlineData("offline", "agent_offline", HttpStatusCode.ServiceUnavailable)]
+    [InlineData("no_direct", "direct_unsupported", HttpStatusCode.Conflict)]
+    [InlineData("no_screen", "screen_unsupported", HttpStatusCode.Conflict)]
+    [InlineData("no_device_approval", "device_approval_unsupported", HttpStatusCode.Forbidden)]
+    public async Task ScreenRefusedForTheStateOfThePc_LogsTheReason(string path, string reason, HttpStatusCode status)
+    {
+        await using var app = await StartScreenAppAsync();
+        string[] capabilities = path switch
+        {
+            "no_pc" => ["transport.keepalive.v1", "tv.remote"],
+            "no_direct" => ["transport.keepalive.v1", Control],
+            "no_screen" => ["transport.keepalive.v1", Control, Rtc, "pc.device.v1"],
+            "no_device_approval" => ["transport.keepalive.v1", Control, Rtc, "pc.screen.v1"],
+            _ => ["transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1"],
+        };
+        await using var agent = await ConnectAsync(app, capabilities);
+        if (path == "offline")
+        {
+            await agent.DisposeAsync();
+            await TransportApp.WaitUntilAsync(() => app.Presence.Get(app.Agent.Slug)?.Connected == false, "queda registrada");
+        }
+
+        var parentId = Guid.CreateVersion7();
+        using var response = await PostAsync(app, "offer", ScreenRequest(parentId));
+
+        response.StatusCode.Should().Be(status);
+        ExpectScreenRefusalLogged(app, reason, parentId);
+    }
+
+    [Fact]
+    public async Task ScreenRefusedForAGuest_LogsThatTheAccountIsNotTheOwner()
+    {
+        await using var app = await StartScreenAppAsync();
+        var guest = await GuestSeed.CreateGuestAsync(
+            app.App.Client, app.App.Database, app.App.Time.GetUtcNow(), "Raphael", [.. AccessPermissions.Grantable]);
+        var parentId = Guid.CreateVersion7();
+
+        using var response = await PostAsync(app, "offer", ScreenRequest(parentId), guest.Login.AccessToken);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        ExpectScreenRefusalLogged(app, "not_owner", parentId, secrets: guest.Login.AccessToken);
+    }
+
+    /// <summary>As recusas que a rota não deixa chegar (a validação ou a autenticação respondem antes): a conferência do próprio handler.</summary>
+    [Theory]
+    [InlineData("expiring", "token_expiring")]
+    [InlineData("mixed", "mixed_scopes")]
+    [InlineData("no_parent", "parent_missing")]
+    public async Task ScreenRefusedByTheHandlerItself_LogsTheReason(string path, string reason)
+    {
+        await using var app = await StartScreenAppAsync();
+        await using var scope = app.App.Services.CreateAsyncScope();
+        var handler = scope.ServiceProvider.GetRequiredService<PcRtcHandler>();
+        var parentId = Guid.CreateVersion7();
+        var request = new PcRtcOfferRequest(
+            FakeSdp,
+            path == "mixed" ? ["screen", "pc"] : ScreenScopes,
+            ParentSessionId: path == "no_parent" ? null : parentId);
+
+        await handler.OfferAsync(
+            Guid.NewGuid(), true, Guid.NewGuid(), TimeSpan.FromSeconds(path == "expiring" ? 59 : 600), request,
+            new UniOver.Modules.Devices.Security.ClientInfo(null, null), Ct);
+
+        ExpectScreenRefusalLogged(app, reason, path == "no_parent" ? null : parentId);
+    }
+
+    [Fact]
+    public async Task ScreenWithoutTheDeviceOfTheLogin_LogsTheReason()
+    {
+        await using var app = await StartScreenAppAsync();
+        await using var agent = await ConnectScreenAsync(app);
+        var ownerId = await OwnerIdAsyncFromToken(app);
+        await using var scope = app.App.Services.CreateAsyncScope();
+        var handler = scope.ServiceProvider.GetRequiredService<PcRtcHandler>();
+        var parentId = Guid.CreateVersion7();
+
+        // Fora de um pedido HTTP não há login corrente, logo não há aparelho.
+        await handler.OfferAsync(
+            ownerId, true, Guid.NewGuid(), TimeSpan.FromSeconds(600),
+            new PcRtcOfferRequest(FakeSdp, ScreenScopes, ParentSessionId: parentId),
+            new UniOver.Modules.Devices.Security.ClientInfo(null, null), Ct);
+
+        ExpectScreenRefusalLogged(app, "device_id_missing", parentId);
+    }
+
+    [Theory]
+    [InlineData("rtc_unavailable", "agent:rtc_unavailable")]
+    [InlineData("rtc_failed", "agent:rtc_failed")]
+    [InlineData("rtc_closed", "agent:rtc_closed")]
+    [InlineData("device_unknown", "agent:device_unknown")]
+    [InlineData("a=fingerprint 192.168.0.9", "agent:other")]
+    public async Task ScreenRefusedByTheAgent_LogsOnlyAKnownCode(string code, string reason)
+    {
+        await using var app = await StartScreenAppAsync();
+        await using var agent = await ConnectScreenReconcilingAsync(app);
+        var (parent, parentOffer) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+
+        var posting = PostAsync(app, "offer", ScreenRequest(parentId));
+        var offer = (await agent.ReceiveAsync())!.Value;
+        await agent.SendTextAsync(agent.Envelope("command.result.v1", new JsonObject
+        {
+            ["ok"] = false,
+            ["error"] = new JsonObject { ["code"] = code, ["message"] = "texto livre do agente" },
+        }, offer.GetProperty("id").GetGuid()));
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
+
+        response.IsSuccessStatusCode.Should().BeFalse();
+        ExpectScreenRefusalLogged(app, reason, parentId, ScreenIdOf(offer), SecretsOf(parent, parentOffer, offer));
+    }
+
+    [Theory]
+    [InlineData(false, "gateway:agent_timeout")]
+    [InlineData(true, "answer_timeout")]
+    public async Task ScreenWithoutTheReplyOfTheAgent_LogsTheReason(bool acknowledged, string reason)
+    {
+        await using var app = await StartScreenAppAsync();
+        await using var agent = await ConnectScreenReconcilingAsync(app);
+        var (parent, parentOffer) = await OpenAsync(app, agent);
+        var parentId = parent.GetProperty("sessionId").GetGuid();
+
+        var posting = PostAsync(app, "offer", ScreenRequest(parentId));
+        var offer = (await agent.ReceiveAsync())!.Value;
+        if (acknowledged)
+        {
+            // O resultado chega sem a resposta SDP antes dele.
+            await agent.SendTextAsync(agent.Envelope(
+                "command.result.v1", new JsonObject { ["ok"] = true }, offer.GetProperty("id").GetGuid()));
+        }
+
+        for (var i = 0; i < 100 && !posting.IsCompleted; i++)
+        {
+            app.App.Time.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(TimeSpan.FromMilliseconds(30), Ct);
+        }
+
+        using var response = await posting.WaitAsync(FakeAgent.Patience, Ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.GatewayTimeout);
+        ExpectScreenRefusalLogged(app, reason, parentId, ScreenIdOf(offer), SecretsOf(parent, parentOffer, offer));
+    }
+
+    private static Task<FakeAgent> ConnectScreenReconcilingAsync(TransportApp app) =>
+        ConnectAsync(app, "transport.keepalive.v1", Control, Rtc, "pc.device.v1", "pc.screen.v1", Reconcile);
+
+    private static Guid ScreenIdOf(JsonElement offer) => offer.GetProperty("body").GetProperty("sessionId").GetGuid();
+
+    /// <summary>O token e o bilhete do canal de controle e, quando houve, o token da oferta de tela.</summary>
+    private static string[] SecretsOf(JsonElement parent, JsonElement parentOffer, JsonElement? screenOffer = null)
+    {
+        List<string> secrets =
+        [
+            parent.GetProperty("token").GetString()!,
+            parentOffer.GetProperty("body").GetProperty("ticket").GetString()!,
+        ];
+        if (screenOffer is { } offer)
+        {
+            secrets.Add(offer.GetProperty("body").GetProperty("token").GetString()!);
+        }
+
+        return [.. secrets];
+    }
+
+    private static List<string> ScreenRefusalLines(TransportApp app) =>
+        [.. app.App.Logs.Lines.Where(line => line.Contains("Oferta da tela recusada", StringComparison.Ordinal))];
+
+    /// <summary>Uma linha só, com o motivo e os ids curtos; e nada do que passou pela sinalização em linha nenhuma do registro.</summary>
+    private static void ExpectScreenRefusalLogged(
+        TransportApp app, string reason, Guid? parentId, Guid? screenId = null, params string[] secrets)
+    {
+        static string Short(Guid? id) => id?.ToString("N")[..8] ?? "-";
+
+        var line = ScreenRefusalLines(app).Should().ContainSingle().Subject;
+        line.Should().StartWith("Warning ").And.Contain(
+            $"Oferta da tela recusada em /api/v1/pc/rtc/offer: motivo {reason}; sessão {Short(screenId)}; canal do PC {Short(parentId)}.");
+        line.Should().NotContainAny("127.0.0.1", "192.168.0.9", "texto livre");
+        var everything = string.Join('\n', app.App.Logs.Lines);
+        everything.Should().NotContain("a=fingerprint").And.NotContain("ANSWER-SDP");
+        foreach (var secret in secrets)
+        {
+            everything.Should().NotContain(secret);
+        }
     }
 
     // ---- reconciliar o canal que o agente segurou (a API pode ter reiniciado e perdido o registro) ----
