@@ -31,6 +31,7 @@ import time
 from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
 
+from uniover_agent.core.tv.presence import TvProbeResult
 from uniover_agent.core.tv.session import TvSessionError
 from uniover_agent.ports import Clock
 
@@ -90,12 +91,13 @@ class TvRelocator:
         clock: Clock,
         *,
         is_hot: Callable[[], bool],
-        reachable: Callable[[], Awaitable[bool]],
+        reachable: Callable[[], Awaitable[bool | TvProbeResult]],
         rescan: Callable[[], Awaitable[str | None]],
         failures: int = DEFAULT_FAILURES,
         check_seconds: float = DEFAULT_CHECK_SECONDS,
         summary_seconds: float = DEFAULT_SUMMARY_SECONDS,
         on_alive: Callable[[], Awaitable[None]] | None = None,
+        on_probe: Callable[[TvProbeResult | None], None] | None = None,
         on_recovered: Callable[[], Awaitable[None]] | None = None,
         is_paused: Callable[[], bool] = lambda: False,
         network_signature: Callable[[], Awaitable[Collection[str]]] | None = None,
@@ -142,6 +144,7 @@ class TvRelocator:
         self._summary_seconds = summary_seconds
         # Chamado a cada conferência em que a TV está lá (para aprender o que falta dela).
         self._on_alive = on_alive
+        self._on_probe = on_probe
         self._on_recovered = on_recovered
         self._is_paused = is_paused
         self._network_signature = network_signature
@@ -202,7 +205,10 @@ class TvRelocator:
             _log.info("a rede do PC voltou; confiro a TV já")
             self._start_fast_window()
         nudged, self._nudged = self._nudged, False
-        if self._is_hot() or await self._safe_reachable():
+        probe = None if self._is_hot() else await self._safe_reachable()
+        if self._on_probe is not None:
+            self._on_probe(probe)
+        if probe not in {"unreachable", "unresponsive"}:
             await self._tv_is_here()
             return None
         self._failures += 1
@@ -451,12 +457,15 @@ class TvRelocator:
         except Exception:
             _log.exception("falha ao reabrir a sessão da TV")
 
-    async def _safe_reachable(self) -> bool:
+    async def _safe_reachable(self) -> TvProbeResult:
         try:
-            return await self._reachable()
+            result = await self._reachable()
+            if isinstance(result, bool):
+                return "reachable" if result else "unreachable"
+            return result
         except Exception:
             _log.exception("falha ao conferir a TV")
-            return False
+            return "unresponsive"
 
     def _announce_search(self) -> None:
         now = self._clock.monotonic()

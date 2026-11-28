@@ -32,7 +32,15 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Final, NoReturn, TypeVar
 
-from uniover_agent.core.domain import Connection, Power, TvState
+from uniover_agent.core.domain import Connection, Power, TvMode, TvState
+from uniover_agent.core.tv.presence import (
+    SLEEP_PASS_THROUGH_KEYS,
+    PresenceLog,
+    ReportsPowerMode,
+    TvPresence,
+    TvProbeResult,
+    open_session_presence,
+)
 from uniover_agent.ports import (
     Clock,
     TvCertificateRefused,
@@ -133,6 +141,15 @@ class TvSessionError(Exception):
         self.code = code
         self.message = message
         self.may_have_sent = may_have_sent
+
+
+@dataclass(frozen=True, slots=True)
+class _SleepScreen:
+    """O Modo Dormir que o agente abriu e as condições para continuar valendo."""
+
+    package: str
+    power_sent_at: float | None
+    until: float | None
 
 
 @dataclass(slots=True)
@@ -240,6 +257,11 @@ class TvSessionManager:
         # Mandei `POWER` com a TV ligada: a próxima queda de rede é ela desligada, não rede lenta.
         self._expect_off = False
         self._power_lock = asyncio.Lock()
+        self._presence = PresenceLog(clock)
+        self._observed_power_mode: TvMode | None = None
+        self._sleep_screen: _SleepScreen | None = None
+        self._network_answered: bool | None = None
+        self._probe: TvProbeResult | None = None
         # A recuperação em segundo plano já reabriu a sessão e ninguém usou o controle desde então.
         self._reopened_unattended = False
         self._listeners: list[Callable[[TvState], None]] = []
@@ -273,9 +295,13 @@ class TvSessionManager:
         return self.warmups[-1] if self.warmups else None
 
     def snapshot(self) -> TvState:
-        """O que se publica agora. `power` só é afirmado com a sessão quente."""
+        """O que se publica agora. `power` exige uma leitura da sessão quente atual."""
         power: Power = "unknown"
-        if self._connection == "hot" and self._power is not None:
+        if (
+            self._connection == "hot"
+            and self._power_generation == self._connection_generation
+            and self._power is not None
+        ):
             power = "on" if self._power else "off"
         # "Ligando" só enquanto a abertura que alguém pediu segue sem resposta da TV. Pareamento
         # pendente tem a vez: uma TV sem par não está ligando.
@@ -284,7 +310,53 @@ class TvSessionManager:
             and self._state is SessionState.WARMING
             and self._connection != "not_paired"
         )
-        return TvState(power, self._volume, self._app, self._connection, waking)
+        connection = self._connection
+        mode = self._mode(power)
+        if connection == "hibernating" and self._probe in {"unreachable", "unresponsive"}:
+            connection = "disconnected"
+        elif self._state is SessionState.HIBERNATING:
+            match self._probe:
+                case "off" | "standby" as reported:
+                    # O REST da própria TV respondeu depois da última tentativa de controle.
+                    mode = reported
+                    if connection != "not_paired":
+                        connection = "hibernating"
+        return TvState(power, self._volume, self._app, connection, waking, mode)
+
+    def note_probe(self, result: TvProbeResult | None) -> None:
+        """Publica cada conferência do endereço. Uma sessão aberta já confirma a presença."""
+        if self._connection != "hot" and result is not None:
+            self._probe = result
+            if result != "reachable":
+                self._sleep_screen = None
+            if result == "unreachable":
+                self._presence.note("unreachable", "a TV não atende no endereço configurado")
+            elif result == "unresponsive":
+                self._presence.note("unresponsive", "o controle da TV não respondeu à sondagem")
+            elif result == "reachable" and self._connection in {"disconnected", "not_paired"}:
+                self._presence.note("unresponsive", "a TV atende, mas o controle está indisponível")
+        self._emit(probed=True)
+
+    @property
+    def presence(self) -> TvPresence | None:
+        """A última observação da TV, com o instante e o motivo; `None` antes da primeira."""
+        return self._presence.current
+
+    def sleep_screen_opened(self, package: str, minutes: int | None) -> None:
+        """O Modo Dormir abriu pelo ADB, inclusive enquanto o controle está hibernando.
+
+        `minutes` é o prazo do pedido; sem ele (ou zero) vale até algo mostrar que a tela saiu.
+        """
+        now = self._clock.monotonic()
+        self._probe = None
+        until = now + minutes * 60 if minutes else None
+        self._sleep_screen = _SleepScreen(package, self._power_sent_at, until)
+        self._emit()
+
+    def sleep_screen_closed(self) -> None:
+        if self._sleep_screen is not None:
+            self._sleep_screen = None
+            self._emit()
 
     @property
     def remote_volume_seen(self) -> bool:
@@ -372,6 +444,7 @@ class TvSessionManager:
             return
         self._state = SessionState.REPAIRING
         self._set_connection("disconnected")
+        self._presence.note("unresponsive", "religando o controle da TV")
 
     def clear_repairing(self) -> None:
         """O vigia terminou: volta a dormir; o próximo comando abre a sessão do zero."""
@@ -395,7 +468,10 @@ class TvSessionManager:
         é repetida e a incerteza sobe (`may_have_sent`): quem chama decide, porque a repetição de
         um `DEL` que já chegou apagaria um caractere a mais."""
         if key == POWER_KEY and direction == "SHORT":
-            return await self._send_power()
+            sent = await self._send_power()
+            if sent:
+                self._expire_sleep_screen()
+            return sent
         if key in VOLUME_KEYS and direction in {"SHORT", "START_LONG"}:
             # O nível empurrado ao abrir a sessão não prova que a TV continuará avisando
             # depois das teclas. Faça isso antes do envio: o callback pode vir durante ele.
@@ -407,6 +483,8 @@ class TvSessionManager:
         )
         if key in VOLUME_KEYS and direction in {"SHORT", "END_LONG"}:
             self._schedule_volume_read()
+        if key not in SLEEP_PASS_THROUGH_KEYS:
+            self.sleep_screen_closed()
         return True
 
     async def send_edit_key(
@@ -418,6 +496,7 @@ class TvSessionManager:
             validate=validate,
             retry_uncertain=retry_uncertain,
         )
+        self.sleep_screen_closed()
 
     async def power_off(self) -> PowerOffResult:
         """Desliga a TV só depois de ler que ela está ligada; nunca a liga.
@@ -669,6 +748,7 @@ class TvSessionManager:
 
     async def launch_link(self, link: str) -> None:
         await self._run(lambda remote: remote.launch_link(link))
+        self.sleep_screen_closed()
 
     async def send_text(self, text: str, *, validate: Callable[[], None] | None = None) -> None:
         """Insere o trecho no campo em foco da TV; não substitui o conteúdo."""
@@ -677,6 +757,7 @@ class TvSessionManager:
             validate=validate,
             retry_uncertain=False,
         )
+        self.sleep_screen_closed()
 
     async def wake(self) -> None:
         """Pré-aquece: abre a sessão (se preciso) e renova o relógio.
@@ -786,6 +867,7 @@ class TvSessionManager:
             await self._clock.sleep(self._poll_seconds)
             try:
                 await self.hibernate_if_idle()
+                self._expire_sleep_screen()
             except Exception:
                 # Sem este `try`, a falha matava o laço em silêncio e a TV nunca mais hibernava.
                 _log.exception("falha ao conferir a hibernação da sessão com a TV; sigo vigiando")
@@ -905,14 +987,17 @@ class TvSessionManager:
                 return
             self._raise_if_cooling_down(interactive=interactive)
             self._open_failed_once = False
+            timed_out = False
             try:
                 try:
                     async with asyncio.timeout(self._warm_timeout_seconds):
                         await self._warm(interactive=interactive, unattended=unattended)
                 except TimeoutError:
+                    timed_out = True
                     # Conta como TV sem resposta: entra na espera crescente em vez de a próxima
                     # tentativa vir logo em seguida.
                     self._note_unreachable("o controle da TV não respondeu a tempo")
+                    self._report_no_answer()
                     raise TvSessionError(
                         TV_UNREACHABLE, "a TV demorou para responder ao controle"
                     ) from None
@@ -921,7 +1006,7 @@ class TvSessionManager:
                 if self._state is SessionState.WARMING:
                     await asyncio.shield(self._close_channels())
                     self._state = SessionState.HIBERNATING
-                    self._set_connection("disconnected")
+                    self._set_connection("disconnected", probed=timed_out)
                 raise
             finally:
                 # Abriu, desistiu ou foi cortada: a TV deixou de estar "ligando".
@@ -969,6 +1054,7 @@ class TvSessionManager:
             except TvNotPaired as exc:
                 await self._give_up(TV_NOT_PAIRED, str(exc))
             except TvUnreachable as exc:
+                self._report_no_answer()
                 if not signaled and isinstance(exc, TvPortClosed):
                     # Porta recusada (serviço morto) já na primeira falha: o vigia ganha a janela
                     # das esperas para agir. Sem resposta nenhuma é a TV em standby: não é reparo.
@@ -1015,8 +1101,11 @@ class TvSessionManager:
     async def _attempt(self) -> None:
         """Uma tentativa: o teste de vida primeiro e o WebSocket só se alguém atende."""
         self._last_attempt_at = self._clock.monotonic()
-        if self._liveness is not None and not await self._liveness():
-            raise TvUnreachable("a TV não atende na rede")
+        self._network_answered = None
+        if self._liveness is not None:
+            self._network_answered = await self._liveness()
+            if not self._network_answered:
+                raise TvUnreachable("a TV não atende na rede")
         try:
             await self._open_channels()
         except TvCertificateRefused as exc:
@@ -1107,12 +1196,16 @@ class TvSessionManager:
         await self._close_channels()
         if self._state is not SessionState.REPAIRING:
             self._state = SessionState.HIBERNATING
-            self._set_connection("not_paired" if code == TV_NOT_PAIRED else "disconnected")
+            self._set_connection(
+                "not_paired" if code == TV_NOT_PAIRED else "disconnected", probed=True
+            )
         self._raise_if_repairing()
         if code == TV_UNREACHABLE:
             self._note_unreachable(message)
         else:
             _log.warning("sessão da TV não abriu (%s): %s", code, message)
+            blocked = "pareamento" if code == TV_NOT_PAIRED else "permissão"
+            self._presence.note("unresponsive", f"a TV pede {blocked}")
         hints = {
             TV_NOT_PAIRED: "a TV ainda não foi pareada; rode `uniover-agent tv-pair`",
             TV_PERMISSION_NEEDED: "a TV pediu a permissão do UniOver de novo; peça-a pelo app",
@@ -1154,6 +1247,7 @@ class TvSessionManager:
             return
         self._state = SessionState.HIBERNATING
         self._set_connection("disconnected")
+        self._presence.note("unresponsive", "o canal com a TV caiu")
         self._spawn(self._recover())
 
     async def _recover(self) -> None:
@@ -1190,6 +1284,34 @@ class TvSessionManager:
         task.add_done_callback(self._tasks.discard)
         return task
 
+    # --- presença e modo da TV ----------------------------------------------------------------
+
+    def _mode(self, power: Power) -> TvMode | None:
+        """Energia da sessão atual ou a tela que o ADB abriu."""
+        if power == "off":
+            return self._observed_power_mode or "off"
+        return "sleep" if self._sleep_screen_active() else None
+
+    def _sleep_screen_active(self) -> bool:
+        screen = self._sleep_screen
+        if screen is None:
+            return False
+        if screen.until is not None and self._clock.monotonic() >= screen.until:
+            return False
+        # Uma tecla de energia depois da abertura fecha a tela preta.
+        return self._power_sent_at == screen.power_sent_at
+
+    def _expire_sleep_screen(self) -> None:
+        if not self._sleep_screen_active():
+            self.sleep_screen_closed()
+
+    def _report_no_answer(self) -> None:
+        """Uma abertura falhou. Só uma leitura da TV confirma o modo de energia."""
+        if self._network_answered is not False:
+            self._presence.note("unresponsive", "o controle da TV não respondeu")
+        else:
+            self._presence.note("unreachable", "a TV não atende na rede")
+
     # --- volume: lido ao abrir a sessão e depois de uma tecla de volume -----------------------
 
     def _schedule_volume_read(self) -> None:
@@ -1218,6 +1340,14 @@ class TvSessionManager:
     # --- estado empurrado pela TV -------------------------------------------------------------
 
     def _on_power(self, is_on: bool) -> None:
+        if not is_on or (
+            self._power is False and self._power_generation == self._connection_generation
+        ):
+            self._sleep_screen = None
+        remote = self._remote
+        self._observed_power_mode = (
+            remote.power_mode if not is_on and isinstance(remote, ReportsPowerMode) else None
+        )
         self._power = is_on
         self._power_generation = self._connection_generation
         self._power_sequence += 1
@@ -1227,6 +1357,8 @@ class TvSessionManager:
 
     def _on_app(self, app: str) -> None:
         self._app = app or None
+        if self._sleep_screen is not None and self._app != self._sleep_screen.package:
+            self._sleep_screen = None
         self._emit()
 
     def _on_volume(self, level: int) -> None:
@@ -1241,21 +1373,36 @@ class TvSessionManager:
         if not available:
             self._channel_lost()
 
-    def _set_connection(self, connection: Connection) -> None:
+    def _set_connection(self, connection: Connection, *, probed: bool = False) -> None:
+        self._probe = None
+        if connection in {"disconnected", "not_paired"}:
+            self._sleep_screen = None
         # `not_paired` só sai quando algo prova o pareamento: uma sessão aberta ("hot") ou um
         # pareamento novo (`pairing_done`). Reparo, hibernação, TV em standby e rede caída não
         # provam nada, e sobrescrevê-lo mostraria "conectada" para uma TV que ainda vai recusar a
         # tecla.
         if self._connection == "not_paired" and connection != "hot":
+            if probed:
+                self._emit(probed=True)
             return
         self._connection = connection
-        self._emit()
+        self._emit(probed=probed)
 
-    def _emit(self) -> None:
+    def _emit(self, *, probed: bool = False) -> None:
         snapshot = self.snapshot()
-        if snapshot == self._last_emitted:
+        if not probed and snapshot == self._last_emitted:
             return
         self._last_emitted = snapshot
+        if snapshot.connection == "hot" or snapshot.mode is not None:
+            self._presence.note(*open_session_presence(snapshot.mode))
+        elif snapshot.connection == "hibernating" and self._state is SessionState.HIBERNATING:
+            # Hibernar não prova nada: sem observação, ou depois de uma falha, só uma sondagem ou
+            # abertura que dê certo mostra a TV pronta.
+            seen = self._presence.current
+            if self._probe == "reachable" or (
+                seen is not None and seen.status not in {"unreachable", "unresponsive"}
+            ):
+                self._presence.note("ready", "o controle da TV está hibernando")
         for listener in self._listeners:
             try:
                 listener(snapshot)

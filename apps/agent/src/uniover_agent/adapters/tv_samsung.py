@@ -23,8 +23,9 @@ from samsungtvws.event import (
 )
 
 from uniover_agent.adapters.ssl_contexts import ssl_contexts
-from uniover_agent.adapters.tv_discovery import samsung_identity
+from uniover_agent.adapters.tv_discovery import samsung_identity, samsung_power_state
 from uniover_agent.adapters.tv_samsung_volume import SamsungVolume
+from uniover_agent.core.domain import TvMode
 from uniover_agent.core.tv.locator import TvIdentity
 from uniover_agent.core.tv.samsung_maintenance import SamsungAppStatus
 from uniover_agent.ports import TvNotPaired, TvPermissionNeeded, TvUnreachable
@@ -276,16 +277,14 @@ async def fetch_samsung_info(host: str) -> dict[str, Any] | None:
 
 
 def power_from_info(info: dict[str, Any] | None) -> bool | None:
-    device = info.get("device") if info else None
-    value = device.get("PowerState") if isinstance(device, dict) else None
-    if not isinstance(value, str):
-        return None
-    lowered = value.casefold()
-    if lowered == "on":
-        return True
-    if lowered in {"off", "standby"}:
-        return False
-    return None
+    state = samsung_power_state(info)
+    return state == "on" if state is not None else None
+
+
+def power_mode_from_info(info: dict[str, Any] | None) -> TvMode | None:
+    """`standby` ou `off`, como a TV os separa em `PowerState`; ligada ou sem leitura, `None`."""
+    state = samsung_power_state(info)
+    return None if state == "on" else state
 
 
 async def fetch_samsung_power(host: str) -> bool | None:
@@ -335,6 +334,7 @@ class SamsungTvDriver:
         self._app_icon_timeout_seconds = SAMSUNG_APP_ICON_TIMEOUT_SECONDS
         self._client: SamsungClient | None = None
         self._connected = False
+        self._power_mode: TvMode | None = None
         self._power: list[Callable[[bool], None]] = []
         self._app: list[Callable[[str], None]] = []
         self._volume: list[Callable[[int], None]] = []
@@ -449,6 +449,7 @@ class SamsungTvDriver:
                 self._on_identity(identity)
             except Exception:
                 _log.exception("falha ao guardar a identidade da TV")
+        self._power_mode = power_mode_from_info(info)
         return power_from_info(info)
 
     async def read_power(self) -> bool | None:
@@ -458,7 +459,14 @@ class SamsungTvDriver:
         """
         if self._fetch_power is not None:
             return await self._fetch_power(self._host)
-        return power_from_info(await fetch_samsung_info(self._host))
+        info = await fetch_samsung_info(self._host)
+        self._power_mode = power_mode_from_info(info)
+        return power_from_info(info)
+
+    @property
+    def power_mode(self) -> TvMode | None:
+        """O da última leitura pelo REST da TV."""
+        return self._power_mode
 
     async def read_volume(self) -> int | None:
         """Volume atual pelo serviço UPnP que a própria TV descreve; `None` se ela não o tem.

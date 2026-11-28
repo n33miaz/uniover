@@ -154,7 +154,7 @@ class EnvelopeFactory:
 
         `adb_permission` (`granted`, `missing` ou `pending`) só entra no corpo quando dito: o
         campo é opcional no contrato e uma API anterior o recusaria. `wake_hints` idem, e só sai
-        quando há algo a avisar.
+        quando há algo a avisar. Quem chama só informa `mode` quando a API anuncia o campo.
         """
         body: dict[str, Any] = {
             "power": state.power,
@@ -168,6 +168,8 @@ class EnvelopeFactory:
                 body["adbPermissionReason"] = adb_permission_reason
         if wake_hints:
             body["wakeHints"] = list(wake_hints)
+        if state.mode is not None:
+            body["mode"] = state.mode
         return self._build("tv.state.v1", body, None)
 
     def tv_apps(

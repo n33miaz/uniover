@@ -284,6 +284,20 @@ def _samsung_ids(device: dict[str, Any]) -> tuple[str, ...]:
     return tuple(found)
 
 
+def samsung_power_state(info: dict[str, Any] | None) -> Literal["on", "off", "standby"] | None:
+    device = info.get("device") if info else None
+    value = device.get("PowerState") if isinstance(device, dict) else None
+    if isinstance(value, str):
+        match value.casefold():
+            case "on":
+                return "on"
+            case "off":
+                return "off"
+            case "standby":
+                return "standby"
+    return None
+
+
 def samsung_identity(info: dict[str, Any] | None) -> TvIdentity | None:
     """Quem a TV diz ser no REST (`duid` e MAC Wi-Fi), ou `None` se não é uma Samsung."""
     device = _samsung_device(info)

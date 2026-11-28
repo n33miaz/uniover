@@ -23,6 +23,12 @@ class TvStateV1BodyConnection(
     ]
 
 
+class TvStateV1BodyMode(RootModel[Literal['off', 'standby', 'sleep']]):
+    root: Annotated[
+        Literal['off', 'standby', 'sleep'], Field(title='TvStateV1BodyMode')
+    ]
+
+
 class TvStateV1BodyAdbPermission(RootModel[Literal['granted', 'missing', 'pending']]):
     root: Annotated[
         Literal['granted', 'missing', 'pending'],
@@ -46,6 +52,7 @@ class TvStateV1Body(BaseModel):
     connection: Annotated[
         TvStateV1BodyConnection, Field(title='TvStateV1BodyConnection')
     ]
+    mode: Annotated[TvStateV1BodyMode | None, Field(title='TvStateV1BodyMode')] = None
     adbPermission: Annotated[
         TvStateV1BodyAdbPermission | None, Field(title='TvStateV1BodyAdbPermission')
     ] = None

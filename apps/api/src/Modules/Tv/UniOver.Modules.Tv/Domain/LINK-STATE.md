@@ -32,17 +32,22 @@ Os valores são estáveis. `version` só sobe com mudança incompatível (valor 
    O último estado da TV nunca é mantido: sem relato recente, o elo é do PC.
 2. Sem leitura da TV, ou `connection` = `disconnected` / `not_paired` → `tv_unresponsive`.
 3. Campo opcional `mode` do `tv.state.v1` (`off`, `standby`, `sleep`) → `tv_off`, `tv_standby`, `tv_sleep`.
-   Vale mais que a inferência abaixo; valor fora da lista é ignorado. **Reservado:** o contrato atual do `tv.state.v1`
-   (`contracts/agent`) ainda não tem o campo e o validador recusa campos extras; a API já o entende, mas só passa a
-   receber (e a anunciar `tv.state.mode` em `features`) depois que o contrato e o agente o adotarem.
+   Vale mais que a inferência abaixo. O contrato de `tv.state.v1` aceita apenas esses três valores para o campo.
 4. Sem `mode`: `connection` = `waking` → `tv_standby`; `power` = `off` → `tv_off`.
 5. Caso contrário → `ready` (inclui `connection` = `hibernating`: a sessão dorme para poupar a TV, não é TV desligada).
 
 ## Consumo
 
 - **Web**: mostrar uma mensagem por `link.state` e usar `connection` / `power` só para detalhe.
-- **Agente**: hoje `tv_standby` só sai de `connection` = `waking`, e `tv_sleep` não é alcançável. Para distinguir standby
-  e Modo Dormir, o contrato do agente precisa ganhar `mode` (pendência fora de `apps/api`).
+- **Agente**: envia `mode` quando confirma o modo e a API lista `tv.state.mode` em `features` de `devices/info`.
+  O instante da publicação vem de `ts` no envelope. Falhas de alcance ou resposta são refletidas em `connection`.
+  O motivo detalhado fica no registro do agente. Relatos sem `mode` continuam usando a inferência por `connection`
+  e `power`.
 
-O valor é calculado na leitura e na publicação, nunca gravado. Um agente conectado que fica mudo passa a `pc_offline` na
-próxima leitura (`GET /state` ou nova conexão ao fluxo); a queda da sessão já é publicada na hora.
+O agente publica nas mudanças de estado e a cada conferência do endereço da TV. Uma sessão aberta já confirma a
+presença. Com o controle hibernando, o agente aproveita a resposta da sondagem existente. Na Samsung, verifica a
+identidade antes de usar o `PowerState` do mesmo retorno REST. Na Android TV, o Modo Dormir é observado quando o
+TV Livre abre a tela preta. A perda de contato por si só deixa o modo desconhecido, inclusive após a tecla de energia.
+
+O elo é calculado na leitura e na publicação. Se um agente conectado fica mudo, o fluxo também publica
+`pc_offline` quando o vigia detecta que o relato venceu. A queda da sessão é publicada na hora.

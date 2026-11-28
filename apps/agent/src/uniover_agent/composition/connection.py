@@ -54,7 +54,7 @@ from uniover_agent.adapters.tv_discovery import (
     PortState,
     tcp_probe,
 )
-from uniover_agent.adapters.tv_locate import build_locator
+from uniover_agent.adapters.tv_locate import build_locator, probe_samsung
 from uniover_agent.adapters.tv_remote_v2 import AndroidTvRemoteV2
 from uniover_agent.adapters.tv_use_marker import MARKER_FILE as TV_USE_MARKER_FILE
 from uniover_agent.adapters.tv_use_marker import PC_MARKER_FILE as PC_USE_MARKER_FILE
@@ -136,6 +136,7 @@ from uniover_agent.core.api_features import (
     HANDOVER_FEATURE,
     KEEPALIVE_LOOP_LAG_FEATURE,
     NOT_PAIRED_FEATURE,
+    TV_STATE_MODE_FEATURE,
     WAKE_HINTS_FEATURE,
     WAKING_FEATURE,
     ApiFeatures,
@@ -170,6 +171,7 @@ from uniover_agent.core.tv.livre import EXTENDED_CAPABILITY as LIVRE_EXTENDED_CA
 from uniover_agent.core.tv.livre import NOTICE_CAPABILITY as LIVRE_NOTICE_CAPABILITY
 from uniover_agent.core.tv.livre import SLEEP_NO_INSTALL_CAPABILITY
 from uniover_agent.core.tv.pairing import PAIR_CAPABILITY
+from uniover_agent.core.tv.presence import TvProbeResult
 from uniover_agent.core.tv.relocator import (
     DEFAULT_FAILURES,
     DEFAULT_FAST_WINDOW_SECONDS,
@@ -362,6 +364,7 @@ def build_relocator(  # noqa: PLR0913, PLR0917
     is_paused: Callable[[], bool] = lambda: False,
     on_recovered: Callable[[], Awaitable[None]] | None = None,
     *,
+    on_probe: Callable[[TvProbeResult | None], None] | None = None,
     recorder: DiagnosticsRecorder | None = None,
     failures: int = DEFAULT_FAILURES,
     start: AgentStart | None = None,
@@ -409,13 +412,15 @@ def build_relocator(  # noqa: PLR0913, PLR0917
         slow_search_seconds=settings.tv_locator_slow_search_seconds,
     )
 
-    async def reachable() -> bool:
+    async def reachable() -> TvProbeResult:
         if settings.tv_kind == "android":
             state = await tcp_probe(host, ANDROID_REMOTE_PORT, wait=REFUSAL_WAIT_SECONDS)
-            if state is PortState.REFUSED and on_refused is not None:
-                on_refused()
-            return state is PortState.OPEN
-        return await locator.is_at(host)
+            if state is PortState.REFUSED:
+                if on_refused is not None:
+                    on_refused()
+                return "unresponsive"
+            return "reachable" if state is PortState.OPEN else "unreachable"
+        return await probe_samsung(host, identity)
 
     async def rescan() -> str | None:
         located = await locator.find(host)
@@ -479,6 +484,7 @@ def build_relocator(  # noqa: PLR0913, PLR0917
         reachable=reachable,
         rescan=rescan,
         on_alive=learn_arp_mac,
+        on_probe=on_probe,
         on_recovered=on_recovered,
         is_paused=is_paused,
         network_signature=network_signature,
@@ -969,6 +975,7 @@ async def _serve(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             adb_permission_reason=lambda: tv.adb_permission.reason if tv.adb_permission else None,
             reports_wake_hints=lambda: features.supports(WAKE_HINTS_FEATURE),
             wake_hints=lambda: tv.wake_check.hints if tv.wake_check else (),
+            reports_mode=lambda: features.supports(TV_STATE_MODE_FEATURE),
         )
         # O estado nasce na sessão (no laço da TV) e é publicado neste laço.
         tv.manager.subscribe(tv_hop.to_main(publisher.publish))
@@ -1431,6 +1438,7 @@ async def _serve(  # noqa: PLR0911, PLR0912, PLR0915 - composição
             tv_hop.to_tv(tv.watchdog.request) if tv.watchdog is not None else None,
             lambda: tv.light_settings.focus_active if tv.light_settings is not None else False,
             tv_hop.awaited(tv.manager.reopen_unattended),
+            on_probe=tv_hop.to_tv(tv.manager.note_probe),
             recorder=kit.recorder,
             start=agent_start(),
         )
