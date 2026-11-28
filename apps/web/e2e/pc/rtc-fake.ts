@@ -12,13 +12,15 @@ export interface RtcLog {
 /**
  * Troca o WebRTC do navegador por um par de mentira que faz o papel do agente: aceita o token (`ready`), responde cada
  * comando (`ack`) e cada sinal de vida (`pong`), e guarda tudo o que o app mandou. Nada sai do navegador, nada toca um PC.
- * `remove` apaga o `RTCPeerConnection` (um navegador sem WebRTC).
+ * `remove` apaga o `RTCPeerConnection` (um navegador sem WebRTC). `caps` é a lista de mensagens que o `ready` anuncia (sem ela,
+ * só as de sempre).
  */
 export async function installFakeRtc(
   page: Page,
-  options: { remove?: boolean } = {},
+  options: { remove?: boolean; caps?: readonly string[] } = {},
 ): Promise<void> {
-  await page.addInitScript((remove: boolean) => {
+  const setup = { remove: options.remove === true, caps: options.caps ? [...options.caps] : null };
+  await page.addInitScript(({ remove, caps }: typeof setup) => {
     const w = window as unknown as Record<string, unknown>;
     if (remove) {
       delete w['RTCPeerConnection'];
@@ -83,7 +85,7 @@ export async function installFakeRtc(
           if (!Array.isArray(log[this.label])) log[this.label] = [];
           (log[this.label] as unknown[]).push(message);
           if (this.label === 'input' && message['k'] === 'auth')
-            this.reply({ k: 'ready', life: 600 });
+            this.reply(caps ? { k: 'ready', life: 600, caps } : { k: 'ready', life: 600 });
           if (this.label === 'input' && message['k'] === 'cmd') {
             this.reply({ k: 'ack', i: message['i'], ok: true });
           }
@@ -149,7 +151,7 @@ export async function installFakeRtc(
       }
     }
     w['RTCPeerConnection'] = FakeConnection;
-  }, options.remove === true);
+  }, setup);
 }
 
 /** O agente avisa o motivo e fecha o canal (`replaced`, `revoked`, `lifetime`...). */

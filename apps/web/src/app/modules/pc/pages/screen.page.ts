@@ -38,6 +38,7 @@ import {
   type ScreenViewerFrame,
 } from '../data/screen-viewer';
 import { PadGesture } from '../input/pad-gesture';
+import { PcLiveKeyboard } from '../ui/live-keyboard';
 
 const START_TIMEOUT_MS = 20_000;
 /** A API encerra a sessão de tela em 90 s; a página reabre sozinha um pouco antes, sem o usuário perceber mais que um piscar. */
@@ -46,6 +47,22 @@ const RENEW_MS = 75_000;
 const MAX_WIDTH = 1280;
 /** O menor que o PC aceita. */
 const MIN_WIDTH = 128;
+
+/**
+ * A tela cheia: pela Fullscreen API (`api`) ou, onde ela não existe ou recusa (o iPhone), pelo recuo em CSS (`css`), que fixa
+ * a tela sobre a página inteira.
+ */
+type FullscreenMode = 'off' | 'api' | 'css';
+
+/** Os nomes antigos do WebKit, que o Safari ainda usa em alguns aparelhos. */
+interface WebkitFullscreenElement {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+}
+interface WebkitFullscreenDocument {
+  webkitFullscreenEnabled?: boolean;
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => Promise<void> | void;
+}
 
 /** Como o dedo age na imagem: toca no ponto (posição absoluta) ou move o ponteiro como no touchpad. */
 type TouchMode = 'direct' | 'pad';
@@ -79,8 +96,10 @@ interface Link {
  */
 @Component({
   selector: 'app-pc-screen-page',
-  imports: [QuickTour],
+  imports: [QuickTour, PcLiveKeyboard],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // Esc no recuo em CSS sai da tela cheia, como o navegador faz na da API (o Safari não dá foco ao botão tocado).
+  host: { '(document:keydown.escape)': 'exitCssFullscreen()' },
   template: `
     @if (!access.allowed()) {
       @if (!access.accountCanView()) {
@@ -92,111 +111,179 @@ interface Link {
       }
     } @else {
       <app-quick-tour [tourId]="'pc-screen'" [heading]="tourHeading" [steps]="tourSteps" />
-      @if (monitors().length > 1) {
-        <div
-          class="monitors"
-          role="group"
-          aria-label="Monitores"
-          i18n-aria-label="@@pc.screen.monitors"
-        >
-          @for (item of monitors(); track item.id; let index = $index) {
-            <button
-              type="button"
-              [attr.aria-pressed]="item.id === monitorId()"
-              (click)="selectMonitor(item.id)"
-            >
-              <span i18n="@@pc.screen.monitor">Monitor {{ index + 1 }}</span>
-            </button>
-          }
-        </div>
-      }
-      @if (access.touch() && hasFrame()) {
-        <div
-          class="tools"
-          role="group"
-          aria-label="Toque na tela"
-          i18n-aria-label="@@pc.screen.touch"
-        >
-          <button type="button" [attr.aria-pressed]="mode() === 'pad'" (click)="toggleMode()">
-            @if (mode() === 'direct') {
-              <span i18n="@@pc.screen.mode.direct">Toque direto</span>
-            } @else {
-              <span i18n="@@pc.screen.mode.pad">Touchpad</span>
-            }
-          </button>
-          @if (mode() === 'direct') {
-            <button type="button" [attr.aria-pressed]="scrolling()" (click)="toggleScroll()">
-              <span i18n="@@pc.screen.scroll">Rolar</span>
-            </button>
-            @if (zoomed()) {
-              <button type="button" (click)="resetZoom()">
-                <span i18n="@@pc.screen.zoom.reset">Zoom 1x</span>
+      <!-- O que entra na tela cheia: os controles, a imagem, os avisos e o campo escondido do teclado (o que fica fora do
+           elemento em tela cheia não aparece, e o teclado não abriria). -->
+      <div
+        #shell
+        class="shell"
+        [class.full]="fullscreen() !== 'off'"
+        [class.pseudo]="fullscreen() === 'css'"
+      >
+        @if (monitors().length > 1) {
+          <div
+            class="monitors"
+            role="group"
+            aria-label="Monitores"
+            i18n-aria-label="@@pc.screen.monitors"
+            (pointerdown)="holdKeyboard()"
+          >
+            @for (item of monitors(); track item.id; let index = $index) {
+              <button
+                type="button"
+                [attr.aria-pressed]="item.id === monitorId()"
+                (click)="selectMonitor(item.id); keepKeyboard()"
+              >
+                <span i18n="@@pc.screen.monitor">Monitor {{ index + 1 }}</span>
               </button>
             }
-          }
-        </div>
-      }
-      <div
-        #stage
-        class="stage"
-        [class.touch]="access.touch()"
-        [hidden]="!hasFrame()"
-        (pointerdown)="onDown($event)"
-        (pointermove)="onMove($event)"
-        (pointerup)="onUp($event)"
-        (pointercancel)="onCancel()"
-      >
-        <div class="view" [style.transform]="viewTransform()">
-          <canvas
-            #surface
-            width="1"
-            height="1"
-            aria-label="Tela do PC"
-            i18n-aria-label="@@pc.screen.canvas"
-          ></canvas>
-          @if (pointer(); as spot) {
-            <svg
-              class="cursor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-              [style.left.%]="spot.left"
-              [style.top.%]="spot.top"
-            >
-              <path [attr.d]="'M5 3l14 8-6 2-3 6z'" />
-            </svg>
-          }
-        </div>
-      </div>
-      @if (notice(); as text) {
-        <p class="note notice" role="status">{{ text }}</p>
-      }
-      @if (touchNotice(); as text) {
-        <p class="note notice" role="status">{{ text }}</p>
-      }
-      @if (!canOpen() && phase() === 'idle') {
-        @if (deviceApprovalPending()) {
-          <p class="note" role="status" i18n="@@pc.screen.approval-pending">
-            Para ver a tela, aprove este aparelho no PC.
-          </p>
-        } @else {
-          <p class="note" i18n="@@pc.screen.waitDirect">
-            Aguardando o canal direto do PC na rede local.
-          </p>
+          </div>
         }
-      }
-      @if (phase() === 'live' || phase() === 'connecting') {
-        <button type="button" class="action" (click)="stop()" i18n="@@pc.screen.stop">Parar</button>
-      } @else {
-        <button
-          type="button"
-          class="action"
-          [disabled]="!canOpen()"
-          (click)="open()"
-          i18n="@@pc.screen.open"
-        >
-          Ver a tela
-        </button>
-      }
+        @if (access.touch() && hasFrame()) {
+          <div
+            class="tools"
+            role="group"
+            aria-label="Toque na tela"
+            i18n-aria-label="@@pc.screen.touch"
+            (pointerdown)="holdKeyboard()"
+          >
+            <button
+              type="button"
+              [attr.aria-pressed]="mode() === 'pad'"
+              (click)="toggleMode(); keepKeyboard()"
+            >
+              @if (mode() === 'direct') {
+                <span i18n="@@pc.screen.mode.direct">Toque direto</span>
+              } @else {
+                <span i18n="@@pc.screen.mode.pad">Touchpad</span>
+              }
+            </button>
+            @if (mode() === 'direct') {
+              <button
+                type="button"
+                [attr.aria-pressed]="scrolling()"
+                (click)="toggleScroll(); keepKeyboard()"
+              >
+                <span i18n="@@pc.screen.scroll">Rolar</span>
+              </button>
+              @if (zoomed()) {
+                <button type="button" (click)="resetZoom(); keepKeyboard()">
+                  <span i18n="@@pc.screen.zoom.reset">Zoom 1x</span>
+                </button>
+              }
+            }
+          </div>
+        }
+        @if (hasFrame() || fullscreen() !== 'off') {
+          <div
+            class="controls"
+            role="group"
+            aria-label="Teclado e tela cheia"
+            i18n-aria-label="@@pc.screen.controls"
+            (pointerdown)="holdKeyboard()"
+          >
+            @if (hasFrame()) {
+              <!-- O foco do campo tem de nascer neste toque (no iPhone, fora dele o teclado não abre). -->
+              <button
+                type="button"
+                class="keyboard"
+                [attr.aria-pressed]="typing()"
+                [disabled]="!store.canSend()"
+                (click)="toggleKeyboard(); keepKeyboard()"
+              >
+                <span i18n="@@pc.screen.keyboard">Teclado</span>
+              </button>
+            }
+            <button
+              type="button"
+              class="fullscreen"
+              [attr.aria-pressed]="fullscreen() !== 'off'"
+              (click)="toggleFullscreen(); keepKeyboard()"
+            >
+              @if (fullscreen() === 'off') {
+                <span i18n="@@pc.screen.fullscreen.enter">Tela cheia</span>
+              } @else {
+                <span i18n="@@pc.screen.fullscreen.exit">Sair da tela cheia</span>
+              }
+            </button>
+          </div>
+        }
+        <div class="frame" [style.--ratio]="ratio()">
+          <div
+            #stage
+            class="stage"
+            [class.touch]="access.touch()"
+            [hidden]="!hasFrame()"
+            (pointerdown)="onDown($event)"
+            (pointermove)="onMove($event)"
+            (pointerup)="onUp($event)"
+            (pointercancel)="onCancel()"
+          >
+            <div class="view" [style.transform]="viewTransform()">
+              <canvas
+                #surface
+                width="1"
+                height="1"
+                aria-label="Tela do PC"
+                i18n-aria-label="@@pc.screen.canvas"
+              ></canvas>
+              @if (pointer(); as spot) {
+                <svg
+                  class="cursor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  [style.left.%]="spot.left"
+                  [style.top.%]="spot.top"
+                >
+                  <path [attr.d]="'M5 3l14 8-6 2-3 6z'" />
+                </svg>
+              }
+            </div>
+          </div>
+        </div>
+        @if (notice(); as text) {
+          <p class="note notice" role="status">{{ text }}</p>
+        }
+        @if (touchNotice(); as text) {
+          <p class="note notice" role="status">{{ text }}</p>
+        }
+        <!-- O aviso de falha do módulo (uma tecla que não chegou, o PC que caiu) fica fora da tela cheia: aqui ele aparece. -->
+        @if (fullscreen() !== 'off' && store.notice(); as failure) {
+          <p class="note notice fullscreen-notice" role="alert">{{ failure.message }}</p>
+        }
+        @if (!canOpen() && phase() === 'idle') {
+          @if (deviceApprovalPending()) {
+            <p class="note" role="status" i18n="@@pc.screen.approval-pending">
+              Para ver a tela, aprove este aparelho no PC.
+            </p>
+          } @else {
+            <p class="note" i18n="@@pc.screen.waitDirect">
+              Aguardando o canal direto do PC na rede local.
+            </p>
+          }
+        }
+        @if (phase() === 'live' || phase() === 'connecting') {
+          <button type="button" class="action" (click)="stop()" i18n="@@pc.screen.stop">
+            Parar
+          </button>
+        } @else {
+          <button
+            type="button"
+            class="action"
+            [disabled]="!canOpen()"
+            (click)="open()"
+            i18n="@@pc.screen.open"
+          >
+            Ver a tela
+          </button>
+        }
+        <!-- O mesmo campo do Mouse: o que se digita vai ao PC na hora e nada fica guardado. Aqui não há eco: o texto aparece na
+           própria imagem do PC. -->
+        <app-pc-live-keyboard
+          [disabled]="!store.canSend()"
+          (typing)="typing.set($event)"
+          (failed)="touchNotice.set($event)"
+        />
+      </div>
     }
   `,
   styles: `
@@ -204,6 +291,52 @@ interface Link {
       display: flex;
       flex-direction: column;
       gap: var(--space-3);
+    }
+    /* O campo escondido do teclado se posiciona por aqui. */
+    .shell {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+      min-width: 0;
+    }
+    /*
+     * Fixa a tela sobre a página inteira em qualquer modo: na Fullscreen API isso não muda nada; sem ela (iPhone), ou com um
+     * navegador que aceita o pedido e não entra, é o que dá à imagem a altura toda (abaixo só do aviso de versão nova).
+     */
+    .shell.full {
+      position: fixed;
+      inset: 0;
+      z-index: 900;
+      box-sizing: border-box;
+      width: 100%;
+      height: 100%;
+      padding: max(var(--space-2), env(safe-area-inset-top))
+        max(var(--space-2), env(safe-area-inset-right))
+        max(var(--space-2), env(safe-area-inset-bottom))
+        max(var(--space-2), env(safe-area-inset-left));
+      gap: var(--space-2);
+      background: var(--a-bg);
+      overflow: hidden;
+    }
+    .frame {
+      min-width: 0;
+    }
+    /*
+     * Em tela cheia a imagem ocupa o espaço que sobra sem distorcer: o palco tem sempre a proporção da imagem (o toque mapeia
+     * o palco inteiro para a imagem inteira), centrado e limitado pela largura e pela altura livres.
+     */
+    .shell.full .frame {
+      flex: 1 1 auto;
+      min-height: 0;
+      container-type: size;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .shell.full .stage {
+      flex: none;
+      width: min(100cqw, calc(100cqh * var(--ratio)));
     }
     .stage {
       position: relative;
@@ -223,12 +356,14 @@ interface Link {
       position: relative;
       transform-origin: 0 0;
     }
-    .tools {
+    .tools,
+    .controls {
       display: flex;
       flex-wrap: wrap;
       gap: var(--space-2);
     }
-    .tools button {
+    .tools button,
+    .controls button {
       min-height: 44px;
       padding: 0 var(--space-4);
       border: 1px solid var(--a-line);
@@ -240,7 +375,8 @@ interface Link {
       cursor: pointer;
       touch-action: manipulation;
     }
-    .tools button[aria-pressed='true'] {
+    .tools button[aria-pressed='true'],
+    .controls button[aria-pressed='true'] {
       background: var(--a-accent-soft);
       border-color: var(--a-accent);
     }
@@ -299,7 +435,7 @@ export class ScreenPage {
   private readonly signaling = inject(DirectSignaling);
   private readonly factory = inject(PC_RTC_FACTORY);
   private readonly doc = inject(DOCUMENT);
-  private readonly store = inject(PcStore);
+  protected readonly store = inject(PcStore);
   private readonly surface = viewChild<ElementRef<HTMLCanvasElement>>('surface');
   private readonly stage = viewChild<ElementRef<HTMLElement>>('stage');
   private readonly view = new ImageView(1, 1);
@@ -319,6 +455,13 @@ export class ScreenPage {
   protected readonly mode = signal<TouchMode>('direct');
   protected readonly scrolling = signal(false);
   protected readonly touchNotice = signal<string | null>(null);
+  /** O teclado do aparelho está aberto (o campo escondido tem o foco). */
+  protected readonly typing = signal(false);
+  protected readonly fullscreen = signal<FullscreenMode>('off');
+  /** A proporção do quadro pintado: em tela cheia, o palco a segue para a imagem não distorcer. */
+  protected readonly ratio = signal(16 / 9);
+  private readonly keyboard = viewChild(PcLiveKeyboard);
+  private readonly shell = viewChild<ElementRef<HTMLElement>>('shell');
   protected readonly tourHeading = $localize`:@@pc.screen.tour.heading:Como usar a tela do PC`;
   protected readonly tourSteps = [
     $localize`:@@pc.screen.tour.open:Para conectar seu primeiro computador, use Conectar o PC. Com os dois aparelhos na mesma rede, abra a aba Tela e toque em Ver a tela.`,
@@ -451,13 +594,102 @@ export class ScreenPage {
       resume = false;
       this.finish('idle');
     };
+    // Esc, o voltar do Android ou o próprio navegador encerram a tela cheia da API: o botão acompanha.
+    const fullscreenChange = () => {
+      if (this.fullscreen() === 'api' && this.fullscreenElement() !== this.shell()?.nativeElement) {
+        this.fullscreen.set('off');
+      }
+    };
     this.doc.addEventListener('visibilitychange', visibility);
+    this.doc.addEventListener('fullscreenchange', fullscreenChange);
+    this.doc.addEventListener('webkitfullscreenchange', fullscreenChange);
     this.doc.defaultView?.addEventListener('pagehide', hide);
     inject(DestroyRef).onDestroy(() => {
       this.doc.removeEventListener('visibilitychange', visibility);
+      this.doc.removeEventListener('fullscreenchange', fullscreenChange);
+      this.doc.removeEventListener('webkitfullscreenchange', fullscreenChange);
       this.doc.defaultView?.removeEventListener('pagehide', hide);
+      // Sair da página encerra a tela cheia (a da API ficaria presa a um elemento que deixou de existir).
+      this.leaveFullscreen();
       hide();
     });
+  }
+
+  /** O botão do teclado abre e fecha o teclado do aparelho; o foco tem de nascer neste toque (regra do iOS). */
+  protected toggleKeyboard(): void {
+    const keyboard = this.keyboard();
+    if (!keyboard) return;
+    if (keyboard.active) keyboard.close();
+    else keyboard.open();
+  }
+
+  /** Começo de um toque nos controles: a perda de foco que vem junto não é o sistema fechando o teclado. */
+  protected holdKeyboard(): void {
+    this.keyboard()?.holdFocus();
+  }
+
+  /** Tocar num controle tira o foco do campo: no modo teclado ele volta (o teclado do aparelho não fecha). */
+  protected keepKeyboard(): void {
+    this.keyboard()?.restore();
+  }
+
+  /**
+   * Entra ou sai da tela cheia. Só muda a moldura: a sessão, o monitor selecionado, o zoom e a aprovação seguem como estão (o
+   * palco muda de tamanho e o observador de tamanho ajusta o deslocamento, como ao girar o aparelho).
+   */
+  protected toggleFullscreen(): void {
+    if (this.fullscreen() !== 'off') {
+      this.leaveFullscreen();
+      return;
+    }
+    const shell = this.shell()?.nativeElement as
+      (HTMLElement & WebkitFullscreenElement) | undefined;
+    if (!shell) return;
+    const request = shell.requestFullscreen ?? shell.webkitRequestFullscreen;
+    const doc = this.doc as Document & WebkitFullscreenDocument;
+    const enabled = doc.fullscreenEnabled ?? doc.webkitFullscreenEnabled;
+    if (typeof request !== 'function' || enabled === false) {
+      this.fullscreen.set('css');
+      return;
+    }
+    this.fullscreen.set('api');
+    // Recusada (fora do toque, política do navegador): o recuo em CSS assume.
+    const refused = () => {
+      if (this.fullscreen() === 'api' && this.fullscreenElement() !== shell)
+        this.fullscreen.set('css');
+    };
+    try {
+      const result = request.call(shell);
+      if (result && typeof result.then === 'function') result.then(undefined, refused);
+    } catch {
+      refused();
+    }
+  }
+
+  protected exitCssFullscreen(): void {
+    if (this.fullscreen() === 'css') this.fullscreen.set('off');
+  }
+
+  private leaveFullscreen(): void {
+    const mode = this.fullscreen();
+    this.fullscreen.set('off');
+    if (mode !== 'api') return;
+    const shell = this.shell()?.nativeElement;
+    if (!shell || this.fullscreenElement() !== shell) return;
+    const doc = this.doc as Document & WebkitFullscreenDocument;
+    const exit = doc.exitFullscreen ?? doc.webkitExitFullscreen;
+    if (typeof exit !== 'function') return;
+    try {
+      const result = exit.call(doc);
+      if (result && typeof result.then === 'function') result.then(undefined, () => undefined);
+    } catch {
+      // O navegador já saiu por conta própria.
+    }
+  }
+
+  private fullscreenElement(): Element | null {
+    const doc = this.doc as Document & WebkitFullscreenDocument;
+    return doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
   }
 
   protected stop(): void {
@@ -825,6 +1057,7 @@ export class ScreenPage {
       const context = canvas.getContext('2d');
       if (!context) throw new Error('canvas indisponível');
       context.drawImage(bitmap, 0, 0);
+      this.ratio.set(bitmap.width / bitmap.height);
       this.painted.set(view);
       this.hasFrame.set(true);
     } finally {

@@ -318,4 +318,50 @@ describe('ScreenTouch', () => {
     expect(handlers.tap).not.toHaveBeenCalled();
     expect(handlers.drag).not.toHaveBeenCalled();
   });
+
+  it('a pinch right after a tap drops the tap that waited for its second touch', () => {
+    const { handlers, touch, at } = setup();
+    touch.down(1, 100, 100, at(0));
+    touch.up(1, at(60));
+    // Dentro da espera do toque duplo, dois dedos pousam e abrem a imagem.
+    touch.down(1, 100, 100, at(40));
+    touch.down(2, 140, 100, at(5));
+    touch.move(2, 200, 100);
+    touch.up(2, at(10));
+    touch.up(1, at(10));
+    at(1000);
+    expect(handlers.pinch).toHaveBeenCalled();
+    expect(handlers.tap).not.toHaveBeenCalled();
+    expect(handlers.drag).not.toHaveBeenCalled();
+  });
+
+  it('two fingers moving together only pan the image: no click, no drag', () => {
+    const { handlers, touch, at } = setup();
+    touch.down(1, 100, 100, at(0));
+    touch.down(2, 160, 100, at(5));
+    touch.move(1, 60, 140);
+    touch.move(2, 120, 140);
+    touch.up(1, at(30));
+    touch.up(2, at(5));
+    at(1000);
+    // A distância entre os dedos acaba igual: o zoom, somado, não muda.
+    const zoom = handlers.pinch.mock.calls.reduce((total, [factor]) => total * factor, 1);
+    expect(zoom).toBeCloseTo(1);
+    const dx = handlers.pinch.mock.calls.reduce((total, [, , x]) => total + x, 0);
+    const dy = handlers.pinch.mock.calls.reduce((total, [, , , y]) => total + y, 0);
+    expect(dx).toBeCloseTo(-40);
+    expect(dy).toBeCloseTo(40);
+    expect(handlers.tap).not.toHaveBeenCalled();
+    expect(handlers.drag).not.toHaveBeenCalled();
+  });
+
+  it('a quick two-finger touch without moving is not a click', () => {
+    const { handlers, touch, at } = setup();
+    touch.down(1, 100, 100, at(0));
+    touch.down(2, 160, 100, at(10));
+    touch.up(1, at(40));
+    touch.up(2, at(5));
+    at(1000);
+    expect(handlers.tap).not.toHaveBeenCalled();
+  });
 });
