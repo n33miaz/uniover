@@ -17,6 +17,7 @@ import {
   PC_RTC_FACTORY,
   gatherDirectIce,
 } from '../../../core/direct/direct-channel';
+import { QuickTour } from '../../../shared/ui/quick-tour';
 import { pcFailureOf } from '../data/pc-failure';
 import { PcStore } from '../data/pc-store';
 import { PcScreenAccess } from '../data/screen-access';
@@ -78,11 +79,19 @@ interface Link {
  */
 @Component({
   selector: 'app-pc-screen-page',
+  imports: [QuickTour],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (!access.allowed()) {
-      <p class="note" i18n="@@pc.screen.unavailable">A tela do PC não está disponível aqui.</p>
+      @if (!access.accountCanView()) {
+        <p class="note" i18n="@@pc.screen.permission-needed">
+          A visualização da tela não foi liberada para esta conta neste PC.
+        </p>
+      } @else {
+        <p class="note" i18n="@@pc.screen.unavailable">A tela do PC não está disponível aqui.</p>
+      }
     } @else {
+      <app-quick-tour [tourId]="'pc-screen'" [heading]="tourHeading" [steps]="tourSteps" />
       @if (monitors().length > 1) {
         <div
           class="monitors"
@@ -165,9 +174,15 @@ interface Link {
         <p class="note notice" role="status">{{ text }}</p>
       }
       @if (!canOpen() && phase() === 'idle') {
-        <p class="note" i18n="@@pc.screen.waitDirect">
-          Aguardando o canal direto do PC na rede local.
-        </p>
+        @if (deviceApprovalPending()) {
+          <p class="note" role="status" i18n="@@pc.screen.approval-pending">
+            Para ver a tela, aprove este aparelho no PC.
+          </p>
+        } @else {
+          <p class="note" i18n="@@pc.screen.waitDirect">
+            Aguardando o canal direto do PC na rede local.
+          </p>
+        }
       }
       @if (phase() === 'live' || phase() === 'connecting') {
         <button type="button" class="action" (click)="stop()" i18n="@@pc.screen.stop">Parar</button>
@@ -304,6 +319,15 @@ export class ScreenPage {
   protected readonly mode = signal<TouchMode>('direct');
   protected readonly scrolling = signal(false);
   protected readonly touchNotice = signal<string | null>(null);
+  protected readonly tourHeading = $localize`:@@pc.screen.tour.heading:Como usar a tela do PC`;
+  protected readonly tourSteps = [
+    $localize`:@@pc.screen.tour.open:Para conectar seu primeiro computador, use Conectar o PC. Com os dois aparelhos na mesma rede, abra a aba Tela e toque em Ver a tela.`,
+    $localize`:@@pc.screen.tour.touch:Quando os controles aparecerem, toque na imagem para interagir. Para mover o ponteiro como em um touchpad, toque em Toque direto.`,
+    $localize`:@@pc.screen.tour.permission:Se o PC pedir autorização para este aparelho, confirme o pedido no próprio computador. Se a tela estiver bloqueada, desbloqueie o PC.`,
+  ];
+  protected readonly deviceApprovalPending = computed(
+    () => this.store.notice()?.kind === 'device-pending',
+  );
   protected readonly zoomed = computed(() => this.zoom().scale > 1);
   protected readonly viewTransform = computed(() => {
     const { scale, panX, panY } = this.zoom();
@@ -393,7 +417,7 @@ export class ScreenPage {
   });
 
   private lockedText(): string {
-    return $localize`:@@pc.screen.locked:PC bloqueado ou aviso do Windows na tela: confirme no PC.`;
+    return $localize`:@@pc.screen.locked:PC bloqueado ou permissão pendente do Windows na tela: desbloqueie ou confirme no PC.`;
   }
 
   constructor() {
