@@ -1734,6 +1734,11 @@ def _log_screen_refusal(session_id: str, code: str, reason: str) -> None:
     )
 
 
+def _log_screen_interrupted(session_id: str) -> None:
+    """A linha da oferta de tela cancelada antes de terminar."""
+    _log.warning("oferta de tela interrompida (sessão %s): cancelled", session_id[:8])
+
+
 def pc_rtc_handlers(
     service: PcDirectService, transport: Sender, envelopes: EnvelopeFactory
 ) -> dict[str, Handler]:
@@ -1767,7 +1772,7 @@ def pc_rtc_handlers(
             )
         except asyncio.CancelledError:
             if screen:
-                _log.warning("oferta de tela interrompida (sessão %s): cancelled", session_id[:8])
+                _log_screen_interrupted(session_id)
             raise
         except Exception:
             if screen:
@@ -1786,6 +1791,10 @@ def pc_rtc_handlers(
             return CommandResult(
                 command.id, ResultStatus.FAILED, "resposta não enviada", REFUSED_FAILED
             )
+        except asyncio.CancelledError:
+            if screen:
+                _log_screen_interrupted(session_id)
+            raise
         if screen:
             _log.info("oferta de tela aceita (sessão %s)", session_id[:8])
         return CommandResult(command.id, ResultStatus.OK)
