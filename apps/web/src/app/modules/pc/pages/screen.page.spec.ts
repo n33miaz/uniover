@@ -6,6 +6,8 @@ import {
   DirectSignaling,
   PC_RTC_FACTORY,
 } from '../../../core/direct/direct-channel';
+import { AccountScope } from '../../../core/session/account-scope';
+import type { PcFailure } from '../data/pc-failure';
 import { PcStore } from '../data/pc-store';
 import { PcScreenAccess } from '../data/screen-access';
 import { ScreenPage } from './screen.page';
@@ -105,8 +107,10 @@ async function flush(times = 12): Promise<void> {
   for (let n = 0; n < times; n++) await Promise.resolve();
 }
 
-function setup() {
-  const allowed = signal(true);
+function setup({ authorized = true, screenAvailable = true } = {}) {
+  const allowed = signal(authorized && screenAvailable);
+  const accountCanView = signal(authorized);
+  const accountId = signal<string | null>('conta-1');
   const touchOn = signal(false);
   const parent = signal<string | null>('sessao-pc');
   const direct = {
@@ -118,6 +122,7 @@ function setup() {
     sendAbsolute: vi.fn(),
   };
   const store = {
+    notice: signal<PcFailure | null>(null),
     movePointer: vi.fn(),
     scrollPointer: vi.fn(),
     click: vi.fn(async () => null),
@@ -143,7 +148,8 @@ function setup() {
       { provide: PcStore, useValue: store },
       { provide: DirectSignaling, useValue: signaling },
       { provide: PC_RTC_FACTORY, useValue: createPeer },
-      { provide: PcScreenAccess, useValue: { allowed, touch: touchOn } },
+      { provide: AccountScope, useValue: { id: accountId } },
+      { provide: PcScreenAccess, useValue: { allowed, accountCanView, touch: touchOn } },
     ],
   });
   const fixture = TestBed.createComponent(ScreenPage);
@@ -180,6 +186,7 @@ function setup() {
 describe('Tela do PC (página)', () => {
   let drawImage: ReturnType<typeof vi.fn>;
   beforeEach(() => {
+    localStorage.removeItem('uniover.quick-tour.conta-1.pc-screen');
     vi.stubGlobal(
       'createImageBitmap',
       vi.fn(async () => ({ width: 640, height: 360, close: vi.fn() })),
@@ -195,12 +202,65 @@ describe('Tela do PC (página)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('shows only the unavailable note when the screen is not allowed', () => {
-    const { allowed, fixture, root } = setup();
-    allowed.set(false);
-    fixture.detectChanges();
+  it('explains that an account without the permission cannot view the screen', () => {
+    const { root } = setup({ authorized: false });
     expect(root.querySelector('button')).toBeNull();
+    expect(root.textContent).toContain('não foi liberada para esta conta');
+    expect(localStorage.getItem('uniover.quick-tour.conta-1.pc-screen')).toBeNull();
+  });
+
+  it('does not suggest an approval when the PC lacks screen support', () => {
+    const { root } = setup({ screenAvailable: false });
     expect(root.textContent).toContain('não está disponível');
+    expect(root.textContent).not.toContain('permissão pendente');
+    expect(root.querySelector('button')).toBeNull();
+  });
+
+  it('explains a pending device approval while waiting for the direct channel', () => {
+    const { store, parent, action, fixture, root } = setup();
+    parent.set(null);
+    store.notice.set({ kind: 'device-pending', message: '' });
+    fixture.detectChanges();
+    expect(root.querySelector('.note')?.textContent).toContain('aprove este aparelho no PC');
+    expect(action().disabled).toBe(true);
+    store.notice.set(null);
+    fixture.detectChanges();
+    expect(root.querySelector('.note')?.textContent).toContain('Aguardando o canal direto');
+  });
+
+  it('opens the screen tour on a first visit and reopens it from the temporary information button', () => {
+    const { fixture, root } = setup();
+    expect(root.querySelector('app-quick-tour .tour')?.textContent).toContain('Ver a tela');
+
+    const info = root.querySelector<HTMLButtonElement>('app-quick-tour .info')!;
+    info.click();
+    fixture.detectChanges();
+    expect(root.querySelector('app-quick-tour .tour')).toBeNull();
+
+    info.click();
+    fixture.detectChanges();
+    expect(root.querySelector('app-quick-tour .tour')?.textContent).toContain('Ver a tela');
+
+    fixture.destroy();
+    const returning = TestBed.createComponent(ScreenPage);
+    returning.detectChanges();
+    const returningRoot: HTMLElement = returning.nativeElement;
+    expect(returningRoot.querySelector('app-quick-tour .tour')).toBeNull();
+    const returningInfo = returningRoot.querySelector<HTMLButtonElement>('app-quick-tour .info');
+    expect(returningInfo).toBeTruthy();
+    returningInfo!.click();
+    returning.detectChanges();
+    expect(returningRoot.querySelector('app-quick-tour .tour')?.textContent).toContain(
+      'Ver a tela',
+    );
+  });
+
+  it('hides the information button after 30 days and keeps the screen available', () => {
+    const firstVisit = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    localStorage.setItem('uniover.quick-tour.conta-1.pc-screen', String(firstVisit));
+    const { root, action } = setup();
+    expect(root.querySelector('app-quick-tour button')).toBeNull();
+    expect(action().disabled).toBe(false);
   });
 
   it('opens the screen channel, authenticates and asks for the first frame as soon as the monitor size arrives', async () => {
